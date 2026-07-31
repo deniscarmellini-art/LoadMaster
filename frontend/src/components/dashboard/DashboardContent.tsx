@@ -1,4 +1,6 @@
-import { Box, Paper, Typography } from "@mui/material";
+import { useMemo, useState } from "react";
+import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
+import { Box, InputAdornment, Paper, TextField, Typography } from "@mui/material";
 
 import type { Camion } from "../../models/Camion";
 import DashboardGrid from "./DashboardGrid";
@@ -8,13 +10,46 @@ interface DashboardContentProps {
 }
 
 export default function DashboardContent({ rows }: DashboardContentProps) {
+  const [search, setSearch] = useState("");
+
+  const visibleRows = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase("it-IT");
+    const activeRows = rows.filter((row) => row.stato !== "Evasa");
+
+    if (!term) return activeRows;
+
+    return activeRows.filter((row) =>
+      [row.commessa, row.cliente, row.camion].some((value) =>
+        value.toLocaleLowerCase("it-IT").includes(term),
+      ),
+    );
+  }, [rows, search]);
+
   return (
-    <Paper sx={{ p: 2 }}>
-      <Typography component="h2" sx={{ mb: 2 }} variant="h6">
-        Situazione carichi
+    <Paper elevation={0} sx={{ bgcolor: "#121922", border: 1, borderColor: "divider", p: 1.5 }}>
+      <Typography component="h2" sx={{ fontWeight: 800, mb: 1.5, letterSpacing: 0.6 }} variant="h6">
+        CARICHI ATTIVI
       </Typography>
-      <Box sx={{ height: 650 }}>
-        <DashboardGrid rows={rows} />
+      <TextField
+        fullWidth
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Cerca commessa, cliente o camion..."
+        slotProps={{
+          input: {
+            startAdornment: (
+              <InputAdornment position="start"><SearchOutlinedIcon /></InputAdornment>
+            ),
+          },
+        }}
+        sx={{
+          mb: 1.5,
+          "& .MuiOutlinedInput-root": { bgcolor: "rgba(0,0,0,0.2)", minHeight: 52 },
+          "& .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.12)" },
+        }}
+        value={search}
+      />
+      <Box sx={{ height: 620 }}>
+        <DashboardGrid rows={visibleRows} />
       </Box>
     </Paper>
   );

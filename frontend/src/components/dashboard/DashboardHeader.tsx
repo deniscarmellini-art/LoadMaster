@@ -1,62 +1,108 @@
-import { Box, Paper, Stack, Typography } from "@mui/material";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
+import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
+import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
+import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
+import { Avatar, Box, Button, Paper, Stack, Typography } from "@mui/material";
 
 import ImportExcel from "../ImportExcel";
-
 import type { Commessa } from "../../types/excel";
 
 interface DashboardHeaderProps {
   onImported: (commessa: Commessa) => void;
 }
 
+const navigation = [
+  { label: "Stampa etichette", icon: <PrintOutlinedIcon /> },
+  { label: "Magazzino", icon: <Inventory2OutlinedIcon /> },
+  { label: "Scansione pannelli", icon: <QrCodeScannerOutlinedIcon /> },
+  { label: "Carico camion", icon: <LocalShippingOutlinedIcon />, active: true },
+  { label: "Storico", icon: <HistoryOutlinedIcon /> },
+  { label: "Impostazioni", icon: <SettingsOutlinedIcon /> },
+];
+
 export default function DashboardHeader({ onImported }: DashboardHeaderProps) {
   return (
-    <Paper component="header" elevation={0} sx={{ mb: 3, p: 3 }}>
-      <Stack
-        direction={{ xs: "column", md: "row" }}
-        spacing={2}
+    <Paper
+      component="header"
+      elevation={0}
+      sx={{
+        border: 1,
+        borderColor: "divider",
+        mb: 2,
+        overflow: "hidden",
+        p: { xs: 1.5, md: 2 },
+      }}
+    >
+      <Box sx={{ alignItems: "center", display: "grid", gridTemplateColumns: "1fr auto 1fr", minHeight: 48 }}>
+        <Box />
+        <Typography
+          component="h1"
+          sx={{ fontSize: { xs: "1.65rem", md: "2rem" }, fontWeight: 800, letterSpacing: 1.2, textAlign: "center" }}
+        >
+          GESTIONE CARICHI
+        </Typography>
+        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", justifySelf: "end" }}>
+          <Box sx={{ display: { xs: "none", sm: "block" }, textAlign: "right" }}>
+            <Typography fontWeight={700} variant="body2">Utente</Typography>
+            <Typography color="text.secondary" variant="caption">Operatore</Typography>
+          </Box>
+          <Avatar sx={{ bgcolor: "primary.main", color: "primary.contrastText" }}>U</Avatar>
+        </Stack>
+      </Box>
+
+      <Box
+        component="nav"
         sx={{
-        alignItems: { md: "center" },
-        justifyContent: "space-between",
+          bgcolor: "rgba(0, 0, 0, 0.2)",
+          border: 1,
+          borderColor: "divider",
+          borderRadius: 2.5,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 0.75,
+          mt: 1.5,
+          p: 0.75,
         }}
       >
-        <Box>
-          <Typography component="h1" variant="h4">
-            LoadMaster
-          </Typography>
-          <Typography color="text.secondary">
-            Panoramica delle commesse importate.
-          </Typography>
-        </Box>
-        <ImportExcel onImported={onImported} />
-      </Stack>
+        <Button
+          startIcon={<UploadFileOutlinedIcon />}
+          variant="text"
+          sx={{
+            bgcolor: "rgba(255,255,255,0.055)",
+            color: "text.primary",
+            flex: "1 1 145px",
+            minHeight: 42,
+            position: "relative",
+            whiteSpace: "nowrap",
+            "&:hover": { bgcolor: "rgba(255,255,255,0.1)" },
+            "& div": { inset: 0, margin: 0, position: "absolute" },
+            "& input": { cursor: "pointer", inset: 0, opacity: 0, position: "absolute", width: "100%" },
+          }}
+        >
+          Importa Excel
+          <ImportExcel onImported={onImported} />
+        </Button>
+        {navigation.map((item) => (
+          <Button
+            key={item.label}
+            startIcon={item.icon}
+            variant="text"
+            sx={{
+              bgcolor: item.active ? "primary.main" : "transparent",
+              color: item.active ? "primary.contrastText" : "text.secondary",
+              flex: "1 1 145px",
+              minHeight: 42,
+              whiteSpace: "nowrap",
+              "&:hover": { bgcolor: item.active ? "primary.dark" : "rgba(255,255,255,0.08)", color: "text.primary" },
+            }}
+          >
+            {item.label}
+          </Button>
+        ))}
+      </Box>
     </Paper>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

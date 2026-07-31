@@ -1,46 +1,20 @@
+import { Box, Container, Typography } from "@mui/material";
+
 type Props = {
   children: React.ReactNode;
 };
 
 export default function MainLayout({ children }: Props) {
   return (
-    <div
-      style={{
-        display: "flex",
-        height: "100vh",
-        background: "#121417",
-        color: "white",
-        fontFamily: "Segoe UI",
-      }}
-    >
-      <aside
-        style={{
-          width: 250,
-          background: "#1b2027",
-          padding: 20,
-          boxSizing: "border-box",
-        }}
-      >
-        <h2 style={{ color: "#ff3b30", marginTop: 0 }}>
-          🚛 LoadMaster
-        </h2>
-
-        <hr />
-
-        <p>🏠 Dashboard</p>
-        <p>📦 Preparazione Magazzino</p>
-        <p>🚚 Carico Camion</p>
-        <p>📄 Dati ed Export</p>
-      </aside>
-
-      <main
-        style={{
-          flex: 1,
-          padding: 30,
-        }}
-      >
-        {children}
-      </main>
-    </div>
+    <Box sx={{ minHeight: "100vh" }}>
+      <Box component="main" sx={{ py: { xs: 1.5, md: 2.5 } }}>
+        <Container maxWidth={false} sx={{ px: { xs: 1.5, md: 3 } }}>{children}</Container>
+      </Box>
+      <Box component="footer" sx={{ borderColor: "divider", borderTop: 1, py: 1.5, textAlign: "center" }}>
+        <Typography color="text.secondary" variant="caption">
+          LoadMaster © 2026 - Tutti i diritti riservati
+        </Typography>
+      </Box>
+    </Box>
   );
 }
