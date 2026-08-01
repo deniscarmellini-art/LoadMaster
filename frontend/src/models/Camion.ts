@@ -1,9 +1,9 @@
 export type StatoCamion =
-  | "Non completa"
-  | "Completa da caricare"
+  | "Da completare"
+  | "Da caricare"
   | "In carico"
-  | "Attesa ritiro"
-  | "Evasa";
+  | "Attesa spedizione"
+  | "Partita";
 
 export interface Camion {
   id: string;

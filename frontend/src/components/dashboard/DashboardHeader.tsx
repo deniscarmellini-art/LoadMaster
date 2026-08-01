@@ -12,10 +12,11 @@ import type { Commessa } from "../../types/excel";
 
 interface DashboardHeaderProps {
   onImported: (commessa: Commessa) => void;
+  onOpenLabels: () => void;
 }
 
 const navigation = [
-  { label: "Stampa etichette", icon: <PrintOutlinedIcon /> },
+  { label: "Stampa etichette", icon: <PrintOutlinedIcon />, page: "labels" },
   { label: "Magazzino", icon: <Inventory2OutlinedIcon /> },
   { label: "Scansione pannelli", icon: <QrCodeScannerOutlinedIcon /> },
   { label: "Carico camion", icon: <LocalShippingOutlinedIcon /> },
@@ -23,7 +24,7 @@ const navigation = [
   { label: "Impostazioni", icon: <SettingsOutlinedIcon /> },
 ];
 
-export default function DashboardHeader({ onImported }: DashboardHeaderProps) {
+export default function DashboardHeader({ onImported, onOpenLabels }: DashboardHeaderProps) {
   return (
     <Paper
       component="header"
@@ -46,7 +47,7 @@ export default function DashboardHeader({ onImported }: DashboardHeaderProps) {
         </Typography>
         <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", justifySelf: "end" }}>
           <Box sx={{ display: { xs: "none", sm: "block" }, textAlign: "right" }}>
-            <Typography fontWeight={700} variant="body2">Utente</Typography>
+            <Typography sx={{ fontWeight: 700 }} variant="body2">Utente</Typography>
             <Typography color="text.secondary" variant="caption">Operatore</Typography>
           </Box>
           <Avatar sx={{ bgcolor: "primary.main", color: "primary.contrastText" }}>U</Avatar>
@@ -85,11 +86,12 @@ export default function DashboardHeader({ onImported }: DashboardHeaderProps) {
           }}
         >
           Importa Excel
-          <ImportExcel onImported={onImported} />
+          <ImportExcel inputId="dashboard-excel-import" onImported={onImported} />
         </Button>
         {navigation.map((item) => (
           <Button
             key={item.label}
+            onClick={item.page === "labels" ? onOpenLabels : undefined}
             startIcon={item.icon}
             variant="text"
             sx={{

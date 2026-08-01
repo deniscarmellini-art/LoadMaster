@@ -13,7 +13,7 @@ export default function DashboardKpi({ rows }: DashboardKpiProps) {
   const metrics = [
     {
       label: "Da caricare",
-      value: rows.filter((row) => row.previsti === row.pronti).length,
+      value: rows.filter((row) => row.stato === "Da caricare").length,
       icon: <Inventory2OutlinedIcon />,
       color: "#64b5f6",
     },
@@ -25,7 +25,7 @@ export default function DashboardKpi({ rows }: DashboardKpiProps) {
     },
     {
       label: "Attesa spedizione",
-      value: rows.filter((row) => row.stato === "Attesa ritiro").length,
+      value: rows.filter((row) => row.stato === "Attesa spedizione").length,
       icon: <LocalShippingOutlinedIcon />,
       color: "#81c784",
     },

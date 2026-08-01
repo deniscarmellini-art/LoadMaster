@@ -3,9 +3,10 @@ import type { Commessa } from "../types/excel";
 
 interface Props {
   onImported: (commessa: Commessa) => void;
+  inputId?: string;
 }
 
-function ImportExcel({ onImported }: Props) {
+function ImportExcel({ onImported, inputId }: Props) {
   async function handleFileChange(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -21,12 +22,15 @@ function ImportExcel({ onImported }: Props) {
     } catch (errore) {
       console.error(errore);
       alert("Errore durante l'importazione del file.");
+    } finally {
+      event.target.value = "";
     }
   }
 
   return (
     <div style={{ marginBottom: 20 }}>
       <input
+        id={inputId}
         type="file"
         accept=".xlsx,.xls"
         onChange={handleFileChange}

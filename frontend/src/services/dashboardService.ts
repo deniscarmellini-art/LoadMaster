@@ -39,7 +39,7 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
 
             if (caricati === previsti && previsti > 0) {
 
-                stato = "Attesa ritiro";
+                stato = "Attesa spedizione";
 
             } else if (caricati > 0) {
 
@@ -47,11 +47,11 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
 
             } else if (pronti === previsti) {
 
-                stato = "Completa da caricare";
+                stato = "Da caricare";
 
             } else {
 
-                stato = "Non completa";
+                stato = "Da completare";
 
             }
 

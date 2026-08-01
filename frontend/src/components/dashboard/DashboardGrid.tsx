@@ -1,5 +1,11 @@
-import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
-import { Button, Chip, Typography } from "@mui/material";
+import { useState } from "react";
+import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
+import EditDocumentIcon from "@mui/icons-material/EditDocument";
+import LaunchOutlinedIcon from "@mui/icons-material/LaunchOutlined";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
+import { Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import type { GridColDef } from "@mui/x-data-grid";
 
@@ -7,9 +13,16 @@ import type { Camion } from "../../models/Camion";
 
 interface Props {
   rows: Camion[];
+  onDelete: (row: Camion) => void;
+  onPrintLabels: () => void;
+  onUpdate: () => void;
 }
 
-export default function DashboardGrid({ rows }: Props) {
+export default function DashboardGrid({ rows, onDelete, onPrintLabels, onUpdate }: Props) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [menuRow, setMenuRow] = useState<Camion | null>(null);
+  const closeMenu = () => { setAnchorEl(null); setMenuRow(null); };
+  const runAction = (action: () => void) => { closeMenu(); action(); };
   const columns: GridColDef<Camion>[] = [
     { field: "commessa", headerName: "Commessa", minWidth: 120 },
     { field: "cliente", headerName: "Cliente", flex: 1, minWidth: 180 },
@@ -38,56 +51,38 @@ export default function DashboardGrid({ rows }: Props) {
       minWidth: 170,
       renderCell: (params) => {
         const stato = params.value;
-        const label = stato === "In carico"
-          ? "In carico"
-          : stato === "Attesa ritiro"
-            ? "Attesa spedizione"
-            : params.row.previsti === params.row.pronti
-              ? "Da caricare"
-              : "Non completa";
         const color = stato === "In carico"
           ? "warning"
-          : stato === "Attesa ritiro"
+          : stato === "Attesa spedizione" || stato === "Partita"
             ? "success"
-            : params.row.previsti === params.row.pronti
+            : stato === "Da caricare"
               ? "info"
               : "error";
         return (
           <Chip
             color={color}
-            label={label}
+            label={stato}
             size="small"
             variant="outlined"
-            sx={label === "Non completa" ? { fontWeight: 700, height: 30, "& .MuiChip-label": { px: 1.25 } } : undefined}
+            sx={stato === "Da completare" ? { fontWeight: 700, height: 30, "& .MuiChip-label": { px: 1.25 } } : undefined}
           />
         );
       },
     },
     {
       field: "operazione",
-      headerName: "Operazione",
-      minWidth: 145,
+      headerName: "Operazioni",
+      minWidth: 110,
       sortable: false,
       filterable: false,
       renderCell: (params) => {
-        const stato = params.row.stato;
-
-        if (params.row.pronti < params.row.previsti) {
-          return <Typography color="text.secondary" variant="caption">In attesa pannelli</Typography>;
-        }
-
-        const label = stato === "In carico"
-          ? "Continua"
-          : stato === "Attesa ritiro"
-            ? "Spedisci"
-            : "Prepara";
-
-        return <Button endIcon={<ArrowForwardRoundedIcon />} size="small" variant="outlined">{label}</Button>;
+        return <IconButton aria-label={`Operazioni commessa ${params.row.commessa}`} onClick={(event) => { setAnchorEl(event.currentTarget); setMenuRow(params.row); }} size="small"><MoreVertIcon /></IconButton>;
       },
     },
   ];
 
   return (
+    <>
     <DataGrid
       columns={columns}
       disableRowSelectionOnClick
@@ -105,5 +100,13 @@ export default function DashboardGrid({ rows }: Props) {
         "& .MuiDataGrid-row:hover": { backgroundColor: "rgba(255,255,255,0.045)" },
       }}
     />
+    <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>
+      <MenuItem onClick={closeMenu}><ListItemIcon><LaunchOutlinedIcon fontSize="small" /></ListItemIcon><ListItemText>Apri</ListItemText></MenuItem>
+      <MenuItem onClick={() => runAction(onUpdate)}><ListItemIcon><EditDocumentIcon fontSize="small" /></ListItemIcon><ListItemText>Aggiorna distinta</ListItemText></MenuItem>
+      <MenuItem onClick={() => runAction(onPrintLabels)}><ListItemIcon><PrintOutlinedIcon fontSize="small" /></ListItemIcon><ListItemText>Stampa etichette</ListItemText></MenuItem>
+      <MenuItem disabled><ListItemIcon><ArchiveOutlinedIcon fontSize="small" /></ListItemIcon><ListItemText primary="Archivia" secondary="Prossimamente" /></MenuItem>
+      <MenuItem sx={{ color: "error.main" }} onClick={() => menuRow && runAction(() => onDelete(menuRow))}><ListItemIcon><DeleteOutlinedIcon color="error" fontSize="small" /></ListItemIcon><ListItemText>Elimina</ListItemText></MenuItem>
+    </Menu>
+    </>
   );
 }

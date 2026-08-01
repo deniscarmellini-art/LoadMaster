@@ -6,10 +6,10 @@ interface Props {
 }
 
 export default function DashboardCards({ rows }: Props) {
-  const aperte = rows.filter(r => r.stato !== "Evasa").length;
+  const aperte = rows.filter(r => r.stato !== "Partita").length;
   const inCarico = rows.filter(r => r.stato === "In carico").length;
-  const attesa = rows.filter(r => r.stato === "Attesa ritiro").length;
-  const evase = rows.filter(r => r.stato === "Evasa").length;
+  const attesa = rows.filter(r => r.stato === "Attesa spedizione").length;
+  const evase = rows.filter(r => r.stato === "Partita").length;
 
   const cards = [
     { titolo: "Commesse Aperte", valore: aperte },

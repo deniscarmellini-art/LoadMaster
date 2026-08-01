@@ -7,14 +7,17 @@ import DashboardGrid from "./DashboardGrid";
 
 interface DashboardContentProps {
   rows: Camion[];
+  onDelete: (row: Camion) => void;
+  onPrintLabels: () => void;
+  onUpdate: () => void;
 }
 
-export default function DashboardContent({ rows }: DashboardContentProps) {
+export default function DashboardContent({ rows, onDelete, onPrintLabels, onUpdate }: DashboardContentProps) {
   const [search, setSearch] = useState("");
 
   const visibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase("it-IT");
-    const activeRows = rows.filter((row) => row.stato !== "Evasa");
+    const activeRows = rows.filter((row) => row.stato !== "Partita");
 
     if (!term) return activeRows;
 
@@ -49,7 +52,7 @@ export default function DashboardContent({ rows }: DashboardContentProps) {
         value={search}
       />
       <Box sx={{ height: 620 }}>
-        <DashboardGrid rows={visibleRows} />
+        <DashboardGrid onDelete={onDelete} onPrintLabels={onPrintLabels} onUpdate={onUpdate} rows={visibleRows} />
       </Box>
     </Paper>
   );
