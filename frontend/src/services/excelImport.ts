@@ -12,7 +12,7 @@ export async function importaExcel(file: File): Promise<Commessa> {
   const rows = XLSX.utils.sheet_to_json(sheet, {
     header: 1,
     defval: "",
-  }) as any[][];
+  }) as unknown[][];
 
   // ==========================
   // DATI COMMESSA

@@ -9,13 +9,13 @@ export default function DashboardCards({ rows }: Props) {
   const aperte = rows.filter(r => r.stato !== "Partita").length;
   const inCarico = rows.filter(r => r.stato === "In carico").length;
   const attesa = rows.filter(r => r.stato === "Attesa spedizione").length;
-  const evase = rows.filter(r => r.stato === "Partita").length;
+  const spedite = rows.filter(r => r.stato === "Partita").length;
 
   const cards = [
     { titolo: "Commesse Aperte", valore: aperte },
     { titolo: "In Carico", valore: inCarico },
     { titolo: "Attesa Ritiro", valore: attesa },
-    { titolo: "Evase", valore: evase }
+    { titolo: "Spedite", valore: spedite }
   ];
 
   return (

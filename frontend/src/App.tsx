@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Button, CssBaseline, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, ThemeProvider } from "@mui/material";
 
 import MainLayout from "./layouts/MainLayout";
@@ -9,11 +9,12 @@ import PrintLabels from "./pages/PrintLabels";
 import Warehouse from "./pages/Warehouse";
 import Settings from "./pages/Settings";
 import TruckLoading from "./pages/TruckLoading";
+import History from "./pages/History";
 import theme from "./theme/theme";
 import { creaDashboard } from "./services/dashboardService";
 import type { Camion } from "./models/Camion";
 import type { Pacco, UnitaSingola } from "./models/Scanning";
-import { loadSettings, saveSettings } from "./services/settingsStore";
+import { getSettingsLoadErrors, loadSettings, saveSettings } from "./services/settingsStore";
 import type { CaricoCamion } from "./models/Loading";
 import type { Operatore } from "./models/Settings";
 import { operatorLabel } from "./models/Settings";
@@ -46,7 +47,7 @@ function mergeImportedCommessa(current: Commessa[], incoming: Commessa, removeMi
 
 export default function App() {
   const [commesse, setCommesse] = useState<Commessa[]>([]);
-  const [page, setPage] = useState<"dashboard" | "labels" | "scanning" | "scanning-list" | "warehouse" | "settings" | "loading">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "labels" | "scanning" | "scanning-list" | "warehouse" | "settings" | "loading" | "history">("dashboard");
   const [scanningTarget, setScanningTarget] = useState<Camion | null>(null);
   const [packages, setPackages] = useState<Pacco[]>([]);
   const [singles, setSingles] = useState<UnitaSingola[]>([]);
@@ -58,7 +59,7 @@ export default function App() {
   const [loadingInstance,setLoadingInstance]=useState(0);
   const [pendingImport, setPendingImport] = useState<Commessa | null>(null);
   const [confirmRemoved, setConfirmRemoved] = useState(false);
-  useEffect(()=>saveSettings(settings),[settings]);
+  const changeSettings=(next:typeof settings)=>{try{saveSettings(next,settings);setSettings(next);}catch{alert("Impossibile salvare le anagrafiche nel browser.");}};
 
   const resumeLoadingSession = useCallback((loadId:string) => {
     const existing = truckLoads.find((load) => load.loadId === loadId);
@@ -134,6 +135,7 @@ export default function App() {
             onOpenWarehouse={() => setPage("warehouse")}
             onOpenSettings={() => setPage("settings")}
             onOpenLoading={() => {setResumeLoad(null);setPage("loading");}}
+            onOpenHistory={() => setPage("history")}
             operators={settings.operatori.filter(item=>item.attivo)}
             truckLoads={truckLoads}
             packages={packages}
@@ -141,7 +143,7 @@ export default function App() {
             onReopenLoad={(row,operator:Operatore,reason)=>{const existing=truckLoads.find(load=>load.commessa===row.commessa&&load.camion===row.camion&&load.stato==="ATTESA_SPEDIZIONE");if(existing){const value={...existing,stato:"IN_CARICO" as const,operatoreId:operator.id,operatore:operatorLabel(operator),eventi:[...existing.eventi,{tipo:"RIAPERTURA" as const,dataOra:new Date().toISOString(),operatoreId:operator.id,operatore:operatorLabel(operator),nota:reason||undefined}]};setTruckLoads(current=>current.map(load=>load===existing?value:load));setResumeLoad(value);setPage("loading");}}}
             onContinueLoad={resumeLoadingSession}
             onStartLoad={(row)=>{setResumeLoad({loadId:crypto.randomUUID(),commessa:row.commessa,cliente:row.cliente,camion:row.camion,stato:"DA_CARICARE",operatoreId:"",operatore:"",avviatoIl:"",scansioni:[],eventi:[]});setPage("loading");}}
-            onConfirmDeparture={(row)=>{const load=truckLoads.find(item=>item.commessa===row.commessa&&item.camion===row.camion&&item.stato==="ATTESA_SPEDIZIONE");if(load){setResumeLoad(load);setPage("loading");}}}
+            onConfirmDeparture={(row)=>{const load=truckLoads.find(item=>item.commessa===row.commessa&&item.camion===row.camion&&item.stato==="ATTESA_SPEDIZIONE");if(load){const now=new Date().toISOString();setTruckLoads(current=>current.map(item=>item.loadId===load.loadId?{...item,stato:"SPEDITO",completatoIl:now,eventi:[...item.eventi,{tipo:"PARTENZA",dataOra:now,operatoreId:item.operatoreId,operatore:item.operatore}]}:item));const numbers=new Set(load.scansioni.flatMap(scan=>scan.tipoUnita==="PACCO"?packages.find(pack=>pack.codice===scan.codiceUnita)?.pannelli.map(panel=>panel.numeroPannello)??[]:[scan.codiceUnita]));setCommesse(current=>current.map(item=>item.ordine!==load.commessa?item:{...item,pannelli:item.pannelli.map(panel=>panel.numeroCamion===load.camion&&numbers.has(panel.numeroPannello)?{...panel,caricato:true,spedito:true}:panel)}));setPackages(current=>current.map(pack=>pack.commessa===load.commessa&&pack.camion===load.camion&&load.scansioni.some(scan=>scan.tipoUnita==="PACCO"&&scan.codiceUnita===pack.codice)?{...pack,stato:"SPEDITO"}:pack));}}}
           />
         ) : page === "labels" ? (
           <PrintLabels commesse={commesse} onBack={() => setPage("dashboard")} />
@@ -150,7 +152,9 @@ export default function App() {
         ) : page === "warehouse" ? (
           <Warehouse commesse={commesse} drafts={packageDrafts} onBack={()=>setPage("dashboard")} onCancelPackage={(pack)=>{setPackages(current=>current.filter(item=>item.codice!==pack.codice));markPanelsMissing(pack.commessa,pack.camion,pack.pannelli.map(panel=>panel.numeroPannello));}} onCancelSingle={(unit)=>{setSingles(current=>current.filter(item=>item!==unit));markPanelsMissing(unit.commessa,unit.camion,[unit.numeroPannello]);}} onRemoveDraftPanel={(key,panel)=>setPackageDrafts(current=>{const next=new Map(current);next.set(key,(next.get(key)??[]).filter(item=>item.numeroPannello!==panel.numeroPannello));return next;})} packages={packages} singles={singles} />
         ) : page === "settings" ? (
-          <Settings onBack={()=>setPage("dashboard")} onChange={setSettings} settings={settings} usedOperatorIds={new Set([...singles.map(item=>item.operatoreId),...packages.map(item=>item.operatoreId)].filter((id):id is string=>Boolean(id)))} />
+          <Settings loadErrors={getSettingsLoadErrors()} onBack={()=>setPage("dashboard")} onChange={changeSettings} settings={settings} usedOperatorIds={new Set([...singles.map(item=>item.operatoreId),...packages.map(item=>item.operatoreId)].filter((id):id is string=>Boolean(id)))} />
+        ) : page === "history" ? (
+          <History commesse={commesse} loads={truckLoads} packages={packages} settings={settings} singles={singles} onBack={()=>setPage("dashboard")} />
         ) : page === "loading" ? (
           <TruckLoading key={`${resumeLoad?.loadId??"loading-list"}:${loadingInstance}`} initialLoad={resumeLoad} onResumeLoad={resumeLoadingSession} loads={truckLoads} onSessionChange={(load)=>setTruckLoads(current=>{const index=current.findIndex(item=>item.loadId===load.loadId);return index<0?[...current,load]:current.map((item,i)=>i===index?load:item);})} carriers={settings.trasportatori.filter(item=>item.attivo)} commesse={commesse} onBack={()=>{setResumeLoad(null);setPage("dashboard");}} onComplete={(load,units,destination)=>{setTruckLoads(current=>{const index=current.findIndex(item=>item.loadId===load.loadId);return index<0?[...current,load]:current.map((item,i)=>i===index?load:item);});setResumeLoad(null);const numbers=new Set(units.flatMap(unit=>unit.pannelli.map(panel=>panel.numeroPannello)));setCommesse(current=>current.map(item=>item.ordine!==load.commessa?item:{...item,pannelli:item.pannelli.map(panel=>panel.numeroCamion===load.camion&&numbers.has(panel.numeroPannello)?{...panel,caricato:true,spedito:destination==="carrier"}:panel)}));setPackages(current=>current.map(pack=>pack.commessa===load.commessa&&pack.camion===load.camion&&units.some(unit=>unit.tipo==="PACCO"&&unit.codice===pack.codice)?{...pack,stato:destination==="carrier"?"SPEDITO":"CARICATO"}:pack));}} onScanUnit={(row,unit)=>{const numbers=new Set(unit.pannelli.map(panel=>panel.numeroPannello));setCommesse(current=>current.map(item=>item.ordine!==row.commessa?item:{...item,pannelli:item.pannelli.map(panel=>panel.numeroCamion===row.camion&&numbers.has(panel.numeroPannello)?{...panel,caricato:true}:panel)}));if(unit.tipo==="PACCO")setPackages(current=>current.map(pack=>pack.codice===unit.codice?{...pack,stato:"CARICATO"}:pack));}} onUndoUnit={(row,unit)=>{const numbers=new Set(unit.pannelli.map(panel=>panel.numeroPannello));setCommesse(current=>current.map(item=>item.ordine!==row.commessa?item:{...item,pannelli:item.pannelli.map(panel=>panel.numeroCamion===row.camion&&numbers.has(panel.numeroPannello)?{...panel,caricato:false}:panel)}));if(unit.tipo==="PACCO")setPackages(current=>current.map(pack=>pack.codice===unit.codice?{...pack,stato:"DISPONIBILE"}:pack));}} operators={settings.operatori.filter(item=>item.attivo)} packages={packages} rows={creaDashboard(commesse)} singles={singles} trailers={settings.rimorchi.filter(item=>item.attivo)} />
         ) : scanningTarget && scanningCommessa ? (

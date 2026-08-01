@@ -15,6 +15,7 @@ interface DashboardHeaderProps {
   onOpenWarehouse: () => void;
   onOpenSettings: () => void;
   onOpenLoading: () => void;
+  onOpenHistory: () => void;
 }
 
 const navigation = [
@@ -26,7 +27,7 @@ const navigation = [
   { label: "Impostazioni", icon: <SettingsOutlinedIcon />, page: "settings" },
 ];
 
-export default function DashboardHeader({ isImporting, onImportClick, onOpenLabels, onOpenScanning, onOpenWarehouse, onOpenSettings, onOpenLoading }: DashboardHeaderProps) {
+export default function DashboardHeader({ isImporting, onImportClick, onOpenLabels, onOpenScanning, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenHistory }: DashboardHeaderProps) {
   return (
     <Paper
       component="header"
@@ -91,7 +92,7 @@ export default function DashboardHeader({ isImporting, onImportClick, onOpenLabe
         {navigation.map((item) => (
           <Button
             key={item.label}
-            onClick={item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : undefined}
+            onClick={item.label === "Storico" ? onOpenHistory : item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : undefined}
             startIcon={item.icon}
             variant="text"
             sx={{

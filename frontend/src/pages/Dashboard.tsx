@@ -25,6 +25,7 @@ interface DashboardProps {
   onOpenWarehouse: () => void;
   onOpenSettings: () => void;
   onOpenLoading: () => void;
+  onOpenHistory: () => void;
   truckLoads: CaricoCamion[];
   packages: Pacco[];
   activeScanningSessions: Set<string>;
@@ -35,7 +36,7 @@ interface DashboardProps {
   onConfirmDeparture: (row:Camion) => void;
 }
 
-function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpenScanning, onOpenScanningList, onOpenWarehouse, onOpenSettings, onOpenLoading, truckLoads, packages, activeScanningSessions, operators, onReopenLoad, onContinueLoad, onStartLoad, onConfirmDeparture }: DashboardProps) {
+function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpenScanning, onOpenScanningList, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenHistory, truckLoads, packages, activeScanningSessions, operators, onReopenLoad, onContinueLoad, onStartLoad, onConfirmDeparture }: DashboardProps) {
   const [deleteOrder, setDeleteOrder] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [reopenRow,setReopenRow]=useState<Camion|null>(null);const [reopenOperatorId,setReopenOperatorId]=useState("");const [reopenReason,setReopenReason]=useState("");
@@ -45,10 +46,9 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
 
   const dashboard = useMemo(() => creaDashboard(commesse).map(row=>truckLoads.find(load=>load.commessa===row.commessa&&load.camion===row.camion&&load.stato==="IN_CARICO")?{...row,stato:"In carico" as const}:row), [commesse,truckLoads]);
 
-  const activeRows = useMemo(
-    () => dashboard.filter((row) => row.stato !== "Partita"),
-    [dashboard],
-  );
+  const activeRows = useMemo(() => dashboard.filter((row) =>
+    !truckLoads.some((load) => load.commessa === row.commessa && load.camion === row.camion && load.stato === "SPEDITO")
+    && row.stato !== "Partita"), [dashboard, truckLoads]);
   const printablePackages = useMemo(() => packagePrintRow ? packages.filter((pack) => pack.commessa === packagePrintRow.commessa && pack.camion === packagePrintRow.camion) : [], [packagePrintRow, packages]);
   const selectedPackages = printablePackages.filter((pack) => selectedPackageCodes.has(pack.codice));
   const openPackagePrint = (row:Camion) => {
@@ -83,7 +83,7 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
 
   return (
     <>
-      <DashboardHeader isImporting={isImporting} onImportClick={openFilePicker} onOpenLabels={onOpenLabels} onOpenLoading={onOpenLoading} onOpenScanning={onOpenScanningList} onOpenSettings={onOpenSettings} onOpenWarehouse={onOpenWarehouse} />
+      <DashboardHeader isImporting={isImporting} onImportClick={openFilePicker} onOpenHistory={onOpenHistory} onOpenLabels={onOpenLabels} onOpenLoading={onOpenLoading} onOpenScanning={onOpenScanningList} onOpenSettings={onOpenSettings} onOpenWarehouse={onOpenWarehouse} />
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls" hidden onChange={handleFileChange} />
       <DashboardKpi rows={activeRows} />
       <DashboardContent
