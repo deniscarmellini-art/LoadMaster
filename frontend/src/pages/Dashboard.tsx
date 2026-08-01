@@ -12,6 +12,11 @@ function Dashboard() {
 
   const dashboard = useMemo(() => creaDashboard(commesse), [commesse]);
 
+  const activeRows = useMemo(
+    () => dashboard.filter((row) => row.stato !== "Evasa"),
+    [dashboard],
+  );
+
   const handleImported = useCallback((commessa: Commessa) => {
     setCommesse((currentCommesse) => [...currentCommesse, commessa]);
   }, []);
@@ -19,8 +24,8 @@ function Dashboard() {
   return (
     <>
       <DashboardHeader onImported={handleImported} />
-      <DashboardKpi rows={dashboard} />
-      <DashboardContent rows={dashboard} />
+      <DashboardKpi rows={activeRows} />
+      <DashboardContent rows={activeRows} />
     </>
   );
 }

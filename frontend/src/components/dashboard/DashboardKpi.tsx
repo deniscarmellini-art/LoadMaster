@@ -1,6 +1,6 @@
+import ForkliftIcon from "@mui/icons-material/Forklift";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
-import ScheduleSendOutlinedIcon from "@mui/icons-material/ScheduleSendOutlined";
 import { Box, Card, CardContent, Stack, Typography } from "@mui/material";
 
 import type { Camion } from "../../models/Camion";
@@ -20,13 +20,13 @@ export default function DashboardKpi({ rows }: DashboardKpiProps) {
     {
       label: "In carico",
       value: rows.filter((row) => row.stato === "In carico").length,
-      icon: <LocalShippingOutlinedIcon />,
+      icon: <ForkliftIcon />,
       color: "#ffb74d",
     },
     {
       label: "Attesa spedizione",
       value: rows.filter((row) => row.stato === "Attesa ritiro").length,
-      icon: <ScheduleSendOutlinedIcon />,
+      icon: <LocalShippingOutlinedIcon />,
       color: "#81c784",
     },
   ];
@@ -35,34 +35,56 @@ export default function DashboardKpi({ rows }: DashboardKpiProps) {
     <Box
       sx={{
         display: "grid",
-        gap: 2,
-        gridTemplateColumns: { xs: "1fr", md: "repeat(3, minmax(0, 1fr))" },
+        gap: { xs: 1, md: 2 },
+        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
         mb: 2,
       }}
     >
       {metrics.map((metric) => (
-        <Card key={metric.label} variant="outlined" sx={{ bgcolor: "#151c25", borderColor: "divider", height: "100%" }}>
-          <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
-            <Stack spacing={0.75} sx={{ alignItems: "center", textAlign: "center" }}>
+        <Card
+          key={metric.label}
+          variant="outlined"
+          sx={{
+            bgcolor: "#131b25",
+            borderColor: "rgba(255,255,255,0.12)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+            height: 158,
+          }}
+        >
+          <CardContent
+            sx={{ display: "flex", flexDirection: "column", height: "100%", p: 2.25, "&:last-child": { pb: 2.25 } }}
+          >
+            <Stack direction="row" sx={{ alignItems: "flex-start", justifyContent: "space-between" }}>
+              <Typography color="text.primary" sx={{ fontSize: "1rem", fontWeight: 700, pt: 0.25 }}>
+                {metric.label}
+              </Typography>
               <Box
                 sx={{
                   alignItems: "center",
-                  bgcolor: `${metric.color}18`,
-                  borderRadius: 3,
+                  bgcolor: `${metric.color}30`,
+                  border: `1px solid ${metric.color}52`,
+                  borderRadius: "50%",
+                  boxShadow: `0 6px 18px ${metric.color}20`,
                   color: metric.color,
                   display: "flex",
-                  height: 46,
+                  flex: "0 0 auto",
+                  height: 56,
                   justifyContent: "center",
-                  width: 46,
+                  width: 56,
+                  "& svg": { fontSize: 30 },
                 }}
               >
                 {metric.icon}
               </Box>
-              <Typography color="text.secondary" variant="body2">{metric.label}</Typography>
-              <Typography component="p" sx={{ fontSize: 44, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>
+            </Stack>
+            <Box sx={{ alignItems: "flex-end", display: "flex", flex: 1, justifyContent: "center" }}>
+              <Typography
+                component="p"
+                sx={{ fontSize: 64, fontWeight: 950, letterSpacing: -2, lineHeight: 0.9, textShadow: "0 3px 12px rgba(0,0,0,0.3)" }}
+              >
                 {metric.value}
               </Typography>
-            </Stack>
+            </Box>
           </CardContent>
         </Card>
       ))}

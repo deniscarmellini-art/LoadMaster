@@ -18,7 +18,7 @@ const navigation = [
   { label: "Stampa etichette", icon: <PrintOutlinedIcon /> },
   { label: "Magazzino", icon: <Inventory2OutlinedIcon /> },
   { label: "Scansione pannelli", icon: <QrCodeScannerOutlinedIcon /> },
-  { label: "Carico camion", icon: <LocalShippingOutlinedIcon />, active: true },
+  { label: "Carico camion", icon: <LocalShippingOutlinedIcon /> },
   { label: "Storico", icon: <HistoryOutlinedIcon /> },
   { label: "Impostazioni", icon: <SettingsOutlinedIcon /> },
 ];
@@ -61,8 +61,9 @@ export default function DashboardHeader({ onImported }: DashboardHeaderProps) {
           borderColor: "divider",
           borderRadius: 2.5,
           display: "flex",
-          flexWrap: "wrap",
-          gap: 0.75,
+          flexWrap: "nowrap",
+          justifyContent: "space-between",
+          gap: 0,
           mt: 1.5,
           p: 0.75,
         }}
@@ -71,13 +72,14 @@ export default function DashboardHeader({ onImported }: DashboardHeaderProps) {
           startIcon={<UploadFileOutlinedIcon />}
           variant="text"
           sx={{
-            bgcolor: "rgba(255,255,255,0.055)",
-            color: "text.primary",
-            flex: "1 1 145px",
-            minHeight: 42,
+            bgcolor: "transparent",
+            color: "text.secondary",
+            flex: "0 1 auto",
+            height: 42,
+            minWidth: 0,
             position: "relative",
             whiteSpace: "nowrap",
-            "&:hover": { bgcolor: "rgba(255,255,255,0.1)" },
+            "&:hover": { bgcolor: "rgba(255,255,255,0.08)", color: "text.primary" },
             "& div": { inset: 0, margin: 0, position: "absolute" },
             "& input": { cursor: "pointer", inset: 0, opacity: 0, position: "absolute", width: "100%" },
           }}
@@ -91,12 +93,13 @@ export default function DashboardHeader({ onImported }: DashboardHeaderProps) {
             startIcon={item.icon}
             variant="text"
             sx={{
-              bgcolor: item.active ? "primary.main" : "transparent",
-              color: item.active ? "primary.contrastText" : "text.secondary",
-              flex: "1 1 145px",
-              minHeight: 42,
+              bgcolor: "transparent",
+              color: "text.secondary",
+              flex: "0 1 auto",
+              height: 42,
+              minWidth: 0,
               whiteSpace: "nowrap",
-              "&:hover": { bgcolor: item.active ? "primary.dark" : "rgba(255,255,255,0.08)", color: "text.primary" },
+              "&:hover": { bgcolor: "rgba(255,255,255,0.08)", color: "text.primary" },
             }}
           >
             {item.label}
