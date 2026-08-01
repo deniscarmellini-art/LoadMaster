@@ -5,26 +5,28 @@ import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
-import { Avatar, Box, Button, Paper, Stack, Typography } from "@mui/material";
-
-import ImportExcel from "../ImportExcel";
-import type { Commessa } from "../../types/excel";
+import { Avatar, Box, Button, CircularProgress, Paper, Stack, Typography } from "@mui/material";
 
 interface DashboardHeaderProps {
-  onImported: (commessa: Commessa) => void;
+  isImporting: boolean;
+  onImportClick: () => void;
   onOpenLabels: () => void;
+  onOpenScanning: () => void;
+  onOpenWarehouse: () => void;
+  onOpenSettings: () => void;
+  onOpenLoading: () => void;
 }
 
 const navigation = [
   { label: "Stampa etichette", icon: <PrintOutlinedIcon />, page: "labels" },
-  { label: "Magazzino", icon: <Inventory2OutlinedIcon /> },
-  { label: "Scansione pannelli", icon: <QrCodeScannerOutlinedIcon /> },
-  { label: "Carico camion", icon: <LocalShippingOutlinedIcon /> },
+  { label: "Magazzino", icon: <Inventory2OutlinedIcon />, page: "warehouse" },
+  { label: "Scansione pannelli", icon: <QrCodeScannerOutlinedIcon />, page: "scanning" },
+  { label: "Carico camion", icon: <LocalShippingOutlinedIcon />, page: "loading" },
   { label: "Storico", icon: <HistoryOutlinedIcon /> },
-  { label: "Impostazioni", icon: <SettingsOutlinedIcon /> },
+  { label: "Impostazioni", icon: <SettingsOutlinedIcon />, page: "settings" },
 ];
 
-export default function DashboardHeader({ onImported, onOpenLabels }: DashboardHeaderProps) {
+export default function DashboardHeader({ isImporting, onImportClick, onOpenLabels, onOpenScanning, onOpenWarehouse, onOpenSettings, onOpenLoading }: DashboardHeaderProps) {
   return (
     <Paper
       component="header"
@@ -70,7 +72,9 @@ export default function DashboardHeader({ onImported, onOpenLabels }: DashboardH
         }}
       >
         <Button
-          startIcon={<UploadFileOutlinedIcon />}
+          disabled={isImporting}
+          onClick={onImportClick}
+          startIcon={isImporting ? <CircularProgress color="inherit" size={18} /> : <UploadFileOutlinedIcon />}
           variant="text"
           sx={{
             bgcolor: "transparent",
@@ -78,20 +82,16 @@ export default function DashboardHeader({ onImported, onOpenLabels }: DashboardH
             flex: "0 1 auto",
             height: 42,
             minWidth: 0,
-            position: "relative",
             whiteSpace: "nowrap",
             "&:hover": { bgcolor: "rgba(255,255,255,0.08)", color: "text.primary" },
-            "& div": { inset: 0, margin: 0, position: "absolute" },
-            "& input": { cursor: "pointer", inset: 0, opacity: 0, position: "absolute", width: "100%" },
           }}
         >
-          Importa Excel
-          <ImportExcel inputId="dashboard-excel-import" onImported={onImported} />
+          {isImporting ? "Importazione…" : "Importa Excel"}
         </Button>
         {navigation.map((item) => (
           <Button
             key={item.label}
-            onClick={item.page === "labels" ? onOpenLabels : undefined}
+            onClick={item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : undefined}
             startIcon={item.icon}
             variant="text"
             sx={{

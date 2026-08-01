@@ -24,6 +24,7 @@ export interface Pannello {
 
   // Stato Carico
   caricato: boolean;
+  spedito?: boolean;
 }
 
 export interface Commessa {

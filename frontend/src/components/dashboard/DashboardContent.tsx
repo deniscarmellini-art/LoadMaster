@@ -8,11 +8,18 @@ import DashboardGrid from "./DashboardGrid";
 interface DashboardContentProps {
   rows: Camion[];
   onDelete: (row: Camion) => void;
-  onPrintLabels: () => void;
+  onOpenScanning: (row: Camion) => void;
+  isScanningActive: (row: Camion) => boolean;
+  onStartLoad: (row: Camion) => void;
+  onPrintPackages: (row: Camion) => void;
+  hasPackages: (row: Camion) => boolean;
   onUpdate: () => void;
+  onReopen: (row: Camion) => void;
+  onContinueLoad: (row: Camion) => void;
+  onConfirmDeparture: (row: Camion) => void;
 }
 
-export default function DashboardContent({ rows, onDelete, onPrintLabels, onUpdate }: DashboardContentProps) {
+export default function DashboardContent({ rows, onDelete, onOpenScanning, isScanningActive, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture }: DashboardContentProps) {
   const [search, setSearch] = useState("");
 
   const visibleRows = useMemo(() => {
@@ -52,7 +59,7 @@ export default function DashboardContent({ rows, onDelete, onPrintLabels, onUpda
         value={search}
       />
       <Box sx={{ height: 620 }}>
-        <DashboardGrid onDelete={onDelete} onPrintLabels={onPrintLabels} onUpdate={onUpdate} rows={visibleRows} />
+        <DashboardGrid hasPackages={hasPackages} isScanningActive={isScanningActive} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} />
       </Box>
     </Paper>
   );

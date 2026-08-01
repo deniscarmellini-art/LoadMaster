@@ -1,0 +1,68 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
+import WidgetsOutlinedIcon from "@mui/icons-material/WidgetsOutlined";
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from "@mui/material";
+import ScannerInput from "../components/scanning/ScannerInput";
+import PackagePrintPreview from "../components/scanning/PackagePrintPreview";
+import type { Camion } from "../models/Camion";
+import type { Pacco, UnitaSingola } from "../models/Scanning";
+import type { Operatore } from "../models/Settings";
+import { operatorLabel } from "../models/Settings";
+import type { Commessa, Pannello } from "../types/excel";
+import { nextPackageCode, packageVolume, packageWeight, panelQrText, parseOperationalQr, parsePanelQr } from "../utils/panelQr";
+
+interface Props { target:Camion; commessa:Commessa; packages:Pacco[]; singles:UnitaSingola[]; operators:Operatore[]; draftPanels:Pannello[]; onDraftChange:React.Dispatch<React.SetStateAction<Pannello[]>>; onBack:()=>void; onCloseSingle:(unit:UnitaSingola)=>void; onClosePackage:(pack:Pacco)=>void; }
+type Mode="single"|"package"|null;
+type Result={severity:"success"|"error"|"info";message:string}|null;
+
+export default function PanelScanning({target,commessa,packages,singles,operators,draftPanels,onDraftChange,onBack,onCloseSingle,onClosePackage}:Props){
+  const panels=useMemo(()=>commessa.pannelli.filter(p=>p.numeroCamion===target.camion),[commessa.pannelli,target.camion]);
+  const [mode,setMode]=useState<Mode>(null); const [operatorId,setOperatorId]=useState(""); const [result,setResult]=useState<Result>(null);
+  const [scannerValue,setScannerValue]=useState(""); const [testPanelNumber,setTestPanelNumber]=useState(panels[0]?.numeroPannello ?? "");
+  const [single,setSingle]=useState<Pannello|null>(null); const openPanels=draftPanels; const setOpenPanels=onDraftChange; const [closedPack,setClosedPack]=useState<Pacco|null>(null); const [removePanel,setRemovePanel]=useState<Pannello|null>(null);
+  const autoPrintedPackRef=useRef<string|null>(null);
+  const available=panels.filter(p=>p.preparato).length; const createdPackages=packages.filter(p=>p.commessa===target.commessa&&p.camion===target.camion).length;
+  const selectedOperator=operators.find(operator=>operator.id===operatorId);
+  const isInPackage=(number:string)=>packages.find(pack=>pack.pannelli.some(p=>p.numeroPannello===number));
+  const closeSingle=()=>{if(!selectedOperator){setResult({severity:"error",message:"Seleziona un operatore prima di procedere."});return;}if(!single){setResult({severity:"error",message:"Nessun pannello singolo da chiudere"});return;}onCloseSingle({tipo:"SINGOLO",commessa:target.commessa,camion:target.camion,numeroPannello:single.numeroPannello,operatore:operatorLabel(selectedOperator),operatoreId:selectedOperator.id,chiusaIl:new Date().toISOString()});setResult({severity:"success",message:`Pannello ${single.numeroPannello} disponibile`});setSingle(null);};
+  const closePackage=()=>{if(!selectedOperator){setResult({severity:"error",message:"Seleziona un operatore prima di procedere."});return;}if(!openPanels.length){setResult({severity:"error",message:"Il pacco deve contenere almeno un pannello"});return;}const pack:Pacco={codice:nextPackageCode(packages),stato:"DISPONIBILE",commessa:target.commessa,cliente:target.cliente,camion:target.camion,pannelli:openPanels,numeroPezzi:openPanels.length,pesoTotale:packageWeight(openPanels),volumeTotale:packageVolume(openPanels),operatore:operatorLabel(selectedOperator),operatoreId:selectedOperator.id,chiusoIl:new Date().toISOString()};onClosePackage(pack);setClosedPack(pack);setOpenPanels([]);setMode(null);setResult({severity:"success",message:`Pacco ${pack.codice} chiuso e disponibile`});};
+  const scan=(raw:string)=>{
+    if(!selectedOperator){setResult({severity:"error",message:"Seleziona un operatore prima di procedere."});return;}
+    const operation=parseOperationalQr(raw);if(operation==="CHIUDI_SINGOLO"){closeSingle();return;}if(operation==="CHIUDI_PACCO"){closePackage();return;}
+    if(!mode){setResult({severity:"error",message:"Seleziona Registra singolo oppure Apri nuovo pacco"});return;}
+    const qr=parsePanelQr(raw);if(!qr){setResult({severity:"error",message:"QR non valido"});return;}
+    if(qr.commessa!==target.commessa){setResult({severity:"error",message:"Pannello non previsto nella commessa"});return;}
+    const panel=panels.find(p=>p.numeroPannello===qr.numeroPannello);if(!panel){setResult({severity:"error",message:"Pannello non previsto nella commessa"});return;}
+    if(qr.camion!==target.camion||panel.numeroCamion!==target.camion){setResult({severity:"error",message:"Camion non coerente con la commessa aperta"});return;}
+    if(panel.caricato){setResult({severity:"error",message:"Pannello già caricato"});return;}
+    const pack=isInPackage(panel.numeroPannello);if(pack){setResult({severity:"error",message:`Pannello già inserito nel pacco ${pack.codice}`});return;}
+    if(panel.preparato||singles.some(item=>item.commessa===target.commessa&&item.numeroPannello===panel.numeroPannello)){setResult({severity:"error",message:"Pannello già registrato"});return;}
+    if(openPanels.some(item=>item.numeroPannello===panel.numeroPannello)||single?.numeroPannello===panel.numeroPannello){setResult({severity:"error",message:"Pannello già registrato"});return;}
+    if(mode==="single"){if(single){setResult({severity:"error",message:"Chiudi il pannello singolo corrente prima di scansionarne un altro"});return;}setSingle(panel);setResult({severity:"success",message:`Pannello ${panel.numeroPannello} acquisito. Chiudi il singolo per renderlo disponibile.`});}
+    else {setOpenPanels(current=>[...current,panel]);setResult({severity:"success",message:`Pannello ${panel.numeroPannello} aggiunto al pacco aperto`});}
+  };
+  const chooseMode=(next:Mode)=>{if((single||openPanels.length)&&mode!==next){setResult({severity:"error",message:"Chiudi l’unità corrente prima di cambiare modalità"});return;}setMode(next);setClosedPack(null);setResult({severity:"info",message:next==="single"?"Modalità pannello singolo attiva":"Nuovo pacco aperto"});};
+  const submitScan=(raw:string)=>{setScannerValue("");scan(raw);};
+  const qrForPanel=(panel:Pannello, truck=panel.numeroCamion)=>panelQrText({commessa:target.commessa,cliente:target.cliente,numeroPannello:panel.numeroPannello,camion:truck,spessore:panel.spessore,lunghezza:panel.lunghezza,altezza:panel.altezza,peso:panel.peso});
+  const selectedTestPanel=panels.find(panel=>panel.numeroPannello===testPanelNumber) ?? panels[0];
+  const duplicatePanel=panels.find(panel=>panel.preparato||panel.caricato||isInPackage(panel.numeroPannello)||openPanels.some(open=>open.numeroPannello===panel.numeroPannello)||single?.numeroPannello===panel.numeroPannello);
+  useEffect(()=>{if(!closedPack||autoPrintedPackRef.current===closedPack.codice)return;autoPrintedPackRef.current=closedPack.codice;window.print();},[closedPack]);
+  return <Box>
+    <Stack direction="row" sx={{alignItems:"center",mb:2}}><Button startIcon={<ArrowBackIcon/>} onClick={onBack}>Dashboard</Button><Typography variant="h4" sx={{fontWeight:800,mx:"auto"}}>Scansione pannello finito</Typography></Stack>
+    <Box sx={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:1.5,mb:2}}>{[["Commessa",target.commessa],["Cliente",target.cliente],["Camion",target.camion],["Previsti",panels.length],["Disponibili",available],["Mancanti",panels.length-available],["Pacchi creati",createdPackages]].map(([label,value])=><Paper key={label} sx={{p:1.5,textAlign:"center"}}><Typography color="text.secondary" variant="caption">{label}</Typography><Typography variant="h6" sx={{fontWeight:800}}>{value}</Typography></Paper>)}</Box>
+    <Paper sx={{p:2,mb:2}}><Stack direction={{xs:"column",sm:"row"}} sx={{alignItems:{xs:"stretch",sm:"center"},flexWrap:"wrap",gap:1.5,mb:1.5}}><TextField select required label="Operatore" value={operatorId} onChange={e=>setOperatorId(e.target.value)} sx={{minWidth:{xs:"100%",sm:280}}}><MenuItem value="" disabled>Seleziona operatore</MenuItem>{operators.map(operator=><MenuItem key={operator.id} value={operator.id}>{operatorLabel(operator)}</MenuItem>)}</TextField><Button disabled={!selectedOperator} size="large" startIcon={<Inventory2OutlinedIcon/>} variant={mode==="single"?"contained":"outlined"} onClick={()=>chooseMode("single")}>Registra singolo</Button><Button disabled={!selectedOperator} size="large" startIcon={<WidgetsOutlinedIcon/>} variant={mode==="package"?"contained":"outlined"} onClick={()=>chooseMode("package")}>Apri nuovo pacco</Button></Stack>{!selectedOperator?<Alert severity="warning" sx={{mb:1.5}}>Seleziona un operatore prima di procedere.</Alert>:<Alert severity="success" variant="outlined" sx={{mb:1.5,py:0}}>Operatore attivo: {operatorLabel(selectedOperator)}</Alert>}<ScannerInput disabled={!selectedOperator} value={scannerValue} onValueChange={setScannerValue} onScan={submitScan}/>{result&&<Alert severity={result.severity} sx={{mt:1.5}}>{result.message}</Alert>}</Paper>
+    {import.meta.env.DEV&&<Paper variant="outlined" sx={{p:2,mb:2,borderColor:"warning.dark",bgcolor:"rgba(255,152,0,.05)"}}><Typography variant="h6" sx={{mb:1}}>Modalità test</Typography><Stack direction={{xs:"column",lg:"row"}} sx={{gap:1,alignItems:{lg:"center"},flexWrap:"wrap"}}>
+      <TextField select size="small" label="Pannello previsto" value={testPanelNumber} onChange={e=>{setTestPanelNumber(e.target.value);const panel=panels.find(item=>item.numeroPannello===e.target.value);if(panel)setScannerValue(qrForPanel(panel));}} sx={{minWidth:200}}>{panels.map(panel=><MenuItem key={panel.numeroPannello} value={panel.numeroPannello}>{panel.numeroPannello} — MP {panel.numeroMasterPanel}</MenuItem>)}</TextField>
+      <Button variant="contained" disabled={!selectedOperator||!scannerValue.trim()} onClick={()=>submitScan(scannerValue)}>Simula scansione</Button>
+      <Button variant="outlined" disabled={!selectedOperator} onClick={()=>submitScan("CHIUDI_SINGOLO")}>CHIUDI_SINGOLO</Button><Button variant="outlined" disabled={!selectedOperator} onClick={()=>submitScan("CHIUDI_PACCO")}>CHIUDI_PACCO</Button>
+      <Button color="error" variant="outlined" disabled={!selectedOperator} onClick={()=>submitScan("QR_TEST_NON_VALIDO")}>QR non valido</Button>
+      <Button color="warning" variant="outlined" disabled={!selectedOperator||!duplicatePanel} onClick={()=>duplicatePanel&&submitScan(qrForPanel(duplicatePanel))}>Pannello duplicato</Button>
+      <Button color="warning" variant="outlined" disabled={!selectedOperator||!selectedTestPanel} onClick={()=>selectedTestPanel&&submitScan(qrForPanel(selectedTestPanel,`${target.camion}-TEST`))}>Altro camion</Button>
+    </Stack>{!duplicatePanel&&<Typography color="text.secondary" variant="caption" sx={{display:"block",mt:1}}>Registra o aggiungi prima un pannello per abilitare il test duplicato.</Typography>}</Paper>}
+    {mode==="single"&&<Paper sx={{p:2,mb:2}}><Typography variant="h6">Pannello singolo</Typography>{single?<Stack direction="row" sx={{alignItems:"center",gap:3,mt:1}}><Typography variant="h4" sx={{fontWeight:900}}>{single.numeroPannello}</Typography><Typography>Master panel {single.numeroMasterPanel}</Typography><Typography>{Math.round(single.spessore)} × {Math.round(single.lunghezza)} × {Math.round(single.altezza)} mm</Typography><Typography>{single.peso.toFixed(1)} kg</Typography><Button variant="contained" sx={{ml:"auto"}} onClick={closeSingle}>Chiudi singolo</Button></Stack>:<Typography color="text.secondary" sx={{mt:1}}>Scansiona un pannello.</Typography>}</Paper>}
+    {mode==="package"&&<Paper sx={{p:2,mb:2}}><Stack direction="row" sx={{justifyContent:"space-between",alignItems:"center"}}><Box><Typography variant="h6">Pacco aperto</Typography><Typography color="text.secondary">{openPanels.length} pannelli · {packageWeight(openPanels).toFixed(1)} kg · {packageVolume(openPanels).toFixed(3)} m³</Typography></Box><Button variant="contained" disabled={!openPanels.length} onClick={closePackage}>Chiudi pacco</Button></Stack><Table size="small" sx={{mt:1}}><TableHead><TableRow>{["Pannello","Master panel","Dimensioni","Peso","Volume",""].map(h=><TableCell key={h}>{h}</TableCell>)}</TableRow></TableHead><TableBody>{openPanels.map(p=><TableRow key={p.numeroPannello}><TableCell>{p.numeroPannello}</TableCell><TableCell>{p.numeroMasterPanel}</TableCell><TableCell>{Math.round(p.spessore)} × {Math.round(p.lunghezza)} × {Math.round(p.altezza)}</TableCell><TableCell>{p.peso.toFixed(1)} kg</TableCell><TableCell>{p.volume.toFixed(3)} m³</TableCell><TableCell><IconButton color="error" onClick={()=>setRemovePanel(p)}><DeleteOutlinedIcon/></IconButton></TableCell></TableRow>)}</TableBody></Table></Paper>}
+    {closedPack&&<PackagePrintPreview pack={closedPack}/>}<Dialog open={removePanel!==null} onClose={()=>setRemovePanel(null)}><DialogTitle>Rimuovi pannello</DialogTitle><DialogContent><DialogContentText>Vuoi rimuovere il pannello {removePanel?.numeroPannello} dal pacco aperto?</DialogContentText></DialogContent><DialogActions><Button onClick={()=>setRemovePanel(null)}>Annulla</Button><Button color="error" onClick={()=>{setOpenPanels(c=>c.filter(p=>p.numeroPannello!==removePanel?.numeroPannello));setRemovePanel(null);}}>Rimuovi</Button></DialogActions></Dialog>
+  </Box>;
+}

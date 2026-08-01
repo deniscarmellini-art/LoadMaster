@@ -37,7 +37,11 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
 
             let stato: Camion["stato"];
 
-            if (caricati === previsti && previsti > 0) {
+            if (pannelli.every(p => p.spedito) && previsti > 0) {
+
+                stato = "Partita";
+
+            } else if (caricati === previsti && previsti > 0) {
 
                 stato = "Attesa spedizione";
 
