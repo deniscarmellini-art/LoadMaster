@@ -30,7 +30,7 @@ interface DashboardProps {
   activeScanningSessions: Set<string>;
   operators: Operatore[];
   onReopenLoad: (row:Camion,operator:Operatore,reason:string) => void;
-  onContinueLoad: (row:Camion) => void;
+  onContinueLoad: (loadId:string) => void;
   onStartLoad: (row:Camion) => void;
   onConfirmDeparture: (row:Camion) => void;
 }
@@ -88,7 +88,7 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
       <DashboardKpi rows={activeRows} />
       <DashboardContent
         onDelete={(row) => setDeleteOrder(row.commessa)}
-        onContinueLoad={onContinueLoad}
+        onContinueLoad={(row)=>{const load=truckLoads.find((item)=>item.commessa===row.commessa&&item.camion===row.camion&&item.stato==="IN_CARICO");if(load)onContinueLoad(load.loadId);}}
         onOpenScanning={onOpenScanning}
         isScanningActive={(row) => activeScanningSessions.has(`${row.commessa}\u0000${row.camion}`)}
         onStartLoad={onStartLoad}
