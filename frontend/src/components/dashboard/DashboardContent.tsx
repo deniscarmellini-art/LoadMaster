@@ -9,7 +9,6 @@ interface DashboardContentProps {
   rows: Camion[];
   onDelete: (row: Camion) => void;
   onOpenScanning: (row: Camion) => void;
-  isScanningActive: (row: Camion) => boolean;
   onStartLoad: (row: Camion) => void;
   onPrintPackages: (row: Camion) => void;
   hasPackages: (row: Camion) => boolean;
@@ -17,9 +16,10 @@ interface DashboardContentProps {
   onReopen: (row: Camion) => void;
   onContinueLoad: (row: Camion) => void;
   onConfirmDeparture: (row: Camion) => void;
+  onOpenHistory: (row: Camion) => void;
 }
 
-export default function DashboardContent({ rows, onDelete, onOpenScanning, isScanningActive, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture }: DashboardContentProps) {
+export default function DashboardContent({ rows, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory }: DashboardContentProps) {
   const [search, setSearch] = useState("");
 
   const visibleRows = useMemo(() => {
@@ -59,7 +59,7 @@ export default function DashboardContent({ rows, onDelete, onOpenScanning, isSca
         value={search}
       />
       <Box sx={{ height: 620 }}>
-        <DashboardGrid hasPackages={hasPackages} isScanningActive={isScanningActive} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} />
+        <DashboardGrid hasPackages={hasPackages} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} />
       </Box>
     </Paper>
   );

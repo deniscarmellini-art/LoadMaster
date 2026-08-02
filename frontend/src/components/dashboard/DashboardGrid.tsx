@@ -14,7 +14,6 @@ interface Props {
   rows: Camion[];
   onDelete: (row: Camion) => void;
   onOpenScanning: (row: Camion) => void;
-  isScanningActive: (row: Camion) => boolean;
   onStartLoad: (row: Camion) => void;
   onPrintPackages: (row: Camion) => void;
   hasPackages: (row: Camion) => boolean;
@@ -22,13 +21,21 @@ interface Props {
   onReopen: (row: Camion) => void;
   onContinueLoad: (row: Camion) => void;
   onConfirmDeparture: (row: Camion) => void;
+  onOpenHistory: (row: Camion) => void;
 }
 
-export default function DashboardGrid({ rows, onDelete, onOpenScanning, isScanningActive, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture }: Props) {
+export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory }: Props) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [menuRow, setMenuRow] = useState<Camion | null>(null);
   const closeMenu = () => { setAnchorEl(null); setMenuRow(null); };
   const runAction = (action: () => void) => { closeMenu(); action(); };
+  const runPrimaryAction = (row: Camion) => {
+    if (row.stato === "Da completare") onOpenScanning(row);
+    else if (row.stato === "Da caricare") onStartLoad(row);
+    else if (row.stato === "In carico") onContinueLoad(row);
+    else if (row.stato === "Attesa spedizione") onConfirmDeparture(row);
+    else if (row.stato === "Partita") onOpenHistory(row);
+  };
   const columns: GridColDef<Camion>[] = [
     { field: "commessa", headerName: "Commessa", minWidth: 120 },
     { field: "cliente", headerName: "Cliente", flex: 1, minWidth: 180 },
@@ -82,7 +89,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, isScanni
       sortable: false,
       filterable: false,
       renderCell: (params) => {
-        return <IconButton aria-label={`Operazioni commessa ${params.row.commessa}`} onClick={(event) => { setAnchorEl(event.currentTarget); setMenuRow(params.row); }} size="small"><MoreVertIcon /></IconButton>;
+        return <IconButton aria-label={`Operazioni commessa ${params.row.commessa}`} onClick={(event) => { event.stopPropagation(); setAnchorEl(event.currentTarget); setMenuRow(params.row); }} size="small"><MoreVertIcon /></IconButton>;
       },
     },
   ];
@@ -91,7 +98,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, isScanni
     <>
     <DataGrid
       columns={columns}
-      disableRowSelectionOnClick
+      onRowDoubleClick={(params) => runPrimaryAction(params.row)}
       initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
       pageSizeOptions={[10, 25, 50]}
       rows={rows}
@@ -103,17 +110,17 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, isScanni
         "& .MuiDataGrid-columnHeader": { px: 2 },
         "& .MuiDataGrid-columnHeaderTitle": { fontWeight: 800, letterSpacing: 0.2 },
         "& .MuiDataGrid-cell": { borderColor: "rgba(255,255,255,0.07)", px: 2 },
-        "& .MuiDataGrid-row:hover": { backgroundColor: "rgba(255,255,255,0.045)" },
+        "& .MuiDataGrid-row": { cursor: "pointer" },
+        "& .MuiDataGrid-row:hover": { backgroundColor: "rgba(255,255,255,0.07)" },
+        "& .MuiDataGrid-row.Mui-selected": { backgroundColor: "rgba(25,118,210,0.2)" },
+        "& .MuiDataGrid-row.Mui-selected:hover": { backgroundColor: "rgba(25,118,210,0.28)" },
       }}
     />
     <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>
-      {menuRow?.stato==="Da caricare"&&<MenuItem onClick={()=>menuRow&&runAction(()=>onStartLoad(menuRow))}><ListItemIcon><LaunchOutlinedIcon fontSize="small"/></ListItemIcon><ListItemText>Avvia carico</ListItemText></MenuItem>}
-      {menuRow?.stato==="In carico"&&<MenuItem onClick={()=>menuRow&&runAction(()=>onContinueLoad(menuRow))}><ListItemIcon><LaunchOutlinedIcon fontSize="small"/></ListItemIcon><ListItemText>Continua carico</ListItemText></MenuItem>}
-      {menuRow?.stato==="Da completare"&&<MenuItem onClick={()=>menuRow&&runAction(()=>onOpenScanning(menuRow))}><ListItemIcon><LaunchOutlinedIcon fontSize="small"/></ListItemIcon><ListItemText>{isScanningActive(menuRow)?"Continua scansione":"Apri scansione pannelli"}</ListItemText></MenuItem>}
+      {menuRow?.stato==="In carico"&&<MenuItem onClick={()=>{const row=menuRow;closeMenu();onContinueLoad(row);}}><ListItemIcon><LaunchOutlinedIcon fontSize="small"/></ListItemIcon><ListItemText>Continua carico</ListItemText></MenuItem>}
       <MenuItem onClick={() => runAction(onUpdate)}><ListItemIcon><EditDocumentIcon fontSize="small" /></ListItemIcon><ListItemText>Aggiorna distinta</ListItemText></MenuItem>
       {menuRow&&hasPackages(menuRow)&&<MenuItem onClick={()=>runAction(()=>onPrintPackages(menuRow))}><ListItemIcon><PrintOutlinedIcon fontSize="small"/></ListItemIcon><ListItemText>Stampa etichette pacchi</ListItemText></MenuItem>}
       {menuRow?.stato==="Attesa spedizione"&&<MenuItem onClick={()=>menuRow&&runAction(()=>onReopen(menuRow))}><ListItemIcon><EditDocumentIcon fontSize="small"/></ListItemIcon><ListItemText>Riapri carico</ListItemText></MenuItem>}
-      {menuRow?.stato==="Attesa spedizione"&&<MenuItem onClick={()=>menuRow&&runAction(()=>onConfirmDeparture(menuRow))}><ListItemIcon><LaunchOutlinedIcon fontSize="small"/></ListItemIcon><ListItemText>Conferma partenza</ListItemText></MenuItem>}
       {menuRow?.stato!=="Attesa spedizione"&&<MenuItem sx={{color:"error.main"}} onClick={()=>menuRow&&runAction(()=>onDelete(menuRow))}><ListItemIcon><DeleteOutlinedIcon color="error" fontSize="small"/></ListItemIcon><ListItemText>Elimina</ListItemText></MenuItem>}
     </Menu>
     </>

@@ -7,14 +7,15 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Dial
 import type { Pacco, UnitaSingola } from "../models/Scanning";
 import type { Commessa, Pannello } from "../types/excel";
 import PackagePrintPreview from "../components/scanning/PackagePrintPreview";
+import { buildPanelKey } from "../utils/panelIdentity";
 
 interface Props { commesse:Commessa[]; singles:UnitaSingola[]; packages:Pacco[]; drafts:Map<string,Pannello[]>; onBack:()=>void; onCancelSingle:(unit:UnitaSingola)=>void; onCancelPackage:(pack:Pacco)=>void; onRemoveDraftPanel:(key:string,panel:Pannello)=>void; }
 type Pending={kind:"single";unit:UnitaSingola;blocked:boolean}|{kind:"package";pack:Pacco;blocked:boolean}|{kind:"draft";key:string;panel:Pannello};
 const draftParts=(key:string)=>key.split("\u0000");
 export default function Warehouse({commesse,singles,packages,drafts,onBack,onCancelSingle,onCancelPackage,onRemoveDraftPanel}:Props){
   const [search,setSearch]=useState("");const [order,setOrder]=useState("");const [client,setClient]=useState("");const [truck,setTruck]=useState("");const [type,setType]=useState("all");const [pending,setPending]=useState<Pending|null>(null);const [printPack,setPrintPack]=useState<Pacco|null>(null);const [notice,setNotice]=useState<{message:string;severity:"success"|"error"}|null>(null);
-  const panelFor=(unit:UnitaSingola)=>commesse.find(c=>c.ordine===unit.commessa)?.pannelli.find(p=>p.numeroCamion===unit.camion&&p.numeroPannello===unit.numeroPannello);
   const clientFor=(unit:UnitaSingola)=>commesse.find(c=>c.ordine===unit.commessa)?.cliente??"";
+  const panelFor=(unit:UnitaSingola)=>commesse.find(c=>c.ordine===unit.commessa)?.pannelli.find(p=>buildPanelKey({commessa:unit.commessa,cliente:clientFor(unit),camion:unit.camion,numeroPannello:unit.numeroPannello})===buildPanelKey({commessa:unit.commessa,cliente:clientFor(unit),camion:p.numeroCamion,numeroPannello:p.numeroPannello}));
   const match=(values:string[],kind:"single"|"package")=>{const text=values.join(" ").toLowerCase();return(!search||text.includes(search.toLowerCase()))&&(!order||values.includes(order))&&(!client||values.includes(client))&&(!truck||values.includes(truck))&&(type==="all"||type===kind);};
   const visibleSingles=singles.filter(unit=>{const p=panelFor(unit);return p&&match([unit.commessa,clientFor(unit),unit.camion,unit.numeroPannello],"single");});
   const visiblePackages=packages.filter(pack=>match([pack.codice,pack.commessa,pack.cliente,pack.camion],"package"));

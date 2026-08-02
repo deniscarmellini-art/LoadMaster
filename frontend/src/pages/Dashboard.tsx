@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, MenuItem, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, MenuItem, TextField, Typography } from "@mui/material";
 
 import DashboardContent from "../components/dashboard/DashboardContent";
 import DashboardHeader from "../components/dashboard/DashboardHeader";
@@ -11,7 +11,7 @@ import type { Commessa } from "../types/excel";
 import type { Camion } from "../models/Camion";
 import type { CaricoCamion } from "../models/Loading";
 import type { Pacco } from "../models/Scanning";
-import type { Operatore } from "../models/Settings";
+import type { Operatore, Rimorchio, Trasportatore } from "../models/Settings";
 import { operatorLabel } from "../models/Settings";
 import PackagePrintPreview from "../components/scanning/PackagePrintPreview";
 
@@ -25,21 +25,25 @@ interface DashboardProps {
   onOpenWarehouse: () => void;
   onOpenSettings: () => void;
   onOpenLoading: () => void;
-  onOpenHistory: () => void;
+  onOpenHistory: (row?: Camion) => void;
   truckLoads: CaricoCamion[];
   packages: Pacco[];
-  activeScanningSessions: Set<string>;
   operators: Operatore[];
+  trailers: Rimorchio[];
+  carriers: Trasportatore[];
   onReopenLoad: (row:Camion,operator:Operatore,reason:string) => void;
   onContinueLoad: (loadId:string) => void;
   onStartLoad: (row:Camion) => void;
-  onConfirmDeparture: (row:Camion) => void;
+  onConfirmDeparture: (row:Camion,carrierId:string,departedAt:string) => void;
 }
 
-function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpenScanning, onOpenScanningList, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenHistory, truckLoads, packages, activeScanningSessions, operators, onReopenLoad, onContinueLoad, onStartLoad, onConfirmDeparture }: DashboardProps) {
+function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpenScanning, onOpenScanningList, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenHistory, truckLoads, packages, operators, trailers, carriers, onReopenLoad, onContinueLoad, onStartLoad, onConfirmDeparture }: DashboardProps) {
   const [deleteOrder, setDeleteOrder] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [reopenRow,setReopenRow]=useState<Camion|null>(null);const [reopenOperatorId,setReopenOperatorId]=useState("");const [reopenReason,setReopenReason]=useState("");
+  const [departureRow,setDepartureRow]=useState<Camion|null>(null);
+  const [departureCarrierId,setDepartureCarrierId]=useState("");
+  const [departureAt,setDepartureAt]=useState("");
   const [packagePrintRow,setPackagePrintRow]=useState<Camion|null>(null);
   const [selectedPackageCodes,setSelectedPackageCodes]=useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +55,9 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
     && row.stato !== "Partita"), [dashboard, truckLoads]);
   const printablePackages = useMemo(() => packagePrintRow ? packages.filter((pack) => pack.commessa === packagePrintRow.commessa && pack.camion === packagePrintRow.camion) : [], [packagePrintRow, packages]);
   const selectedPackages = printablePackages.filter((pack) => selectedPackageCodes.has(pack.codice));
+  const activeCarriers=carriers.filter(carrier=>carrier.attivo);
+  const departureLoad=departureRow?truckLoads.find(load=>load.commessa===departureRow.commessa&&load.camion===departureRow.camion&&load.stato==="ATTESA_SPEDIZIONE"):undefined;
+  const departureTrailer=trailers.find(trailer=>trailer.id===departureLoad?.rimorchioId);
   const openPackagePrint = (row:Camion) => {
     const codes = packages.filter((pack) => pack.commessa === row.commessa && pack.camion === row.camion).map((pack) => pack.codice);
     setSelectedPackageCodes(new Set(codes));
@@ -83,19 +90,19 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
 
   return (
     <>
-      <DashboardHeader isImporting={isImporting} onImportClick={openFilePicker} onOpenHistory={onOpenHistory} onOpenLabels={onOpenLabels} onOpenLoading={onOpenLoading} onOpenScanning={onOpenScanningList} onOpenSettings={onOpenSettings} onOpenWarehouse={onOpenWarehouse} />
+      <DashboardHeader isImporting={isImporting} onImportClick={openFilePicker} onOpenHistory={()=>onOpenHistory()} onOpenLabels={onOpenLabels} onOpenLoading={onOpenLoading} onOpenScanning={onOpenScanningList} onOpenSettings={onOpenSettings} onOpenWarehouse={onOpenWarehouse} />
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls" hidden onChange={handleFileChange} />
       <DashboardKpi rows={activeRows} />
       <DashboardContent
         onDelete={(row) => setDeleteOrder(row.commessa)}
         onContinueLoad={(row)=>{const load=truckLoads.find((item)=>item.commessa===row.commessa&&item.camion===row.camion&&item.stato==="IN_CARICO");if(load)onContinueLoad(load.loadId);}}
         onOpenScanning={onOpenScanning}
-        isScanningActive={(row) => activeScanningSessions.has(`${row.commessa}\u0000${row.camion}`)}
         onStartLoad={onStartLoad}
         onPrintPackages={openPackagePrint}
         hasPackages={(row) => packages.some((pack) => pack.commessa === row.commessa && pack.camion === row.camion)}
         onReopen={(row)=>{setReopenRow(row);setReopenOperatorId("");setReopenReason("");}}
-        onConfirmDeparture={onConfirmDeparture}
+        onConfirmDeparture={(row)=>{setDepartureRow(row);setDepartureCarrierId("");setDepartureAt(new Date().toISOString());}}
+        onOpenHistory={onOpenHistory}
         onUpdate={openFilePicker}
         rows={activeRows}
       />
@@ -114,6 +121,7 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
         </DialogActions>
       </Dialog>
       <Dialog open={reopenRow!==null} onClose={()=>setReopenRow(null)} fullWidth maxWidth="sm"><DialogTitle>Riapri carico</DialogTitle><DialogContent><DialogContentText sx={{mb:2}}>Riaprire il carico della commessa {reopenRow?.commessa} - Camion {reopenRow?.camion}?<br/><br/>Il carico tornerà modificabile e sarà possibile aggiungere o rimuovere unità prima della spedizione definitiva.</DialogContentText><TextField select required fullWidth label="Operatore" value={reopenOperatorId} onChange={event=>setReopenOperatorId(event.target.value)} sx={{mb:2}}><MenuItem value="" disabled>Seleziona operatore</MenuItem>{operators.map(operator=><MenuItem key={operator.id} value={operator.id}>{operatorLabel(operator)}</MenuItem>)}</TextField><TextField fullWidth multiline minRows={2} label="Motivo della riapertura (facoltativo)" value={reopenReason} onChange={event=>setReopenReason(event.target.value)}/></DialogContent><DialogActions><Button onClick={()=>setReopenRow(null)}>Annulla</Button><Button variant="contained" disabled={!reopenOperatorId} onClick={()=>{const operator=operators.find(item=>item.id===reopenOperatorId);if(reopenRow&&operator)onReopenLoad(reopenRow,operator,reopenReason);setReopenRow(null);}}>Riapri carico</Button></DialogActions></Dialog>
+      <Dialog open={departureRow!==null} onClose={()=>setDepartureRow(null)} fullWidth maxWidth="sm"><DialogTitle>Conferma partenza</DialogTitle><DialogContent><Box sx={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:2,pt:1}}><TextField label="Commessa" value={departureRow?.commessa??""} slotProps={{input:{readOnly:true}}}/><TextField label="Cliente" value={departureRow?.cliente??""} slotProps={{input:{readOnly:true}}}/><TextField label="Camion" value={departureRow?.camion??""} slotProps={{input:{readOnly:true}}}/><TextField label="Rimorchio Essepi" value={departureTrailer?`${departureTrailer.targa} — ${departureTrailer.descrizione}`:"—"} slotProps={{input:{readOnly:true}}}/><TextField select required label="Trasportatore" value={departureCarrierId} onChange={event=>setDepartureCarrierId(event.target.value)} sx={{gridColumn:"1 / -1"}}><MenuItem value="" disabled>Seleziona trasportatore</MenuItem>{activeCarriers.map(carrier=><MenuItem key={carrier.id} value={carrier.id}>{carrier.nome}</MenuItem>)}</TextField><TextField label="Data e ora partenza" value={departureAt?new Date(departureAt).toLocaleString("it-IT"):""} slotProps={{input:{readOnly:true}}} sx={{gridColumn:"1 / -1"}}/></Box>{!activeCarriers.length&&<Alert severity="warning" sx={{mt:2}}>Nessun trasportatore attivo disponibile. Configurarlo nelle Impostazioni.</Alert>}</DialogContent><DialogActions><Button onClick={()=>setDepartureRow(null)}>Annulla</Button><Button disabled={!departureCarrierId||!activeCarriers.length} variant="contained" onClick={()=>{if(departureRow&&departureCarrierId)onConfirmDeparture(departureRow,departureCarrierId,departureAt);setDepartureRow(null);}}>Conferma partenza</Button></DialogActions></Dialog>
       <Dialog fullScreen open={packagePrintRow!==null} onClose={()=>setPackagePrintRow(null)}>
         <DialogTitle>Stampa etichette pacchi — {packagePrintRow?.commessa} / {packagePrintRow?.camion}</DialogTitle>
         <DialogContent>

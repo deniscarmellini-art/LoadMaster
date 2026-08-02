@@ -12,6 +12,7 @@ import type { Operatore } from "../models/Settings";
 import { operatorLabel } from "../models/Settings";
 import type { Commessa, Pannello } from "../types/excel";
 import { nextPackageCode, packageVolume, packageWeight, panelQrText, parseOperationalQr, parsePanelQr } from "../utils/panelQr";
+import { buildPanelKey } from "../utils/panelIdentity";
 
 interface Props { target:Camion; commessa:Commessa; packages:Pacco[]; singles:UnitaSingola[]; operators:Operatore[]; draftPanels:Pannello[]; onDraftChange:React.Dispatch<React.SetStateAction<Pannello[]>>; onBack:()=>void; onCloseSingle:(unit:UnitaSingola)=>void; onClosePackage:(pack:Pacco)=>void; }
 type Mode="single"|"package"|null;
@@ -25,7 +26,8 @@ export default function PanelScanning({target,commessa,packages,singles,operator
   const autoPrintedPackRef=useRef<string|null>(null);
   const available=panels.filter(p=>p.preparato).length; const createdPackages=packages.filter(p=>p.commessa===target.commessa&&p.camion===target.camion).length;
   const selectedOperator=operators.find(operator=>operator.id===operatorId);
-  const isInPackage=(number:string)=>packages.find(pack=>pack.pannelli.some(p=>p.numeroPannello===number));
+  const panelKey=(panel:Pannello)=>buildPanelKey({commessa:target.commessa,cliente:target.cliente,camion:panel.numeroCamion,numeroPannello:panel.numeroPannello});
+  const isInPackage=(value:Pannello|string)=>{const panel=typeof value==="string"?panels.find(item=>item.numeroPannello===value):value;return panel?packages.find(pack=>pack.pannelli.some(item=>buildPanelKey({commessa:pack.commessa,cliente:pack.cliente,camion:pack.camion,numeroPannello:item.numeroPannello})===panelKey(panel))):undefined;};
   const closeSingle=()=>{if(!selectedOperator){setResult({severity:"error",message:"Seleziona un operatore prima di procedere."});return;}if(!single){setResult({severity:"error",message:"Nessun pannello singolo da chiudere"});return;}onCloseSingle({tipo:"SINGOLO",commessa:target.commessa,camion:target.camion,numeroPannello:single.numeroPannello,operatore:operatorLabel(selectedOperator),operatoreId:selectedOperator.id,chiusaIl:new Date().toISOString()});setResult({severity:"success",message:`Pannello ${single.numeroPannello} disponibile`});setSingle(null);};
   const closePackage=()=>{if(!selectedOperator){setResult({severity:"error",message:"Seleziona un operatore prima di procedere."});return;}if(!openPanels.length){setResult({severity:"error",message:"Il pacco deve contenere almeno un pannello"});return;}const pack:Pacco={codice:nextPackageCode(packages),stato:"DISPONIBILE",commessa:target.commessa,cliente:target.cliente,camion:target.camion,pannelli:openPanels,numeroPezzi:openPanels.length,pesoTotale:packageWeight(openPanels),volumeTotale:packageVolume(openPanels),operatore:operatorLabel(selectedOperator),operatoreId:selectedOperator.id,chiusoIl:new Date().toISOString()};onClosePackage(pack);setClosedPack(pack);setOpenPanels([]);setMode(null);setResult({severity:"success",message:`Pacco ${pack.codice} chiuso e disponibile`});};
   const scan=(raw:string)=>{
@@ -33,9 +35,7 @@ export default function PanelScanning({target,commessa,packages,singles,operator
     const operation=parseOperationalQr(raw);if(operation==="CHIUDI_SINGOLO"){closeSingle();return;}if(operation==="CHIUDI_PACCO"){closePackage();return;}
     if(!mode){setResult({severity:"error",message:"Seleziona Registra singolo oppure Apri nuovo pacco"});return;}
     const qr=parsePanelQr(raw);if(!qr){setResult({severity:"error",message:"QR non valido"});return;}
-    if(qr.commessa!==target.commessa){setResult({severity:"error",message:"Pannello non previsto nella commessa"});return;}
-    const panel=panels.find(p=>p.numeroPannello===qr.numeroPannello);if(!panel){setResult({severity:"error",message:"Pannello non previsto nella commessa"});return;}
-    if(qr.camion!==target.camion||panel.numeroCamion!==target.camion){setResult({severity:"error",message:"Camion non coerente con la commessa aperta"});return;}
+    const scannedKey=buildPanelKey(qr);const panel=panels.find(p=>panelKey(p)===scannedKey);if(!panel){setResult({severity:"error",message:"Pannello non previsto nella commessa"});return;}
     if(panel.caricato){setResult({severity:"error",message:"Pannello già caricato"});return;}
     const pack=isInPackage(panel.numeroPannello);if(pack){setResult({severity:"error",message:`Pannello già inserito nel pacco ${pack.codice}`});return;}
     if(panel.preparato||singles.some(item=>item.commessa===target.commessa&&item.numeroPannello===panel.numeroPannello)){setResult({severity:"error",message:"Pannello già registrato"});return;}
@@ -47,7 +47,7 @@ export default function PanelScanning({target,commessa,packages,singles,operator
   const submitScan=(raw:string)=>{setScannerValue("");scan(raw);};
   const qrForPanel=(panel:Pannello, truck=panel.numeroCamion)=>panelQrText({commessa:target.commessa,cliente:target.cliente,numeroPannello:panel.numeroPannello,camion:truck,spessore:panel.spessore,lunghezza:panel.lunghezza,altezza:panel.altezza,peso:panel.peso});
   const selectedTestPanel=panels.find(panel=>panel.numeroPannello===testPanelNumber) ?? panels[0];
-  const duplicatePanel=panels.find(panel=>panel.preparato||panel.caricato||isInPackage(panel.numeroPannello)||openPanels.some(open=>open.numeroPannello===panel.numeroPannello)||single?.numeroPannello===panel.numeroPannello);
+  const duplicatePanel=panels.find(panel=>panel.preparato||panel.caricato||isInPackage(panel)||openPanels.some(open=>panelKey(open)===panelKey(panel))||(single&&panelKey(single)===panelKey(panel)));
   useEffect(()=>{if(!closedPack||autoPrintedPackRef.current===closedPack.codice)return;autoPrintedPackRef.current=closedPack.codice;window.print();},[closedPack]);
   return <Box>
     <Stack direction="row" sx={{alignItems:"center",mb:2}}><Button startIcon={<ArrowBackIcon/>} onClick={onBack}>Dashboard</Button><Typography variant="h4" sx={{fontWeight:800,mx:"auto"}}>Scansione pannello finito</Typography></Stack>

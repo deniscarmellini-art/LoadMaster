@@ -10,16 +10,16 @@ import type { SettingsData } from "../models/Settings";
 import type { Commessa } from "../types/excel";
 import { exportHistoryCsv,loadPackages,loadSingles,matchesHistory,shipmentDate,shippedLoads,timeline,totals } from "../services/historyService";
 
-interface Props{loads:CaricoCamion[];packages:Pacco[];singles:UnitaSingola[];commesse:Commessa[];settings:SettingsData;onBack:()=>void}
+interface Props{loads:CaricoCamion[];packages:Pacco[];singles:UnitaSingola[];commesse:Commessa[];settings:SettingsData;initialLoadId?:string;onBack:()=>void}
 const Stack=(props:React.ComponentProps<typeof MuiStack>&Record<string,unknown>)=><MuiStack {...props}/>;
 const Typography=(props:React.ComponentProps<typeof MuiTypography>&Record<string,unknown>)=><MuiTypography {...props}/>;
 type SortKey="date"|"commessa"|"cliente"|"camion"|"panels"|"packs"|"weight"|"volume";
 const dt=(value?:string)=>value?new Date(value).toLocaleString("it-IT"):"—";
 const eventLabels:Record<string,string>={AVVIO:"Avvio carico",SCANSIONE:"Scansione di carico",CHIUSURA:"Prima chiusura",RIAPERTURA:"Riapertura carico",UNITA_AGGIUNTA:"Unità aggiunta",UNITA_RIMOSSA:"Unità rimossa",NUOVA_CHIUSURA:"Nuova chiusura",PARTENZA:"Conferma partenza"};
 
-export default function History({loads,packages,singles,commesse,settings,onBack}:Props){
+export default function History({loads,packages,singles,commesse,settings,initialLoadId,onBack}:Props){
  const [search,setSearch]=useState(""),[from,setFrom]=useState(""),[to,setTo]=useState(""),[client,setClient]=useState(""),[carrier,setCarrier]=useState(""),[trailer,setTrailer]=useState(""),[operator,setOperator]=useState(""),[year,setYear]=useState("");
- const [sort,setSort]=useState<SortKey>("date"),[asc,setAsc]=useState(false),[detail,setDetail]=useState<CaricoCamion|null>(null),[oldestFirst,setOldestFirst]=useState(false),[printPack,setPrintPack]=useState<Pacco|null>(null),[notice,setNotice]=useState<string|null>(null);
+ const [sort,setSort]=useState<SortKey>("date"),[asc,setAsc]=useState(false),[detail,setDetail]=useState<CaricoCamion|null>(()=>loads.find(load=>load.loadId===initialLoadId&&load.stato==="SPEDITO")??null),[oldestFirst,setOldestFirst]=useState(false),[printPack,setPrintPack]=useState<Pacco|null>(null),[notice,setNotice]=useState<string|null>(null);
  const carrierName=(id?:string)=>settings.trasportatori.find(x=>x.id===id)?.nome??"—";const trailerName=(id?:string)=>{const x=settings.rimorchi.find(x=>x.id===id);return x?`${x.targa} — ${x.descrizione}`:"—";};
  const all=useMemo(()=>shippedLoads(loads),[loads]);
  const visible=useMemo(()=>all.filter(l=>{const d=shipmentDate(l).slice(0,10);return matchesHistory(l,search,packages)&&(!from||d>=from)&&(!to||d<=to)&&(!client||l.cliente===client)&&(!carrier||l.trasportatoreId===carrier)&&(!trailer||l.rimorchioId===trailer)&&(!operator||l.operatoreId===operator)&&(!year||d.startsWith(year));}).sort((a,b)=>{const ta=totals(a,packages,singles,commesse),tb=totals(b,packages,singles,commesse);const av=sort==="date"?shipmentDate(a):sort==="commessa"?a.commessa:sort==="cliente"?a.cliente:sort==="camion"?a.camion:sort==="panels"?ta.panels:sort==="packs"?ta.packs:sort==="weight"?ta.weight:ta.volume;const bv=sort==="date"?shipmentDate(b):sort==="commessa"?b.commessa:sort==="cliente"?b.cliente:sort==="camion"?b.camion:sort==="panels"?tb.panels:sort==="packs"?tb.packs:sort==="weight"?tb.weight:tb.volume;return (typeof av==="number"?av-(bv as number):String(av).localeCompare(String(bv),"it"))*(asc?1:-1);}),[all,search,from,to,client,carrier,trailer,operator,year,sort,asc,packages,singles,commesse]);
