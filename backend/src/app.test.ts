@@ -216,3 +216,15 @@ test("la sessione di carico persiste, si riapre e viene spedita",async()=>{
     await second.close();const third=await buildApp(persistentConfig);const persisted=await third.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(persisted.json<{stato:string}>().stato,"SPEDITO");await third.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
+
+test("aggiornare la distinta può scaricare e rimuovere un pannello già caricato",async()=>{
+  const app=await buildApp(config);const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;const trailer=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("R1","C1"),importedPanel("R2","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  for(const panel of load.pannelli)await app.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
+  const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",trailerId:trailer.id}})).json<{id:string}>();
+  await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[1]!.id,operatorId:operator.id}});
+  const update=await app.inject({method:"PUT",url:`/api/loads/${load.id}/import`,payload:importedLoad([importedPanel("R1","C1")],true)});
+  assert.equal(update.statusCode,200);assert.deepEqual(update.json<{pannelli:Array<{numeroPannello:string}>}>().pannelli.map(panel=>panel.numeroPannello),["R1"]);
+  const restored=await app.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(restored.json<{units:unknown[]}>().units.length,0);
+  await app.close();
+});

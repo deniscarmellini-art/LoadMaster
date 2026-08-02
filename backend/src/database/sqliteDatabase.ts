@@ -117,6 +117,7 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
   migratePanelScanningColumns(database);
   const eventColumns=new Set((database.prepare("PRAGMA table_info(OperationalEvents)").all() as Array<{name:string}>).map(item=>item.name));
   if(!eventColumns.has("loadingSessionId"))database.exec("ALTER TABLE OperationalEvents ADD COLUMN loadingSessionId TEXT NULL");
+  createOperationalDeleteTriggers(database);
   database.exec("CREATE INDEX IF NOT EXISTS idx_panels_package ON Panels(packageId)");
   migrateLegacyUniqueConstraints(database);
   seedSettings(database);
@@ -125,6 +126,19 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
     close: () => database.close(),
   };
 };
+
+const createOperationalDeleteTriggers=(database:DatabaseSync):void=>database.exec(`
+  CREATE TRIGGER IF NOT EXISTS trg_panels_unload_before_delete BEFORE DELETE ON Panels BEGIN
+    INSERT INTO OperationalEvents(id,loadId,loadingSessionId,panelId,type,operatorId,timestamp,note)
+      SELECT lower(hex(randomblob(16))),OLD.loadId,loadingSessionId,OLD.id,'UNIT_UNLOADED',loadedByOperatorId,datetime('now'),'Pannello rimosso durante aggiornamento distinta' FROM LoadingUnits WHERE panelId=OLD.id;
+    UPDATE LoadingSessions SET stato='IN_CARICO',completedAt=NULL,updatedAt=datetime('now') WHERE id IN(SELECT loadingSessionId FROM LoadingUnits WHERE panelId=OLD.id) AND stato<>'SPEDITO';
+    UPDATE Loads SET stato='IN_CARICO',updatedAt=datetime('now') WHERE id=OLD.loadId AND EXISTS(SELECT 1 FROM LoadingUnits WHERE panelId=OLD.id);
+    DELETE FROM LoadingUnits WHERE panelId=OLD.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS trg_panels_package_totals_after_delete AFTER DELETE ON Panels WHEN OLD.packageId IS NOT NULL BEGIN
+    UPDATE Packages SET numeroPannelli=(SELECT COUNT(*) FROM Panels WHERE packageId=OLD.packageId),pesoTotale=COALESCE((SELECT SUM(peso) FROM Panels WHERE packageId=OLD.packageId),0),volumeTotale=COALESCE((SELECT SUM(volume) FROM Panels WHERE packageId=OLD.packageId),0),updatedAt=datetime('now') WHERE id=OLD.packageId;
+  END;
+`);
 
 const migratePanelScanningColumns = (database: DatabaseSync): void => {
   const columns = new Set((database.prepare("PRAGMA table_info(Panels)").all() as Array<{name:string}>).map(item=>item.name));
