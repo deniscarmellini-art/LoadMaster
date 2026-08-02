@@ -23,6 +23,9 @@ export interface Pacco {
   numeroPezzi: number;
   pesoTotale: number;
   volumeTotale: number;
+  lunghezzaPacco?: number;
+  larghezzaPacco?: number;
+  altezzaPacco?: number;
   operatore: string;
   operatoreId?: string;
   chiusoIl: string;

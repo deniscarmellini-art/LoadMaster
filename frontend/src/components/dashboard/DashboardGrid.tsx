@@ -9,6 +9,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import type { GridColDef } from "@mui/x-data-grid";
 
 import type { Camion } from "../../models/Camion";
+import { dashboardColors } from "../../theme/theme";
 
 interface Props {
   rows: Camion[];
@@ -77,7 +78,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
             label={stato}
             size="small"
             variant="outlined"
-            sx={stato === "Da completare" ? { fontWeight: 700, height: 30, "& .MuiChip-label": { px: 1.25 } } : undefined}
+            sx={{ fontWeight: 700, height: 30, minWidth: 142, "& .MuiChip-label": { px: 1.25, textAlign: "center", width: "100%" } }}
           />
         );
       },
@@ -89,7 +90,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       sortable: false,
       filterable: false,
       renderCell: (params) => {
-        return <IconButton aria-label={`Operazioni commessa ${params.row.commessa}`} onClick={(event) => { event.stopPropagation(); setAnchorEl(event.currentTarget); setMenuRow(params.row); }} size="small"><MoreVertIcon /></IconButton>;
+        return <IconButton aria-label={`Operazioni commessa ${params.row.commessa}`} onClick={(event) => { event.stopPropagation(); setAnchorEl(event.currentTarget); setMenuRow(params.row); }} size="small" sx={{ borderRadius: 1.5, height: 32, width: 32, "&:hover": { bgcolor: "rgba(255,255,255,0.08)" } }}><MoreVertIcon fontSize="small" /></IconButton>;
       },
     },
   ];
@@ -101,19 +102,22 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       onRowDoubleClick={(params) => runPrimaryAction(params.row)}
       initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
       pageSizeOptions={[10, 25, 50]}
+      rowHeight={56}
       rows={rows}
       sx={{
-        bgcolor: "#10161e",
+        bgcolor: dashboardColors.grid,
         border: 0,
         borderRadius: 2,
-        "& .MuiDataGrid-columnHeaders": { backgroundColor: "#1d2733", borderBottom: "1px solid rgba(255,255,255,0.14)" },
-        "& .MuiDataGrid-columnHeader": { px: 2 },
+        "& .MuiDataGrid-columnHeaders": { backgroundColor: dashboardColors.header, borderBottom: "1px solid rgba(255,255,255,0.16)" },
+        "& .MuiDataGrid-columnHeader": { px: 2, transition: "background-color 180ms ease, color 180ms ease" },
         "& .MuiDataGrid-columnHeaderTitle": { fontWeight: 800, letterSpacing: 0.2 },
-        "& .MuiDataGrid-cell": { borderColor: "rgba(255,255,255,0.07)", px: 2 },
-        "& .MuiDataGrid-row": { cursor: "pointer" },
-        "& .MuiDataGrid-row:hover": { backgroundColor: "rgba(255,255,255,0.07)" },
-        "& .MuiDataGrid-row.Mui-selected": { backgroundColor: "rgba(25,118,210,0.2)" },
-        "& .MuiDataGrid-row.Mui-selected:hover": { backgroundColor: "rgba(25,118,210,0.28)" },
+        "& .MuiDataGrid-cell": { borderColor: "rgba(255,255,255,0.07)", px: 2, transition: "background-color 180ms ease, color 180ms ease" },
+        "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within": { outline: "none" },
+        "& .MuiDataGrid-row": { cursor: "pointer", transition: "background-color 180ms ease, color 180ms ease" },
+        "& .MuiDataGrid-row:nth-of-type(even)": { backgroundColor: dashboardColors.stripe },
+        "& .MuiDataGrid-row:hover": { backgroundColor: dashboardColors.rowHover },
+        "& .MuiDataGrid-row.Mui-selected": { backgroundColor: dashboardColors.rowSelected },
+        "& .MuiDataGrid-row.Mui-selected:hover": { backgroundColor: dashboardColors.rowSelectedHover },
       }}
     />
     <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>

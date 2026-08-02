@@ -4,6 +4,7 @@ import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined
 import { Box, Card, CardContent, Stack, Typography } from "@mui/material";
 
 import type { Camion } from "../../models/Camion";
+import { dashboardColors } from "../../theme/theme";
 
 interface DashboardKpiProps {
   rows: Camion[];
@@ -14,18 +15,24 @@ export default function DashboardKpi({ rows }: DashboardKpiProps) {
     {
       label: "Da caricare",
       value: rows.filter((row) => row.stato === "Da caricare").length,
+      detail: rows.filter((row) => row.stato === "Da caricare").reduce((total, row) => total + row.pronti, 0),
+      detailLabel: "pannelli pronti",
       icon: <Inventory2OutlinedIcon />,
       color: "#64b5f6",
     },
     {
       label: "In carico",
       value: rows.filter((row) => row.stato === "In carico").length,
+      detail: rows.filter((row) => row.stato === "In carico").reduce((total, row) => total + row.peso, 0),
+      detailLabel: "kg attualmente in carico",
       icon: <ForkliftIcon />,
       color: "#ffb74d",
     },
     {
       label: "Attesa spedizione",
       value: rows.filter((row) => row.stato === "Attesa spedizione").length,
+      detail: rows.filter((row) => row.stato === "Attesa spedizione").length,
+      detailLabel: "carichi in attesa",
       icon: <LocalShippingOutlinedIcon />,
       color: "#81c784",
     },
@@ -45,14 +52,14 @@ export default function DashboardKpi({ rows }: DashboardKpiProps) {
           key={metric.label}
           variant="outlined"
           sx={{
-            bgcolor: "#131b25",
-            borderColor: "rgba(255,255,255,0.12)",
+            bgcolor: dashboardColors.card,
+            borderColor: dashboardColors.divider,
             boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-            height: 158,
+            height: 130,
           }}
         >
           <CardContent
-            sx={{ display: "flex", flexDirection: "column", height: "100%", p: 2.25, "&:last-child": { pb: 2.25 } }}
+            sx={{ display: "flex", flexDirection: "column", height: "100%", p: 1.75, "&:last-child": { pb: 1.5 } }}
           >
             <Stack direction="row" sx={{ alignItems: "flex-start", justifyContent: "space-between" }}>
               <Typography color="text.primary" sx={{ fontSize: "1rem", fontWeight: 700, pt: 0.25 }}>
@@ -68,21 +75,24 @@ export default function DashboardKpi({ rows }: DashboardKpiProps) {
                   color: metric.color,
                   display: "flex",
                   flex: "0 0 auto",
-                  height: 56,
+                  height: 48,
                   justifyContent: "center",
-                  width: 56,
-                  "& svg": { fontSize: 30 },
+                  width: 48,
+                  "& svg": { fontSize: 29 },
                 }}
               >
                 {metric.icon}
               </Box>
             </Stack>
-            <Box sx={{ alignItems: "flex-end", display: "flex", flex: 1, justifyContent: "center" }}>
+            <Box sx={{ alignItems: "center", display: "flex", flex: 1, flexDirection: "column", justifyContent: "flex-end" }}>
               <Typography
                 component="p"
-                sx={{ fontSize: 64, fontWeight: 950, letterSpacing: -2, lineHeight: 0.9, textShadow: "0 3px 12px rgba(0,0,0,0.3)" }}
+                sx={{ fontSize: 48, fontWeight: 950, letterSpacing: -1.5, lineHeight: 0.86, textShadow: "0 3px 12px rgba(0,0,0,0.3)" }}
               >
                 {metric.value}
+              </Typography>
+              <Typography sx={{ color: dashboardColors.subtleText, fontSize: "0.72rem", lineHeight: 1.2, mt: 0.75 }}>
+                {metric.detail > 0 ? `${metric.detail.toLocaleString("it-IT", { maximumFractionDigits: 1 })} ${metric.detailLabel}` : "—"}
               </Typography>
             </Box>
           </CardContent>

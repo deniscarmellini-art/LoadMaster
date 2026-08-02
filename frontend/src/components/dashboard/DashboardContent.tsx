@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
-import { Box, InputAdornment, Paper, TextField, Typography } from "@mui/material";
+import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
+import { Box, InputAdornment, Paper, Stack, TextField, Typography } from "@mui/material";
 
 import type { Camion } from "../../models/Camion";
 import DashboardGrid from "./DashboardGrid";
+import { dashboardColors } from "../../theme/theme";
 
 interface DashboardContentProps {
   rows: Camion[];
@@ -36,10 +38,13 @@ export default function DashboardContent({ rows, onDelete, onOpenScanning, onSta
   }, [rows, search]);
 
   return (
-    <Paper elevation={0} sx={{ bgcolor: "#121922", border: 1, borderColor: "divider", p: 1.5 }}>
-      <Typography component="h2" sx={{ fontWeight: 800, mb: 1.5, letterSpacing: 0.6 }} variant="h6">
-        CARICHI ATTIVI
-      </Typography>
+    <Paper elevation={0} sx={{ bgcolor: dashboardColors.surface, border: 1, borderColor: "divider", p: 1.5 }}>
+      <Stack direction="row" sx={{ alignItems: "center", gap: 1, mb: 1.5 }}>
+        <LocalShippingOutlinedIcon color="primary" sx={{ fontSize: 21 }} />
+        <Typography component="h2" sx={{ fontSize: "1.08rem", fontWeight: 700, letterSpacing: 0.3 }}>
+          Carichi attivi
+        </Typography>
+      </Stack>
       <TextField
         fullWidth
         onChange={(event) => setSearch(event.target.value)}
@@ -47,14 +52,14 @@ export default function DashboardContent({ rows, onDelete, onOpenScanning, onSta
         slotProps={{
           input: {
             startAdornment: (
-              <InputAdornment position="start"><SearchOutlinedIcon /></InputAdornment>
+              <InputAdornment position="start" sx={{ mr: 0.75 }}><SearchOutlinedIcon /></InputAdornment>
             ),
           },
         }}
         sx={{
-          mb: 1.5,
-          "& .MuiOutlinedInput-root": { bgcolor: "rgba(0,0,0,0.2)", minHeight: 52 },
-          "& .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.12)" },
+          mb: 2.5,
+          "& .MuiOutlinedInput-root": { bgcolor: dashboardColors.search, minHeight: 52 },
+          "& .MuiOutlinedInput-notchedOutline": { borderColor: dashboardColors.divider },
         }}
         value={search}
       />
