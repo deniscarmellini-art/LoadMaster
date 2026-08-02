@@ -192,3 +192,27 @@ test("scansioni, singoli e pacchi persistono con associazioni e dimensioni",asyn
     await restarted.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
+
+test("la sessione di carico persiste, si riapre e viene spedita",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"loading-persistence-"));const persistentConfig={...config,databasePath:join(directory,"loading.sqlite")};
+  try{
+    const first=await buildApp(persistentConfig);
+    const operator=(await first.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const trailer=(await first.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
+    const carrier=(await first.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+    const load=(await first.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("L1","C1"),importedPanel("L2","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+    for(const panel of load.pannelli)await first.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
+    const session=(await first.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",trailerId:trailer.id}})).json<{id:string;startedAt:string}>();
+    const partial=await first.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});
+    assert.equal(partial.json<{stato:string;units:unknown[]}>().stato,"IN_CARICO");assert.equal(partial.json<{units:unknown[]}>().units.length,1);
+    await first.close();
+    const second=await buildApp(persistentConfig);const restored=await second.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});const restoredData=restored.json<{operatorId:string;trailerId:string;startedAt:string;units:unknown[]}>();
+    assert.equal(restoredData.operatorId,operator.id);assert.equal(restoredData.trailerId,trailer.id);assert.equal(restoredData.startedAt,session.startedAt);assert.equal(restoredData.units.length,1);
+    await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[1]!.id,operatorId:operator.id}});
+    assert.equal((await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/complete`})).json<{stato:string}>().stato,"ATTESA_SPEDIZIONE");
+    assert.equal((await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/reopen`,payload:{note:"Nuova unità"}})).json<{stato:string}>().stato,"IN_CARICO");
+    await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/complete`});
+    const shipped=await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}});assert.equal(shipped.json<{stato:string;carrierId:string}>().stato,"SPEDITO");assert.equal(shipped.json<{carrierId:string}>().carrierId,carrier.id);
+    await second.close();const third=await buildApp(persistentConfig);const persisted=await third.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(persisted.json<{stato:string}>().stato,"SPEDITO");await third.close();
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});

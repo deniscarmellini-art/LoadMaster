@@ -61,7 +61,7 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
 
             dashboard.push({
 
-                id: key,
+                id: pannelli[0]?.loadId ?? key,
 
                 commessa: commessa.ordine,
 

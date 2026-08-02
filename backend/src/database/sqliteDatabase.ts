@@ -93,9 +93,30 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       packageId TEXT NULL REFERENCES Packages(id) ON DELETE SET NULL,
       type TEXT NOT NULL, operatorId TEXT NULL, timestamp TEXT NOT NULL, note TEXT NULL
     );
+    CREATE TABLE IF NOT EXISTS LoadingSessions (
+      id TEXT PRIMARY KEY, loadId TEXT NOT NULL REFERENCES Loads(id) ON DELETE CASCADE,
+      stato TEXT NOT NULL CHECK(stato IN ('DA_CARICARE','IN_CARICO','ATTESA_SPEDIZIONE','SPEDITO')),
+      operatorId TEXT NOT NULL, destinationType TEXT NOT NULL CHECK(destinationType IN ('RIMORCHIO_ESSEPI','TRASPORTATORE')),
+      trailerId TEXT NULL, carrierId TEXT NULL, startedAt TEXT NOT NULL, completedAt TEXT NULL,
+      reopenedAt TEXT NULL, shippedAt TEXT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+      CHECK((destinationType='RIMORCHIO_ESSEPI' AND trailerId IS NOT NULL) OR (destinationType='TRASPORTATORE' AND carrierId IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_loading_session_load ON LoadingSessions(loadId);
+    CREATE TABLE IF NOT EXISTS LoadingUnits (
+      id TEXT PRIMARY KEY, loadingSessionId TEXT NOT NULL REFERENCES LoadingSessions(id) ON DELETE CASCADE,
+      unitType TEXT NOT NULL CHECK(unitType IN ('PANEL','PACKAGE')), panelId TEXT NULL REFERENCES Panels(id),
+      packageId TEXT NULL REFERENCES Packages(id), loadedAt TEXT NOT NULL, loadedByOperatorId TEXT NOT NULL,
+      removedAt TEXT NULL, removedByOperatorId TEXT NULL, active INTEGER NOT NULL DEFAULT 1 CHECK(active IN(0,1)),
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+      CHECK((unitType='PANEL' AND panelId IS NOT NULL AND packageId IS NULL) OR (unitType='PACKAGE' AND packageId IS NOT NULL AND panelId IS NULL))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_loading_active_panel ON LoadingUnits(loadingSessionId,panelId) WHERE active=1 AND panelId IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_loading_active_package ON LoadingUnits(loadingSessionId,packageId) WHERE active=1 AND packageId IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_events_load ON OperationalEvents(loadId,timestamp);
   `);
   migratePanelScanningColumns(database);
+  const eventColumns=new Set((database.prepare("PRAGMA table_info(OperationalEvents)").all() as Array<{name:string}>).map(item=>item.name));
+  if(!eventColumns.has("loadingSessionId"))database.exec("ALTER TABLE OperationalEvents ADD COLUMN loadingSessionId TEXT NULL");
   database.exec("CREATE INDEX IF NOT EXISTS idx_panels_package ON Panels(packageId)");
   migrateLegacyUniqueConstraints(database);
   seedSettings(database);
