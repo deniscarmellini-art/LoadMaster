@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button, CssBaseline, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, ThemeProvider } from "@mui/material";
 
 import MainLayout from "./layouts/MainLayout";
@@ -14,7 +14,8 @@ import theme from "./theme/theme";
 import { creaDashboard } from "./services/dashboardService";
 import type { Camion } from "./models/Camion";
 import type { Pacco, UnitaSingola } from "./models/Scanning";
-import { getSettingsLoadErrors, loadSettings, saveSettings } from "./services/settingsStore";
+import { loadSettings } from "./services/settingsStore";
+import { loadSettingsFromApi, saveSettingsToApi } from "./services/settingsApi";
 import type { CaricoCamion } from "./models/Loading";
 import type { Operatore } from "./models/Settings";
 import { operatorLabel } from "./models/Settings";
@@ -56,6 +57,7 @@ export default function App() {
   const [packageDrafts, setPackageDrafts] = useState<Map<string,Pannello[]>>(new Map());
   const [activeScanningSessions, setActiveScanningSessions] = useState<Set<string>>(new Set());
   const [settings, setSettings] = useState(loadSettings);
+  const [settingsLoadErrors,setSettingsLoadErrors]=useState<string[]>([]);
   const [truckLoads, setTruckLoads] = useState<CaricoCamion[]>([]);
   const [resumeLoad,setResumeLoad]=useState<CaricoCamion|null>(null);
   const [loadingInstance,setLoadingInstance]=useState(0);
@@ -63,7 +65,8 @@ export default function App() {
   const [pendingImport, setPendingImport] = useState<Commessa | null>(null);
   const [blockedImport,setBlockedImport]=useState<{commessa:string;camion:string}|null>(null);
   const [confirmRemoved, setConfirmRemoved] = useState(false);
-  const changeSettings=(next:typeof settings)=>{try{saveSettings(next,settings);setSettings(next);}catch{alert("Impossibile salvare le anagrafiche nel browser.");}};
+  useEffect(()=>{let active=true;void loadSettingsFromApi(settings.listeOperative).then(value=>{if(active){setSettings(value);setSettingsLoadErrors([]);}}).catch(()=>{if(active)setSettingsLoadErrors(["Backend non raggiungibile: impossibile caricare le anagrafiche."]);});return()=>{active=false;};},[]);
+  const changeSettings=async(next:typeof settings)=>{try{const saved=await saveSettingsToApi(next,settings);setSettings(saved);setSettingsLoadErrors([]);}catch{setSettingsLoadErrors(["Impossibile salvare le anagrafiche nel database."]);alert("Impossibile salvare le anagrafiche nel database.");}};
 
   const resumeLoadingSession = useCallback((loadId:string) => {
     const existing = truckLoads.find((load) => load.loadId === loadId);
@@ -155,7 +158,7 @@ export default function App() {
         ) : page === "warehouse" ? (
           <Warehouse commesse={commesse} drafts={packageDrafts} onBack={()=>setPage("dashboard")} onCancelPackage={(pack)=>{setPackages(current=>current.filter(item=>item.codice!==pack.codice));markPanelsMissing(pack.commessa,pack.camion,pack.pannelli.map(panel=>panel.numeroPannello));}} onCancelSingle={(unit)=>{setSingles(current=>current.filter(item=>item!==unit));markPanelsMissing(unit.commessa,unit.camion,[unit.numeroPannello]);}} onRemoveDraftPanel={(key,panel)=>setPackageDrafts(current=>{const next=new Map(current);next.set(key,(next.get(key)??[]).filter(item=>item.numeroPannello!==panel.numeroPannello));return next;})} packages={packages} singles={singles} />
         ) : page === "settings" ? (
-          <Settings loadErrors={getSettingsLoadErrors()} onBack={()=>setPage("dashboard")} onChange={changeSettings} settings={settings} usedOperatorIds={new Set([...singles.map(item=>item.operatoreId),...packages.map(item=>item.operatoreId)].filter((id):id is string=>Boolean(id)))} />
+          <Settings loadErrors={settingsLoadErrors} onBack={()=>setPage("dashboard")} onChange={changeSettings} settings={settings} usedOperatorIds={new Set([...singles.map(item=>item.operatoreId),...packages.map(item=>item.operatoreId)].filter((id):id is string=>Boolean(id)))} />
         ) : page === "history" ? (
           <History commesse={commesse} initialLoadId={historyLoadId} loads={truckLoads} packages={packages} settings={settings} singles={singles} onBack={()=>{setHistoryLoadId(undefined);setPage("dashboard");}} />
         ) : page === "loading" ? (

@@ -1,0 +1,27 @@
+{
+  "name": "sistema-logistico-backend",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/app.test.js",
+    "test:health": "node scripts/check-health.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.3",
+    "typescript": "^7.0.2"
+  }
+}
