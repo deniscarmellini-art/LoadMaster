@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, CssBaseline, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, ThemeProvider } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, CssBaseline, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, ThemeProvider } from "@mui/material";
 
 import MainLayout from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard";
@@ -23,34 +23,14 @@ import { operatorLabel } from "./models/Settings";
 import type { Commessa, Pannello } from "./types/excel";
 import { buildPanelKey } from "./utils/panelIdentity";
 import { normalizeOrder, normalizeTruck } from "./utils/loadIdentity";
+import { deleteCommessaFromApi, importCommessaToApi, loadCommesseFromApi, updateCommessaInApi } from "./services/loadsApi";
 
 const panelKey = (panel: Pannello) => `${normalizeTruck(panel.numeroCamion)}\u0000${String(panel.numeroPannello).trim()}`;
 
-function mergeImportedCommessa(current: Commessa[], incoming: Commessa, removeMissing: boolean) {
-  const targetIndex = current.findIndex((item) => normalizeOrder(item.ordine) === normalizeOrder(incoming.ordine));
-  if (targetIndex < 0) return [...current, incoming];
-
-  const target = current[targetIndex];
-  const incomingTrucks = new Set(incoming.pannelli.map((panel) => normalizeTruck(panel.numeroCamion)));
-  const incomingByKey = new Map(incoming.pannelli.map((panel) => [panelKey(panel), panel]));
-  const mergedPanels = target.pannelli.flatMap((existing) => {
-    const updated = incomingByKey.get(panelKey(existing));
-    if (updated) {
-      incomingByKey.delete(panelKey(existing));
-      return [{ ...updated, preparato: existing.preparato, caricato: existing.caricato }];
-    }
-    if (removeMissing && incomingTrucks.has(normalizeTruck(existing.numeroCamion))) return [];
-    return [existing];
-  });
-
-  mergedPanels.push(...incomingByKey.values());
-  const next = [...current];
-  next[targetIndex] = { ...incoming, pannelli: mergedPanels };
-  return next;
-}
-
 export default function App() {
   const [commesse, setCommesse] = useState<Commessa[]>([]);
+  const [loadsLoading,setLoadsLoading]=useState(true);
+  const [loadsError,setLoadsError]=useState<string|null>(null);
   const [page, setPage] = useState<"dashboard" | "labels" | "scanning" | "scanning-list" | "warehouse" | "settings" | "loading" | "history">("dashboard");
   const [scanningTarget, setScanningTarget] = useState<Camion | null>(null);
   const [packages, setPackages] = useState<Pacco[]>([]);
@@ -67,6 +47,7 @@ export default function App() {
   const [blockedImport,setBlockedImport]=useState<{commessa:string;camion:string}|null>(null);
   const [confirmRemoved, setConfirmRemoved] = useState(false);
   useEffect(()=>{let active=true;void loadSettingsFromApi(settings.listeOperative).then(value=>{if(active){setSettings(value);setSettingsLoadErrors([]);}}).catch(()=>{if(active)setSettingsLoadErrors(["Backend non raggiungibile: impossibile caricare le anagrafiche."]);});return()=>{active=false;};},[]);
+  useEffect(()=>{let active=true;void loadCommesseFromApi().then(value=>{if(active){setCommesse(value);setLoadsError(null);}}).catch(()=>{if(active)setLoadsError("Backend non raggiungibile: impossibile caricare commesse e pannelli.");}).finally(()=>{if(active)setLoadsLoading(false);});return()=>{active=false;};},[]);
   const changeSettings=async(next:typeof settings):Promise<boolean>=>{const previous=settings;setSettings(next);try{const saved=await saveSettingsToApi(next,previous);setSettings(saved);setSettingsLoadErrors([]);return true;}catch(error:unknown){setSettings(previous);const message=error instanceof ApiClientError&&error.code==="RESOURCE_IN_USE"?"Il record è già utilizzato e non può essere eliminato.":"Errore durante il salvataggio.";setSettingsLoadErrors([message]);return false;}};
 
   const resumeLoadingSession = useCallback((loadId:string) => {
@@ -77,13 +58,13 @@ export default function App() {
     setPage("loading");
   }, [truckLoads]);
 
-  const handleImported = useCallback((commessa: Commessa) => {
+  const handleImported = useCallback(async(commessa: Commessa):Promise<void> => {
     const importedTrucks = new Map(commessa.pannelli.map(panel=>[normalizeTruck(panel.numeroCamion),panel.numeroCamion]));
     const shipped = truckLoads.find(load=>load.stato==="SPEDITO"&&importedTrucks.has(normalizeTruck(load.camion))&&normalizeOrder(load.commessa)===normalizeOrder(commessa.ordine));
     if(shipped){setPendingImport(null);setBlockedImport({commessa:commessa.ordine,camion:shipped.camion});return;}
     const duplicate = commesse.some(existing=>normalizeOrder(existing.ordine)===normalizeOrder(commessa.ordine)&&existing.pannelli.some(panel=>importedTrucks.has(normalizeTruck(panel.numeroCamion))))||truckLoads.some(load=>load.stato!=="SPEDITO"&&normalizeOrder(load.commessa)===normalizeOrder(commessa.ordine)&&importedTrucks.has(normalizeTruck(load.camion)));
     if (duplicate) setPendingImport(commessa);
-    else setCommesse((current) => mergeImportedCommessa(current, commessa, false));
+    else setCommesse(await importCommessaToApi(commessa));
   }, [commesse,truckLoads]);
 
   const removedPanels = pendingImport ? (() => {
@@ -95,19 +76,16 @@ export default function App() {
   })() : [];
   const removedLoadedPanels = removedPanels.filter((panel) => panel.caricato);
 
-  const updateExisting = () => {
+  const updateExisting = async() => {
     if (!pendingImport) return;
     if (removedPanels.length > 0) setConfirmRemoved(true);
     else {
-      setCommesse((current) => mergeImportedCommessa(current, pendingImport, false));
-      setPendingImport(null);
+      try{setCommesse(await updateCommessaInApi(pendingImport,false));setPendingImport(null);}catch{alert("Errore durante l'aggiornamento della distinta.");}
     }
   };
 
-  const completeUpdate = (removeMissing: boolean) => {
-    if (pendingImport) setCommesse((current) => mergeImportedCommessa(current, pendingImport, removeMissing));
-    setConfirmRemoved(false);
-    setPendingImport(null);
+  const completeUpdate = async(removeMissing: boolean) => {
+    if(!pendingImport){setConfirmRemoved(false);return;}try{setCommesse(await updateCommessaInApi(pendingImport,removeMissing));setConfirmRemoved(false);setPendingImport(null);}catch{alert("Errore durante l'aggiornamento della distinta.");}
   };
 
   const markPanelsAvailable = (order:string, truck:string, panelNumbers:string[]) => {
@@ -130,11 +108,11 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <MainLayout>
-        {page === "dashboard" ? (
+        {loadsLoading ? <Box sx={{display:"flex",justifyContent:"center",py:8}}><CircularProgress/></Box> : loadsError ? <Alert severity="error">{loadsError}</Alert> : page === "dashboard" ? (
           <Dashboard
             commesse={commesse}
             onImported={handleImported}
-            onDeleteCommessa={(ordine) => setCommesse((current) => current.filter((item) => item.ordine !== ordine))}
+            onDeleteCommessa={async(ordine) => {setCommesse(await deleteCommessaFromApi(ordine));}}
             onOpenLabels={() => setPage("labels")}
             onOpenScanning={openScanning}
             onOpenScanningList={() => setPage("scanning-list")}

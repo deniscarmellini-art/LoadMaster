@@ -122,3 +122,43 @@ test("il preflight CORS consente PATCH dal frontend Vite",async()=>{
   assert.equal(response.headers["access-control-allow-origin"],"http://localhost:5173");
   await app.close();
 });
+
+const importedPanel=(numeroPannello:string,camion:string,peso=10)=>({numeroPannello,numeroCliente:"NC",numeroMasterPanel:"MP",camion,lato1:"A",lato2:"B",tipoPannello:"X",quantita:1,spessore:100,lunghezza:1200,altezza:2400,superficie:2.88,volume:0.288,peso});
+const importedLoad=(panels:ReturnType<typeof importedPanel>[],removeMissing?:boolean)=>({commessa:"COMM-TEST",cliente:"Cliente Test",numeroCliente:"C-01",riferimentoOrdine:"RIF-01",...(removeMissing===undefined?{}:{removeMissing}),pannelli:panels});
+
+test("importa una distinta multi-camion in transazione e legge i pannelli",async()=>{
+  const app=await buildApp(config);
+  const response=await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("102","C1"),importedPanel("102","C2")])});
+  assert.equal(response.statusCode,201);
+  const loads=response.json<Array<{id:string;camion:string;pannelli:unknown[]}>>();
+  assert.equal(loads.length,2);
+  assert.equal(loads.every(load=>load.pannelli.length===1),true);
+  const panels=await app.inject({method:"GET",url:`/api/loads/${loads[0]!.id}/panels`});
+  assert.equal(panels.statusCode,200);
+  assert.equal(panels.json<unknown[]>().length,1);
+  const duplicate=await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("103","C1")])});
+  assert.equal(duplicate.statusCode,409);
+  assert.equal(duplicate.json<{error:{code:string}}>().error.code,"LOAD_ALREADY_EXISTS");
+  await app.close();
+});
+
+test("aggiorna la distinta senza duplicare pannelli e consente l'eliminazione",async()=>{
+  const app=await buildApp(config);
+  const created=await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("1","C1"),importedPanel("2","C1")])});
+  const load=created.json<Array<{id:string}>>()[0];assert.ok(load);
+  const updated=await app.inject({method:"PUT",url:`/api/loads/${load.id}/import`,payload:importedLoad([importedPanel("1","C1",99),importedPanel("1","C1",99),importedPanel("3","C1")],true)});
+  assert.equal(updated.statusCode,200);
+  const updatedPanels=updated.json<{pannelli:Array<{numeroPannello:string;peso:number}>}>().pannelli;
+  assert.deepEqual(updatedPanels.map(panel=>panel.numeroPannello).sort(),["1","3"]);
+  assert.equal(updatedPanels.find(panel=>panel.numeroPannello==="1")?.peso,99);
+  const removed=await app.inject({method:"DELETE",url:`/api/loads/${load.id}`});
+  assert.equal(removed.statusCode,204);
+  const missing=await app.inject({method:"GET",url:`/api/loads/${load.id}`});
+  assert.equal(missing.statusCode,404);
+  await app.close();
+});
+
+test("commesse e pannelli persistono dopo il riavvio backend",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"loads-persistence-"));const persistentConfig={...config,databasePath:join(directory,"operational.sqlite")};
+  try{const first=await buildApp(persistentConfig);await first.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("77","C7")])});await first.close();const second=await buildApp(persistentConfig);const loads=await second.inject({method:"GET",url:"/api/loads"});assert.equal(loads.json<Array<{pannelli:unknown[]}>>()[0]?.pannelli.length,1);await second.close();}finally{rmSync(directory,{recursive:true,force:true});}
+});

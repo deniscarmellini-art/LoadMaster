@@ -38,6 +38,40 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS Loads (
+      id TEXT PRIMARY KEY,
+      commessa TEXT NOT NULL,
+      cliente TEXT NOT NULL,
+      numeroCliente TEXT NOT NULL DEFAULT '',
+      riferimentoOrdine TEXT NOT NULL DEFAULT '',
+      camion TEXT NOT NULL,
+      stato TEXT NOT NULL DEFAULT 'DA_COMPLETARE',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_loads_active_order_truck ON Loads (commessa, camion) WHERE stato <> 'SPEDITO';
+    CREATE TABLE IF NOT EXISTS Panels (
+      id TEXT PRIMARY KEY,
+      loadId TEXT NOT NULL REFERENCES Loads(id) ON DELETE CASCADE,
+      numeroPannello TEXT NOT NULL,
+      numeroCliente TEXT NOT NULL DEFAULT '',
+      numeroMasterPanel TEXT NOT NULL DEFAULT '',
+      camion TEXT NOT NULL,
+      lato1 TEXT NOT NULL DEFAULT '',
+      lato2 TEXT NOT NULL DEFAULT '',
+      tipoPannello TEXT NOT NULL DEFAULT '',
+      quantita REAL NOT NULL DEFAULT 0,
+      spessore REAL NOT NULL DEFAULT 0,
+      lunghezza REAL NOT NULL DEFAULT 0,
+      altezza REAL NOT NULL DEFAULT 0,
+      superficie REAL NOT NULL DEFAULT 0,
+      volume REAL NOT NULL DEFAULT 0,
+      peso REAL NOT NULL DEFAULT 0,
+      stato TEXT NOT NULL DEFAULT 'DA_COMPLETARE',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      UNIQUE (loadId, numeroPannello)
+    );
   `);
   migrateLegacyUniqueConstraints(database);
   seedSettings(database);

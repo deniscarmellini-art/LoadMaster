@@ -14,6 +14,9 @@ import { CarrierService } from "./services/carrierService.js";
 import { operatorRoutes } from "./routes/operatorRoutes.js";
 import { trailerRoutes } from "./routes/trailerRoutes.js";
 import { carrierRoutes } from "./routes/carrierRoutes.js";
+import { LoadRepository } from "./repositories/loadRepository.js";
+import { LoadService } from "./services/loadService.js";
+import { loadRoutes } from "./routes/loadRoutes.js";
 
 export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const app = Fastify({
@@ -24,6 +27,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const operatorService = new OperatorService(new OperatorRepository(connection.database));
   const trailerService = new TrailerService(new TrailerRepository(connection.database));
   const carrierService = new CarrierService(new CarrierRepository(connection.database));
+  const loadService = new LoadService(new LoadRepository(connection.database));
 
   await app.register(cors, {
     origin: config.frontendOrigin,
@@ -34,6 +38,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(operatorRoutes, { prefix: "/api/operators", service: operatorService });
   await app.register(trailerRoutes, { prefix: "/api/trailers", service: trailerService });
   await app.register(carrierRoutes, { prefix: "/api/carriers", service: carrierService });
+  await app.register(loadRoutes, { prefix: "/api/loads", service: loadService });
 
   return app;
 };

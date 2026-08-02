@@ -47,6 +47,9 @@ npm run test:health
 - `GET|POST /api/operators` e `PUT|PATCH|DELETE /api/operators/:id`.
 - `GET|POST /api/trailers` e `PUT|PATCH|DELETE /api/trailers/:id`.
 - `GET|POST /api/carriers` e `PUT|PATCH|DELETE /api/carriers/:id`.
+- `GET /api/loads` e `GET /api/loads/:id`.
+- `POST /api/loads/import` e `PUT /api/loads/:id/import`.
+- `DELETE /api/loads/:id` e `GET /api/loads/:id/panels`.
 
 Le operazioni `DELETE` sono logiche: il record rimane nel database con `active = false`.
 Le operazioni `PATCH` accettano `{ "active": true|false }` e modificano soltanto lo stato del record.
@@ -55,6 +58,6 @@ Gli errori sono restituiti in un formato JSON coerente con `success: false`, cod
 
 ## Database locale
 
-Il database viene creato per impostazione predefinita in `backend/data/sistema-logistico.sqlite`. In questa fase contiene esclusivamente le tabelle `Operators`, `Trailers` e `Carriers`. Se una tabella è vuota, all'avvio vengono inseriti i dati iniziali previsti.
+Il database viene creato per impostazione predefinita in `backend/data/sistema-logistico.sqlite`. Contiene le anagrafiche e le tabelle operative `Loads` e `Panels`. Gli import Excel vengono salvati in transazione; `Panels.loadId` usa `ON DELETE CASCADE` e la coppia `loadId + numeroPannello` è univoca.
 
 SQLite è destinato esclusivamente allo sviluppo locale. Il file non deve essere aperto o condiviso direttamente tramite una cartella di rete. Tutti i client dovranno accedere ai dati esclusivamente tramite le API. La separazione tra configurazione, repository e servizi prepara una futura sostituzione con PostgreSQL o SQL Server.

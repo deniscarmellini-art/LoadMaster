@@ -17,8 +17,8 @@ import PackagePrintPreview from "../components/scanning/PackagePrintPreview";
 
 interface DashboardProps {
   commesse: Commessa[];
-  onImported: (commessa: Commessa) => void;
-  onDeleteCommessa: (ordine: string) => void;
+  onImported: (commessa: Commessa) => Promise<void>;
+  onDeleteCommessa: (ordine: string) => Promise<void>;
   onOpenLabels: () => void;
   onOpenScanning: (row: Camion) => void;
   onOpenScanningList: () => void;
@@ -65,10 +65,9 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
   };
   const deletePanels = commesse.filter((item) => item.ordine === deleteOrder).flatMap((item) => item.pannelli);
   const hasProductionData = deletePanels.some((panel) => panel.preparato || panel.caricato);
-  const confirmDelete = () => {
+  const confirmDelete = async() => {
     if (!deleteOrder || hasProductionData) return;
-    onDeleteCommessa(deleteOrder);
-    setDeleteOrder(null);
+    try{await onDeleteCommessa(deleteOrder);setDeleteOrder(null);}catch{alert("Errore durante l'eliminazione della commessa.");}
   };
   const openFilePicker = () => {
     if (!isImporting) fileInputRef.current?.click();
@@ -78,7 +77,7 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
     if (!file) return;
     setIsImporting(true);
     try {
-      onImported(await importaExcel(file));
+      await onImported(await importaExcel(file));
     } catch (error) {
       console.error("Errore durante l'importazione del file Excel", error);
       alert("Errore durante l'importazione del file.");

@@ -1,3 +1,4 @@
+node_modules/
 backend/.env
 backend/data/*.db
 backend/data/*.db-*
@@ -5,4 +6,3 @@ backend/data/*.sqlite
 backend/data/*.sqlite-*
 backend/dist/
 backend/node_modules/
-
