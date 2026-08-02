@@ -27,6 +27,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
 
   await app.register(cors, {
     origin: config.frontendOrigin,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
   registerErrorHandlers(app);
   await app.register(systemRoutes, { prefix: "/api", config });

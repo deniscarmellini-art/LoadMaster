@@ -17,11 +17,11 @@ export const loadSettingsFromApi=async(listeOperative:SettingsData["listeOperati
   return{operatori:operators.map(fromOperator),rimorchi:trailers.map(fromTrailer),trasportatori:carriers.map(fromCarrier),listeOperative};
 };
 
-const syncRegistry=async<T extends {id:string},A>(current:T[],next:T[],path:string,toApi:(item:T,index:number)=>A):Promise<void>=>{
+const syncRegistry=async<T extends {id:string;attivo:boolean},A>(current:T[],next:T[],path:string,toApi:(item:T,index:number)=>A):Promise<void>=>{
   const currentById=new Map(current.map(item=>[item.id,item]));
   const nextIds=new Set(next.map(item=>item.id));
   await Promise.all(current.filter(item=>!nextIds.has(item.id)).map(item=>apiRequest(`${path}/${encodeURIComponent(item.id)}`,{method:"DELETE"})));
-  await Promise.all(next.map((item,index)=>{const previous=currentById.get(item.id);const payload=body(toApi(item,index));return previous?(JSON.stringify(previous)===JSON.stringify(item)?Promise.resolve():apiRequest(`${path}/${encodeURIComponent(item.id)}`,{method:"PUT",body:payload})):apiRequest(path,{method:"POST",body:payload});}));
+  await Promise.all(next.map((item,index)=>{const previous=currentById.get(item.id);if(!previous)return apiRequest(path,{method:"POST",body:body(toApi(item,index))});if(JSON.stringify(previous)===JSON.stringify(item))return Promise.resolve();const {attivo:previousActive,...previousData}=previous;const {attivo:nextActive,...nextData}=item;const onlyActiveChanged=JSON.stringify(previousData)===JSON.stringify(nextData)&&previousActive!==nextActive;return onlyActiveChanged?apiRequest(`${path}/${encodeURIComponent(item.id)}`,{method:"PATCH",body:body({active:item.attivo})}):apiRequest(`${path}/${encodeURIComponent(item.id)}`,{method:"PUT",body:body(toApi(item,index))});}));
 };
 
 export const saveSettingsToApi=async(next:SettingsData,previous:SettingsData):Promise<SettingsData>=>{

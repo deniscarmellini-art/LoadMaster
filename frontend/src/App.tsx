@@ -16,6 +16,7 @@ import type { Camion } from "./models/Camion";
 import type { Pacco, UnitaSingola } from "./models/Scanning";
 import { loadSettings } from "./services/settingsStore";
 import { loadSettingsFromApi, saveSettingsToApi } from "./services/settingsApi";
+import { ApiClientError } from "./services/apiClient";
 import type { CaricoCamion } from "./models/Loading";
 import type { Operatore } from "./models/Settings";
 import { operatorLabel } from "./models/Settings";
@@ -66,7 +67,7 @@ export default function App() {
   const [blockedImport,setBlockedImport]=useState<{commessa:string;camion:string}|null>(null);
   const [confirmRemoved, setConfirmRemoved] = useState(false);
   useEffect(()=>{let active=true;void loadSettingsFromApi(settings.listeOperative).then(value=>{if(active){setSettings(value);setSettingsLoadErrors([]);}}).catch(()=>{if(active)setSettingsLoadErrors(["Backend non raggiungibile: impossibile caricare le anagrafiche."]);});return()=>{active=false;};},[]);
-  const changeSettings=async(next:typeof settings)=>{try{const saved=await saveSettingsToApi(next,settings);setSettings(saved);setSettingsLoadErrors([]);}catch{setSettingsLoadErrors(["Impossibile salvare le anagrafiche nel database."]);alert("Impossibile salvare le anagrafiche nel database.");}};
+  const changeSettings=async(next:typeof settings):Promise<boolean>=>{const previous=settings;setSettings(next);try{const saved=await saveSettingsToApi(next,previous);setSettings(saved);setSettingsLoadErrors([]);return true;}catch(error:unknown){setSettings(previous);const message=error instanceof ApiClientError&&error.code==="RESOURCE_IN_USE"?"Il record è già utilizzato e non può essere eliminato.":"Errore durante il salvataggio.";setSettingsLoadErrors([message]);return false;}};
 
   const resumeLoadingSession = useCallback((loadId:string) => {
     const existing = truckLoads.find((load) => load.loadId === loadId);

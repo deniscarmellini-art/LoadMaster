@@ -44,11 +44,12 @@ npm run test:health
 
 - `GET /api/health`: stato, nome, versione e timestamp del servizio.
 - `GET /api/info`: versione e informazioni non sensibili sull'ambiente di esecuzione.
-- `GET|POST /api/operators` e `PUT|DELETE /api/operators/:id`.
-- `GET|POST /api/trailers` e `PUT|DELETE /api/trailers/:id`.
-- `GET|POST /api/carriers` e `PUT|DELETE /api/carriers/:id`.
+- `GET|POST /api/operators` e `PUT|PATCH|DELETE /api/operators/:id`.
+- `GET|POST /api/trailers` e `PUT|PATCH|DELETE /api/trailers/:id`.
+- `GET|POST /api/carriers` e `PUT|PATCH|DELETE /api/carriers/:id`.
 
 Le operazioni `DELETE` sono logiche: il record rimane nel database con `active = false`.
+Le operazioni `PATCH` accettano `{ "active": true|false }` e modificano soltanto lo stato del record.
 
 Gli errori sono restituiti in un formato JSON coerente con `success: false`, codice e messaggio.
 
