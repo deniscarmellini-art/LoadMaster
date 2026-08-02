@@ -24,6 +24,7 @@ import type { Commessa, Pannello } from "./types/excel";
 import { buildPanelKey } from "./utils/panelIdentity";
 import { normalizeOrder, normalizeTruck } from "./utils/loadIdentity";
 import { deleteCommessaFromApi, importCommessaToApi, loadCommesseFromApi, updateCommessaInApi } from "./services/loadsApi";
+import { cancelPackageApi, cancelPanelApi, loadScanningSnapshot, removePanelFromPackage } from "./services/scanningApi";
 
 const panelKey = (panel: Pannello) => `${normalizeTruck(panel.numeroCamion)}\u0000${String(panel.numeroPannello).trim()}`;
 
@@ -36,6 +37,7 @@ export default function App() {
   const [packages, setPackages] = useState<Pacco[]>([]);
   const [singles, setSingles] = useState<UnitaSingola[]>([]);
   const [packageDrafts, setPackageDrafts] = useState<Map<string,Pannello[]>>(new Map());
+  const [packageDraftIds, setPackageDraftIds] = useState<Map<string,string>>(new Map());
   const [activeScanningSessions, setActiveScanningSessions] = useState<Set<string>>(new Set());
   const [settings, setSettings] = useState(loadSettings);
   const [settingsLoadErrors,setSettingsLoadErrors]=useState<string[]>([]);
@@ -48,6 +50,8 @@ export default function App() {
   const [confirmRemoved, setConfirmRemoved] = useState(false);
   useEffect(()=>{let active=true;void loadSettingsFromApi(settings.listeOperative).then(value=>{if(active){setSettings(value);setSettingsLoadErrors([]);}}).catch(()=>{if(active)setSettingsLoadErrors(["Backend non raggiungibile: impossibile caricare le anagrafiche."]);});return()=>{active=false;};},[]);
   useEffect(()=>{let active=true;void loadCommesseFromApi().then(value=>{if(active){setCommesse(value);setLoadsError(null);}}).catch(()=>{if(active)setLoadsError("Backend non raggiungibile: impossibile caricare commesse e pannelli.");}).finally(()=>{if(active)setLoadsLoading(false);});return()=>{active=false;};},[]);
+  const refreshScanningData=useCallback(async()=>{const operatorName=(id:string)=>{const value=settings.operatori.find(item=>item.id===id);return value?operatorLabel(value):id;};const [loads,snapshot]=await Promise.all([loadCommesseFromApi(),loadScanningSnapshot(operatorName)]);setCommesse(loads);setSingles(snapshot.singles);setPackages(snapshot.packages);setPackageDrafts(snapshot.drafts);setPackageDraftIds(snapshot.draftIds);},[settings.operatori]);
+  useEffect(()=>{void refreshScanningData().catch(()=>undefined);},[refreshScanningData]);
   const changeSettings=async(next:typeof settings):Promise<boolean>=>{const previous=settings;setSettings(next);try{const saved=await saveSettingsToApi(next,previous);setSettings(saved);setSettingsLoadErrors([]);return true;}catch(error:unknown){setSettings(previous);const message=error instanceof ApiClientError&&error.code==="RESOURCE_IN_USE"?"Il record è già utilizzato e non può essere eliminato.":"Errore durante il salvataggio.";setSettingsLoadErrors([message]);return false;}};
 
   const resumeLoadingSession = useCallback((loadId:string) => {
@@ -88,22 +92,12 @@ export default function App() {
     if(!pendingImport){setConfirmRemoved(false);return;}try{setCommesse(await updateCommessaInApi(pendingImport,removeMissing));setConfirmRemoved(false);setPendingImport(null);}catch{alert("Errore durante l'aggiornamento della distinta.");}
   };
 
-  const markPanelsAvailable = (order:string, truck:string, panelNumbers:string[]) => {
-    const numbers = new Set(panelNumbers);
-    setCommesse((current) => current.map((item) => item.ordine !== order ? item : {
-      ...item,
-      pannelli: item.pannelli.map((panel) => panel.numeroCamion === truck && numbers.has(panel.numeroPannello) ? { ...panel, preparato:true } : panel),
-    }));
-  };
-
   const scanKey = (order:string,truck:string) => `${order}\u0000${truck}`;
   const openScanning = (target:Camion) => { setScanningTarget(target); setActiveScanningSessions(current=>new Set(current).add(scanKey(target.commessa,target.camion))); setPage("scanning"); };
   const scanningCommessa = scanningTarget ? commesse.find((item) => item.ordine === scanningTarget.commessa) : undefined;
   const setDraftForTarget:React.Dispatch<React.SetStateAction<Pannello[]>> = (action) => {
     if(!scanningTarget)return;const key=scanKey(scanningTarget.commessa,scanningTarget.camion);setPackageDrafts(current=>{const next=new Map(current);const old=next.get(key)??[];next.set(key,typeof action==="function"?action(old):action);return next;});
   };
-  const markPanelsMissing=(order:string,truck:string,numbers:string[])=>{const set=new Set(numbers);setCommesse(current=>current.map(item=>item.ordine!==order?item:{...item,pannelli:item.pannelli.map(panel=>panel.numeroCamion===truck&&set.has(panel.numeroPannello)?{...panel,preparato:false}:panel)}));};
-
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -135,7 +129,7 @@ export default function App() {
         ) : page === "scanning-list" ? (
           <ActiveLoads activeSessions={activeScanningSessions} onBack={()=>setPage("dashboard")} onOpen={openScanning} packages={packages} rows={creaDashboard(commesse)} />
         ) : page === "warehouse" ? (
-          <Warehouse commesse={commesse} drafts={packageDrafts} onBack={()=>setPage("dashboard")} onCancelPackage={(pack)=>{setPackages(current=>current.filter(item=>item.codice!==pack.codice));markPanelsMissing(pack.commessa,pack.camion,pack.pannelli.map(panel=>panel.numeroPannello));}} onCancelSingle={(unit)=>{setSingles(current=>current.filter(item=>item!==unit));markPanelsMissing(unit.commessa,unit.camion,[unit.numeroPannello]);}} onRemoveDraftPanel={(key,panel)=>setPackageDrafts(current=>{const next=new Map(current);next.set(key,(next.get(key)??[]).filter(item=>item.numeroPannello!==panel.numeroPannello));return next;})} packages={packages} singles={singles} />
+          <Warehouse commesse={commesse} drafts={packageDrafts} onBack={()=>setPage("dashboard")} onCancelPackage={(pack)=>{if(pack.id)void cancelPackageApi(pack.id,pack.operatoreId).then(refreshScanningData);}} onCancelSingle={(unit)=>{const panel=commesse.find(item=>item.ordine===unit.commessa)?.pannelli.find(item=>item.numeroCamion===unit.camion&&item.numeroPannello===unit.numeroPannello);if(panel?.backendId)void cancelPanelApi(panel.backendId,unit.operatoreId).then(refreshScanningData);}} onRemoveDraftPanel={(key,panel)=>{const id=packageDraftIds.get(key);if(id&&panel.backendId)void removePanelFromPackage(id,panel.backendId,panel.scannedByOperatorId??"").then(refreshScanningData);}} packages={packages} singles={singles} />
         ) : page === "settings" ? (
           <Settings loadErrors={settingsLoadErrors} onBack={()=>setPage("dashboard")} onChange={changeSettings} settings={settings} usedOperatorIds={new Set([...singles.map(item=>item.operatoreId),...packages.map(item=>item.operatoreId)].filter((id):id is string=>Boolean(id)))} />
         ) : page === "history" ? (
@@ -146,10 +140,12 @@ export default function App() {
           <PanelScanning
             commessa={scanningCommessa}
             draftPanels={packageDrafts.get(scanKey(scanningTarget.commessa,scanningTarget.camion))??[]}
+            draftId={packageDraftIds.get(scanKey(scanningTarget.commessa,scanningTarget.camion))}
             onDraftChange={setDraftForTarget}
+            onDataChanged={refreshScanningData}
             onBack={() => { setScanningTarget(null); setPage("dashboard"); }}
-            onClosePackage={(pack) => { setPackages((current) => [...current,pack]); setPackageDrafts(current=>{const next=new Map(current);next.delete(scanKey(pack.commessa,pack.camion));return next;}); markPanelsAvailable(pack.commessa,pack.camion,pack.pannelli.map((panel)=>panel.numeroPannello)); }}
-            onCloseSingle={(unit) => { setSingles((current) => [...current,unit]); markPanelsAvailable(unit.commessa,unit.camion,[unit.numeroPannello]); }}
+            onClosePackage={() => undefined}
+            onCloseSingle={() => undefined}
             packages={packages}
             operators={settings.operatori.filter(operator=>operator.attivo)}
             singles={singles.filter(unit=>commesse.find(item=>item.ordine===unit.commessa)?.pannelli.some(panel=>buildPanelKey({commessa:unit.commessa,cliente:scanningTarget.cliente,camion:unit.camion,numeroPannello:unit.numeroPannello})===buildPanelKey({commessa:scanningTarget.commessa,cliente:scanningTarget.cliente,camion:panel.numeroCamion,numeroPannello:panel.numeroPannello})))}

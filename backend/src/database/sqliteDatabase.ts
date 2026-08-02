@@ -67,18 +67,50 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       superficie REAL NOT NULL DEFAULT 0,
       volume REAL NOT NULL DEFAULT 0,
       peso REAL NOT NULL DEFAULT 0,
-      stato TEXT NOT NULL DEFAULT 'DA_COMPLETARE',
+      stato TEXT NOT NULL DEFAULT 'MANCANTE',
+      packageId TEXT NULL,
+      scannedAt TEXT NULL,
+      scannedByOperatorId TEXT NULL,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       UNIQUE (loadId, numeroPannello)
     );
+    CREATE TABLE IF NOT EXISTS Packages (
+      id TEXT PRIMARY KEY,
+      codicePacco TEXT NOT NULL UNIQUE,
+      loadId TEXT NOT NULL REFERENCES Loads(id) ON DELETE CASCADE,
+      commessa TEXT NOT NULL, cliente TEXT NOT NULL, camion TEXT NOT NULL,
+      stato TEXT NOT NULL CHECK (stato IN ('APERTO','DISPONIBILE','CARICATO','SPEDITO')),
+      numeroPannelli INTEGER NOT NULL DEFAULT 0,
+      pesoTotale REAL NOT NULL DEFAULT 0, volumeTotale REAL NOT NULL DEFAULT 0,
+      lunghezzaPacco REAL NULL, larghezzaPacco REAL NULL, altezzaPacco REAL NULL,
+      operatoreId TEXT NOT NULL, openedAt TEXT NOT NULL, closedAt TEXT NULL,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS OperationalEvents (
+      id TEXT PRIMARY KEY, loadId TEXT NOT NULL REFERENCES Loads(id) ON DELETE CASCADE,
+      panelId TEXT NULL REFERENCES Panels(id) ON DELETE SET NULL,
+      packageId TEXT NULL REFERENCES Packages(id) ON DELETE SET NULL,
+      type TEXT NOT NULL, operatorId TEXT NULL, timestamp TEXT NOT NULL, note TEXT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_load ON OperationalEvents(loadId,timestamp);
   `);
+  migratePanelScanningColumns(database);
+  database.exec("CREATE INDEX IF NOT EXISTS idx_panels_package ON Panels(packageId)");
   migrateLegacyUniqueConstraints(database);
   seedSettings(database);
   return {
     database,
     close: () => database.close(),
   };
+};
+
+const migratePanelScanningColumns = (database: DatabaseSync): void => {
+  const columns = new Set((database.prepare("PRAGMA table_info(Panels)").all() as Array<{name:string}>).map(item=>item.name));
+  if(!columns.has("packageId")) database.exec("ALTER TABLE Panels ADD COLUMN packageId TEXT NULL");
+  if(!columns.has("scannedAt")) database.exec("ALTER TABLE Panels ADD COLUMN scannedAt TEXT NULL");
+  if(!columns.has("scannedByOperatorId")) database.exec("ALTER TABLE Panels ADD COLUMN scannedByOperatorId TEXT NULL");
+  database.exec("UPDATE Panels SET stato='MANCANTE' WHERE stato='DA_COMPLETARE'");
 };
 
 const migrateLegacyUniqueConstraints = (database: DatabaseSync): void => {

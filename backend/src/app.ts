@@ -17,6 +17,9 @@ import { carrierRoutes } from "./routes/carrierRoutes.js";
 import { LoadRepository } from "./repositories/loadRepository.js";
 import { LoadService } from "./services/loadService.js";
 import { loadRoutes } from "./routes/loadRoutes.js";
+import { ScanningRepository } from "./repositories/scanningRepository.js";
+import { ScanningService } from "./services/scanningService.js";
+import { scanningRoutes } from "./routes/scanningRoutes.js";
 
 export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const app = Fastify({
@@ -28,6 +31,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const trailerService = new TrailerService(new TrailerRepository(connection.database));
   const carrierService = new CarrierService(new CarrierRepository(connection.database));
   const loadService = new LoadService(new LoadRepository(connection.database));
+  const scanningService = new ScanningService(new ScanningRepository(connection.database));
 
   await app.register(cors, {
     origin: config.frontendOrigin,
@@ -39,6 +43,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(trailerRoutes, { prefix: "/api/trailers", service: trailerService });
   await app.register(carrierRoutes, { prefix: "/api/carriers", service: carrierService });
   await app.register(loadRoutes, { prefix: "/api/loads", service: loadService });
+  await app.register(scanningRoutes, { prefix: "/api", service: scanningService });
 
   return app;
 };

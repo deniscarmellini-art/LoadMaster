@@ -1,4 +1,9 @@
 export interface Pannello {
+  backendId?: string;
+  loadId?: string;
+  packageId?: string;
+  scannedAt?: string;
+  scannedByOperatorId?: string;
   numeroPannello: string;
   numeroCliente: string;
   numeroMasterPanel: string;

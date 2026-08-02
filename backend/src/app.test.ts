@@ -162,3 +162,33 @@ test("commesse e pannelli persistono dopo il riavvio backend",async()=>{
   const directory=mkdtempSync(join(tmpdir(),"loads-persistence-"));const persistentConfig={...config,databasePath:join(directory,"operational.sqlite")};
   try{const first=await buildApp(persistentConfig);await first.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("77","C7")])});await first.close();const second=await buildApp(persistentConfig);const loads=await second.inject({method:"GET",url:"/api/loads"});assert.equal(loads.json<Array<{pannelli:unknown[]}>>()[0]?.pannelli.length,1);await second.close();}finally{rmSync(directory,{recursive:true,force:true});}
 });
+
+test("scansioni, singoli e pacchi persistono con associazioni e dimensioni",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"scanning-persistence-"));const persistentConfig={...config,databasePath:join(directory,"scanning.sqlite")};
+  try{
+    const first=await buildApp(persistentConfig);
+    const operator=(await first.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const created=(await first.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("S1","C1"),importedPanel("P1","C1"),importedPanel("P2","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+    const [single,panel1,panel2]=created.pannelli;
+    assert.equal((await first.inject({method:"PATCH",url:`/api/panels/${single!.id}/scan`,payload:{operatorId:operator.id}})).statusCode,200);
+    assert.equal((await first.inject({method:"PATCH",url:`/api/panels/${single!.id}/close-single`,payload:{operatorId:operator.id}})).json<{stato:string}>().stato,"DISPONIBILE");
+    const opened=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:created.id,operatorId:operator.id}})).json<{id:string;stato:string}>();
+    assert.equal(opened.stato,"APERTO");
+    await first.inject({method:"PATCH",url:`/api/panels/${panel1!.id}/scan`,payload:{operatorId:operator.id}});
+    await first.inject({method:"POST",url:`/api/packages/${opened.id}/panels`,payload:{panelId:panel1!.id,operatorId:operator.id}});
+    await first.inject({method:"PATCH",url:`/api/panels/${panel2!.id}/scan`,payload:{operatorId:operator.id}});
+    const twoPanels=await first.inject({method:"POST",url:`/api/packages/${opened.id}/panels`,payload:{panelId:panel2!.id,operatorId:operator.id}});
+    assert.equal(twoPanels.json<{numeroPannelli:number}>().numeroPannelli,2);
+    const removed=await first.inject({method:"DELETE",url:`/api/packages/${opened.id}/panels/${panel2!.id}`,payload:{operatorId:operator.id}});
+    assert.equal(removed.json<{numeroPannelli:number}>().numeroPannelli,1);
+    await first.inject({method:"PATCH",url:`/api/panels/${panel2!.id}/scan`,payload:{operatorId:operator.id}});
+    await first.inject({method:"POST",url:`/api/packages/${opened.id}/panels`,payload:{panelId:panel2!.id,operatorId:operator.id}});
+    const closed=await first.inject({method:"POST",url:`/api/packages/${opened.id}/close`,payload:{codicePacco:"PK-TEST-000001",operatoreId:operator.id,lunghezzaPacco:4500,larghezzaPacco:1200,altezzaPacco:600}});
+    assert.equal(closed.statusCode,200);assert.equal(closed.json<{stato:string}>().stato,"DISPONIBILE");
+    await first.close();
+    const restarted=await buildApp(persistentConfig);const warehouse=await restarted.inject({method:"GET",url:"/api/warehouse"});
+    const data=warehouse.json<{singles:unknown[];packages:Array<{codicePacco:string;numeroPannelli:number;lunghezzaPacco:number;pannelli:unknown[]}>;openPackages:unknown[]}>();
+    assert.equal(data.singles.length,1);assert.equal(data.packages[0]?.codicePacco,"PK-TEST-000001");assert.equal(data.packages[0]?.numeroPannelli,2);assert.equal(data.packages[0]?.pannelli.length,2);assert.equal(data.packages[0]?.lunghezzaPacco,4500);assert.equal(data.openPackages.length,0);
+    await restarted.close();
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});

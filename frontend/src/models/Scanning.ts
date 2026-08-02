@@ -14,6 +14,7 @@ export interface UnitaSingola {
 }
 
 export interface Pacco {
+  id?: string;
   codice: string;
   stato: StatoPacco;
   commessa: string;
@@ -29,4 +30,5 @@ export interface Pacco {
   operatore: string;
   operatoreId?: string;
   chiusoIl: string;
+  apertoIl?: string;
 }
