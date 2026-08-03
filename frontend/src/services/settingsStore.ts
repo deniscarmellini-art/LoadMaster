@@ -5,6 +5,7 @@ const listeOperative:SettingsData["listeOperative"]=[
   {chiave:"DTP",valore:"Jlenia Pedrotti",descrizione:"Direttore tecnico di produzione",attivo:true},
   {chiave:"Aut-Min",valore:"59/15-CL",descrizione:"C. TRASF. Aut-Min.",attivo:true},
   {chiave:"Codice ETA",valore:"ETA-12/0362",descrizione:"Codice ETA",attivo:true},
+  {chiave:"CPR",valore:"0809-CPR-1049",descrizione:"CPR",attivo:true},
 ];
 const object=(value:unknown):value is Record<string,unknown>=>typeof value==="object"&&value!==null;
 const strings=(value:Record<string,unknown>,keys:string[])=>keys.every(key=>typeof value[key]==="string");

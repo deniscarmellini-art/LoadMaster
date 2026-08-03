@@ -114,6 +114,28 @@ test("la disattivazione rimane persistente dopo il riavvio",async()=>{
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
+test("CPR viene inizializzato una sola volta, modificato e mantenuto dopo il riavvio",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"operational-settings-"));
+  const persistentConfig={...config,databasePath:join(directory,"settings.sqlite")};
+  try{
+    const first=await buildApp(persistentConfig);
+    const initial=await first.inject({method:"GET",url:"/api/operational-settings"});
+    assert.equal(initial.statusCode,200);
+    const cpr=initial.json<Array<{key:string;value:string}>>().filter(item=>item.key==="CPR");
+    assert.equal(cpr.length,1);
+    assert.equal(cpr[0]?.value,"0809-CPR-1049");
+    const updated=await first.inject({method:"PUT",url:"/api/operational-settings/CPR",payload:{key:"CPR",value:"0809-CPR-TEST",description:"CPR",active:true,sortOrder:3}});
+    assert.equal(updated.statusCode,200);
+    await first.close();
+    const restarted=await buildApp(persistentConfig);
+    const persisted=await restarted.inject({method:"GET",url:"/api/operational-settings"});
+    const persistedCpr=persisted.json<Array<{key:string;value:string}>>().filter(item=>item.key==="CPR");
+    assert.equal(persistedCpr.length,1);
+    assert.equal(persistedCpr[0]?.value,"0809-CPR-TEST");
+    await restarted.close();
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
 test("il preflight CORS consente PATCH dal frontend Vite",async()=>{
   const app=await buildApp(config);
   const response=await app.inject({method:"OPTIONS",url:"/api/carriers/id",headers:{origin:"http://localhost:5173","access-control-request-method":"PATCH","access-control-request-headers":"content-type"}});

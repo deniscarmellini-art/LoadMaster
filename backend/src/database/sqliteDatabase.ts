@@ -38,6 +38,15 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS OperationalSettings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS Loads (
       id TEXT PRIMARY KEY,
       commessa TEXT NOT NULL,
@@ -196,4 +205,12 @@ const seedSettings = (database: DatabaseSync): void => {
     const insert = database.prepare("INSERT INTO Carriers (id, name, active, sortOrder, createdAt, updatedAt) VALUES (?, ?, 1, ?, ?, ?)");
     ["Cristelli", "BRT", "Fercam", "Arcese"].forEach((name, index) => insert.run(crypto.randomUUID(), name, index + 1, now, now));
   }
+  const insertOperationalSetting = database.prepare("INSERT OR IGNORE INTO OperationalSettings (key, value, description, active, sortOrder, createdAt, updatedAt) VALUES (?, ?, ?, 1, ?, ?, ?)");
+  const operationalSettings: ReadonlyArray<readonly [string, string, string]> = [
+    ["DTP", "Jlenia Pedrotti", "Direttore tecnico di produzione"],
+    ["Aut-Min", "59/15-CL", "C. TRASF. Aut-Min."],
+    ["Codice ETA", "ETA-12/0362", "Codice ETA"],
+    ["CPR", "0809-CPR-1049", "CPR"],
+  ];
+  operationalSettings.forEach(([key, value, description], index) => insertOperationalSetting.run(key, value, description, index, now, now));
 };

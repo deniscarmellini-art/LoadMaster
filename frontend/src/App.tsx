@@ -49,7 +49,7 @@ export default function App() {
   const [pendingImport, setPendingImport] = useState<Commessa | null>(null);
   const [blockedImport,setBlockedImport]=useState<{commessa:string;camion:string}|null>(null);
   const [confirmRemoved, setConfirmRemoved] = useState(false);
-  useEffect(()=>{let active=true;void loadSettingsFromApi(settings.listeOperative).then(value=>{if(active){setSettings(value);setSettingsLoadErrors([]);}}).catch(()=>{if(active)setSettingsLoadErrors(["Backend non raggiungibile: impossibile caricare le anagrafiche."]);});return()=>{active=false;};},[]);
+  useEffect(()=>{let active=true;void loadSettingsFromApi().then(value=>{if(active){setSettings(value);setSettingsLoadErrors([]);}}).catch(()=>{if(active)setSettingsLoadErrors(["Backend non raggiungibile: impossibile caricare le anagrafiche."]);});return()=>{active=false;};},[]);
   useEffect(()=>{let active=true;void loadCommesseFromApi().then(value=>{if(active){setCommesse(value);setLoadsError(null);}}).catch(()=>{if(active)setLoadsError("Backend non raggiungibile: impossibile caricare commesse e pannelli.");}).finally(()=>{if(active)setLoadsLoading(false);});return()=>{active=false;};},[]);
   const refreshScanningData=useCallback(async()=>{const operatorName=(id:string)=>{const value=settings.operatori.find(item=>item.id===id);return value?operatorLabel(value):id;};const [loads,snapshot,sessions]=await Promise.all([loadCommesseFromApi(),loadScanningSnapshot(operatorName),listLoadingSessions(operatorName)]);setCommesse(loads);setSingles(snapshot.singles);setPackages(snapshot.packages);setPackageDrafts(snapshot.drafts);setPackageDraftIds(snapshot.draftIds);setTruckLoads(sessions);},[settings.operatori]);
   useEffect(()=>{void refreshScanningData().catch(()=>undefined);},[refreshScanningData]);
@@ -126,7 +126,7 @@ export default function App() {
             onConfirmDeparture={(row,carrierId)=>{const load=truckLoads.find(item=>item.commessa===row.commessa&&item.camion===row.camion&&item.stato==="ATTESA_SPEDIZIONE");if(load)void shipLoadingApi(load.loadId,carrierId).then(refreshScanningData);}}
           />
         ) : page === "labels" ? (
-          <PrintLabels commesse={commesse} onBack={() => setPage("dashboard")} />
+          <PrintLabels commesse={commesse} listeOperative={settings.listeOperative} onBack={() => setPage("dashboard")} />
         ) : page === "scanning-list" ? (
           <ActiveLoads activeSessions={activeScanningSessions} onBack={()=>setPage("dashboard")} onOpen={openScanning} packages={packages} rows={creaDashboard(commesse)} />
         ) : page === "warehouse" ? (

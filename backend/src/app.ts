@@ -23,6 +23,9 @@ import { scanningRoutes } from "./routes/scanningRoutes.js";
 import { LoadingRepository } from "./repositories/loadingRepository.js";
 import { LoadingService } from "./services/loadingService.js";
 import { loadingRoutes } from "./routes/loadingRoutes.js";
+import { OperationalSettingRepository } from "./repositories/operationalSettingRepository.js";
+import { OperationalSettingService } from "./services/operationalSettingService.js";
+import { operationalSettingRoutes } from "./routes/operationalSettingRoutes.js";
 
 export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const app = Fastify({
@@ -36,6 +39,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const loadService = new LoadService(new LoadRepository(connection.database));
   const scanningService = new ScanningService(new ScanningRepository(connection.database));
   const loadingService = new LoadingService(new LoadingRepository(connection.database));
+  const operationalSettingService = new OperationalSettingService(new OperationalSettingRepository(connection.database));
 
   await app.register(cors, {
     origin: config.frontendOrigin,
@@ -46,6 +50,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(operatorRoutes, { prefix: "/api/operators", service: operatorService });
   await app.register(trailerRoutes, { prefix: "/api/trailers", service: trailerService });
   await app.register(carrierRoutes, { prefix: "/api/carriers", service: carrierService });
+  await app.register(operationalSettingRoutes, { prefix: "/api/operational-settings", service: operationalSettingService });
   await app.register(loadRoutes, { prefix: "/api/loads", service: loadService });
   await app.register(scanningRoutes, { prefix: "/api", service: scanningService });
   await app.register(loadingRoutes, { prefix: "/api", service: loadingService });
