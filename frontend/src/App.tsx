@@ -80,6 +80,8 @@ export default function App() {
       : []);
   })() : [];
   const removedLoadedPanels = removedPanels.filter((panel) => panel.caricato);
+  const shippedLoadKeys = new Set(truckLoads.filter(load=>load.stato==="SPEDITO").map(load=>`${normalizeOrder(load.commessa)}\u0000${normalizeTruck(load.camion)}`));
+  const printableCommesse = commesse.map(commessa=>({...commessa,pannelli:commessa.pannelli.filter(panel=>!shippedLoadKeys.has(`${normalizeOrder(commessa.ordine)}\u0000${normalizeTruck(panel.numeroCamion)}`))})).filter(commessa=>commessa.pannelli.length>0);
 
   const updateExisting = async() => {
     if (!pendingImport) return;
@@ -126,7 +128,7 @@ export default function App() {
             onConfirmDeparture={(row,carrierId)=>{const load=truckLoads.find(item=>item.commessa===row.commessa&&item.camion===row.camion&&item.stato==="ATTESA_SPEDIZIONE");if(load)void shipLoadingApi(load.loadId,carrierId).then(refreshScanningData);}}
           />
         ) : page === "labels" ? (
-          <PrintLabels commesse={commesse} listeOperative={settings.listeOperative} onBack={() => setPage("dashboard")} />
+          <PrintLabels commesse={printableCommesse} listeOperative={settings.listeOperative} onBack={() => setPage("dashboard")} />
         ) : page === "scanning-list" ? (
           <ActiveLoads activeSessions={activeScanningSessions} onBack={()=>setPage("dashboard")} onOpen={openScanning} packages={packages} rows={creaDashboard(commesse)} />
         ) : page === "warehouse" ? (
