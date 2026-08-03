@@ -27,6 +27,10 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       description TEXT NOT NULL DEFAULT '',
       active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
       sortOrder INTEGER NOT NULL DEFAULT 0,
+      nextInspectionDate TEXT NULL,
+      disabled INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
+      disabledReason TEXT NULL,
+      disabledAt TEXT NULL,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -121,6 +125,13 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_loading_active_panel ON LoadingUnits(loadingSessionId,panelId) WHERE active=1 AND panelId IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_loading_active_package ON LoadingUnits(loadingSessionId,packageId) WHERE active=1 AND packageId IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS TransportAssignments (
+      id TEXT PRIMARY KEY, trailerId TEXT NOT NULL REFERENCES Trailers(id), loadId TEXT NOT NULL REFERENCES Loads(id),
+      loadingSessionId TEXT NULL REFERENCES LoadingSessions(id), stato TEXT NOT NULL CHECK(stato IN('IMPEGNATO','IN_VIAGGIO','CONCLUSO')),
+      assignedAt TEXT NOT NULL, departedAt TEXT NULL, availableFrom TEXT NULL, releasedAt TEXT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_active_trailer ON TransportAssignments(trailerId) WHERE releasedAt IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_active_load ON TransportAssignments(loadId) WHERE releasedAt IS NULL;
     CREATE INDEX IF NOT EXISTS idx_events_load ON OperationalEvents(loadId,timestamp);
   `);
   migratePanelScanningColumns(database);
@@ -129,12 +140,19 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
   createOperationalDeleteTriggers(database);
   database.exec("CREATE INDEX IF NOT EXISTS idx_panels_package ON Panels(packageId)");
   migrateLegacyUniqueConstraints(database);
+  migrateTransportColumns(database);
+  migrateTransportAssignments(database);
   seedSettings(database);
   return {
     database,
     close: () => database.close(),
   };
 };
+
+const migrateTransportColumns=(database:DatabaseSync):void=>{const columns=new Set((database.prepare("PRAGMA table_info(Trailers)").all() as Array<{name:string}>).map(item=>item.name));if(!columns.has("nextInspectionDate"))database.exec("ALTER TABLE Trailers ADD COLUMN nextInspectionDate TEXT NULL");if(!columns.has("disabled"))database.exec("ALTER TABLE Trailers ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0");if(!columns.has("disabledReason"))database.exec("ALTER TABLE Trailers ADD COLUMN disabledReason TEXT NULL");if(!columns.has("disabledAt"))database.exec("ALTER TABLE Trailers ADD COLUMN disabledAt TEXT NULL");};
+
+const addWeekdays=(iso:string,days:number):string=>{const date=new Date(iso);let added=0;while(added<days){date.setUTCDate(date.getUTCDate()+1);if(date.getUTCDay()!==0&&date.getUTCDay()!==6)added++;}return date.toISOString();};
+const migrateTransportAssignments=(database:DatabaseSync):void=>{const rows=database.prepare("SELECT id,loadId,trailerId,stato,startedAt,shippedAt FROM LoadingSessions WHERE trailerId IS NOT NULL AND stato IN('DA_CARICARE','IN_CARICO','ATTESA_SPEDIZIONE','SPEDITO') ORDER BY startedAt DESC").all() as Array<{id:string;loadId:string;trailerId:string;stato:string;startedAt:string;shippedAt:string|null}>;const now=new Date().toISOString(),insert=database.prepare("INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,stato,assignedAt,departedAt,availableFrom,releasedAt,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,NULL,?,?)");for(const row of rows){if(database.prepare("SELECT 1 FROM TransportAssignments WHERE (trailerId=? OR loadId=?) AND releasedAt IS NULL").get(row.trailerId,row.loadId))continue;const departed=row.stato==="SPEDITO"?row.shippedAt:null,available=departed?addWeekdays(departed,2):null;if(row.stato==="SPEDITO"&&(!available||available<=now))continue;insert.run(crypto.randomUUID(),row.trailerId,row.loadId,row.id,row.stato==="SPEDITO"?"IN_VIAGGIO":"IMPEGNATO",row.startedAt,departed,available,now,now);}};
 
 const createOperationalDeleteTriggers=(database:DatabaseSync):void=>database.exec(`
   CREATE TRIGGER IF NOT EXISTS trg_panels_unload_before_delete BEFORE DELETE ON Panels BEGIN

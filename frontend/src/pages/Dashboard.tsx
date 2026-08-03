@@ -25,6 +25,7 @@ interface DashboardProps {
   onOpenWarehouse: () => void;
   onOpenSettings: () => void;
   onOpenLoading: () => void;
+  onOpenTransports: () => void;
   onOpenHistory: (row?: Camion) => void;
   truckLoads: CaricoCamion[];
   packages: Pacco[];
@@ -37,7 +38,7 @@ interface DashboardProps {
   onConfirmDeparture: (row:Camion,carrierId:string,departedAt:string) => void;
 }
 
-function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpenScanning, onOpenScanningList, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenHistory, truckLoads, packages, operators, trailers, carriers, onReopenLoad, onContinueLoad, onStartLoad, onConfirmDeparture }: DashboardProps) {
+function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpenScanning, onOpenScanningList, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenTransports, onOpenHistory, truckLoads, packages, operators, trailers, carriers, onReopenLoad, onContinueLoad, onStartLoad, onConfirmDeparture }: DashboardProps) {
   const [deleteOrder, setDeleteOrder] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [reopenRow,setReopenRow]=useState<Camion|null>(null);const [reopenOperatorId,setReopenOperatorId]=useState("");const [reopenReason,setReopenReason]=useState("");
@@ -89,7 +90,7 @@ function Dashboard({ commesse, onImported, onDeleteCommessa, onOpenLabels, onOpe
 
   return (
     <>
-      <DashboardHeader isImporting={isImporting} onImportClick={openFilePicker} onOpenHistory={()=>onOpenHistory()} onOpenLabels={onOpenLabels} onOpenLoading={onOpenLoading} onOpenScanning={onOpenScanningList} onOpenSettings={onOpenSettings} onOpenWarehouse={onOpenWarehouse} />
+      <DashboardHeader isImporting={isImporting} onImportClick={openFilePicker} onOpenHistory={()=>onOpenHistory()} onOpenLabels={onOpenLabels} onOpenLoading={onOpenLoading} onOpenTransports={onOpenTransports} onOpenScanning={onOpenScanningList} onOpenSettings={onOpenSettings} onOpenWarehouse={onOpenWarehouse} />
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls" hidden onChange={handleFileChange} />
       <DashboardKpi rows={activeRows} />
       <DashboardContent

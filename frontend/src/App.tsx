@@ -10,6 +10,7 @@ import Warehouse from "./pages/Warehouse";
 import Settings from "./pages/Settings";
 import TruckLoading from "./pages/TruckLoading";
 import History from "./pages/History";
+import Transports from "./pages/Transports";
 import theme from "./theme/theme";
 import { creaDashboard } from "./services/dashboardService";
 import type { Camion } from "./models/Camion";
@@ -26,6 +27,7 @@ import { normalizeOrder, normalizeTruck } from "./utils/loadIdentity";
 import { deleteCommessaFromApi, importCommessaToApi, loadCommesseFromApi, updateCommessaInApi } from "./services/loadsApi";
 import { cancelPackageApi, cancelPanelApi, loadScanningSnapshot, removePanelFromPackage } from "./services/scanningApi";
 import { listLoadingSessions, reopenLoadingApi, shipLoadingApi } from "./services/loadingApi";
+import { listTransports, type TransportItem } from "./services/transportsApi";
 
 const panelKey = (panel: Pannello) => `${normalizeTruck(panel.numeroCamion)}\u0000${String(panel.numeroPannello).trim()}`;
 
@@ -33,7 +35,7 @@ export default function App() {
   const [commesse, setCommesse] = useState<Commessa[]>([]);
   const [loadsLoading,setLoadsLoading]=useState(true);
   const [loadsError,setLoadsError]=useState<string|null>(null);
-  const [page, setPage] = useState<"dashboard" | "labels" | "scanning" | "scanning-list" | "warehouse" | "settings" | "loading" | "history">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "labels" | "scanning" | "scanning-list" | "warehouse" | "settings" | "loading" | "transports" | "history">("dashboard");
   const [scanningTarget, setScanningTarget] = useState<Camion | null>(null);
   const [packages, setPackages] = useState<Pacco[]>([]);
   const [singles, setSingles] = useState<UnitaSingola[]>([]);
@@ -43,6 +45,7 @@ export default function App() {
   const [settings, setSettings] = useState(loadSettings);
   const [settingsLoadErrors,setSettingsLoadErrors]=useState<string[]>([]);
   const [truckLoads, setTruckLoads] = useState<CaricoCamion[]>([]);
+  const [transports,setTransports]=useState<TransportItem[]>([]);
   const [resumeLoad,setResumeLoad]=useState<CaricoCamion|null>(null);
   const [loadingInstance,setLoadingInstance]=useState(0);
   const [historyLoadId,setHistoryLoadId]=useState<string|undefined>();
@@ -51,7 +54,7 @@ export default function App() {
   const [confirmRemoved, setConfirmRemoved] = useState(false);
   useEffect(()=>{let active=true;void loadSettingsFromApi().then(value=>{if(active){setSettings(value);setSettingsLoadErrors([]);}}).catch(()=>{if(active)setSettingsLoadErrors(["Backend non raggiungibile: impossibile caricare le anagrafiche."]);});return()=>{active=false;};},[]);
   useEffect(()=>{let active=true;void loadCommesseFromApi().then(value=>{if(active){setCommesse(value);setLoadsError(null);}}).catch(()=>{if(active)setLoadsError("Backend non raggiungibile: impossibile caricare commesse e pannelli.");}).finally(()=>{if(active)setLoadsLoading(false);});return()=>{active=false;};},[]);
-  const refreshScanningData=useCallback(async()=>{const operatorName=(id:string)=>{const value=settings.operatori.find(item=>item.id===id);return value?operatorLabel(value):id;};const [loads,snapshot,sessions]=await Promise.all([loadCommesseFromApi(),loadScanningSnapshot(operatorName),listLoadingSessions(operatorName)]);setCommesse(loads);setSingles(snapshot.singles);setPackages(snapshot.packages);setPackageDrafts(snapshot.drafts);setPackageDraftIds(snapshot.draftIds);setTruckLoads(sessions);},[settings.operatori]);
+  const refreshScanningData=useCallback(async()=>{const operatorName=(id:string)=>{const value=settings.operatori.find(item=>item.id===id);return value?operatorLabel(value):id;};const [loads,snapshot,sessions,transportItems]=await Promise.all([loadCommesseFromApi(),loadScanningSnapshot(operatorName),listLoadingSessions(operatorName),listTransports()]);setCommesse(loads);setSingles(snapshot.singles);setPackages(snapshot.packages);setPackageDrafts(snapshot.drafts);setPackageDraftIds(snapshot.draftIds);setTruckLoads(sessions);setTransports(transportItems);},[settings.operatori]);
   useEffect(()=>{void refreshScanningData().catch(()=>undefined);},[refreshScanningData]);
   const changeSettings=async(next:typeof settings):Promise<boolean>=>{const previous=settings;setSettings(next);try{const saved=await saveSettingsToApi(next,previous);setSettings(saved);setSettingsLoadErrors([]);return true;}catch(error:unknown){setSettings(previous);const message=error instanceof ApiClientError&&error.code==="RESOURCE_IN_USE"?"Il record è già utilizzato e non può essere eliminato.":"Errore durante il salvataggio.";setSettingsLoadErrors([message]);return false;}};
 
@@ -116,6 +119,7 @@ export default function App() {
             onOpenWarehouse={() => setPage("warehouse")}
             onOpenSettings={() => setPage("settings")}
             onOpenLoading={() => {setResumeLoad(null);setPage("loading");}}
+            onOpenTransports={() => setPage("transports")}
             onOpenHistory={(row) => {setHistoryLoadId(row?truckLoads.find(load=>load.commessa===row.commessa&&load.camion===row.camion&&load.stato==="SPEDITO")?.loadId:undefined);setPage("history");}}
             operators={settings.operatori.filter(item=>item.attivo)}
             carriers={settings.trasportatori}
@@ -135,6 +139,8 @@ export default function App() {
           <Warehouse commesse={commesse} drafts={packageDrafts} onBack={()=>setPage("dashboard")} onCancelPackage={(pack)=>{if(pack.id)void cancelPackageApi(pack.id,pack.operatoreId).then(refreshScanningData);}} onCancelSingle={(unit)=>{const panel=commesse.find(item=>item.ordine===unit.commessa)?.pannelli.find(item=>item.numeroCamion===unit.camion&&item.numeroPannello===unit.numeroPannello);if(panel?.backendId)void cancelPanelApi(panel.backendId,unit.operatoreId).then(refreshScanningData);}} onRemoveDraftPanel={(key,panel)=>{const id=packageDraftIds.get(key);if(id&&panel.backendId)void removePanelFromPackage(id,panel.backendId,panel.scannedByOperatorId??"").then(refreshScanningData);}} packages={packages} singles={singles} />
         ) : page === "settings" ? (
           <Settings loadErrors={settingsLoadErrors} onBack={()=>setPage("dashboard")} onChange={changeSettings} settings={settings} usedOperatorIds={new Set([...singles.map(item=>item.operatoreId),...packages.map(item=>item.operatoreId)].filter((id):id is string=>Boolean(id)))} />
+        ) : page === "transports" ? (
+          <Transports items={transports} onBack={()=>setPage("dashboard")} onRefresh={async()=>setTransports(await listTransports())}/>
         ) : page === "history" ? (
           <History commesse={commesse} initialLoadId={historyLoadId} loads={truckLoads} packages={packages} settings={settings} singles={singles} onBack={()=>{setHistoryLoadId(undefined);setPage("dashboard");}} />
         ) : page === "loading" ? (

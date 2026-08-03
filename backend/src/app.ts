@@ -23,6 +23,9 @@ import { scanningRoutes } from "./routes/scanningRoutes.js";
 import { LoadingRepository } from "./repositories/loadingRepository.js";
 import { LoadingService } from "./services/loadingService.js";
 import { loadingRoutes } from "./routes/loadingRoutes.js";
+import { TransportRepository } from "./repositories/transportRepository.js";
+import { TransportService } from "./services/transportService.js";
+import { transportRoutes } from "./routes/transportRoutes.js";
 import { OperationalSettingRepository } from "./repositories/operationalSettingRepository.js";
 import { OperationalSettingService } from "./services/operationalSettingService.js";
 import { operationalSettingRoutes } from "./routes/operationalSettingRoutes.js";
@@ -36,9 +39,11 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const operatorService = new OperatorService(new OperatorRepository(connection.database));
   const trailerService = new TrailerService(new TrailerRepository(connection.database));
   const carrierService = new CarrierService(new CarrierRepository(connection.database));
-  const loadService = new LoadService(new LoadRepository(connection.database));
+  const transportRepository=new TransportRepository(connection.database);
+  const loadService = new LoadService(new LoadRepository(connection.database),transportRepository);
   const scanningService = new ScanningService(new ScanningRepository(connection.database));
-  const loadingService = new LoadingService(new LoadingRepository(connection.database));
+  const loadingService = new LoadingService(new LoadingRepository(connection.database,transportRepository),transportRepository);
+  const transportService=new TransportService(transportRepository);
   const operationalSettingService = new OperationalSettingService(new OperationalSettingRepository(connection.database));
 
   await app.register(cors, {
@@ -54,6 +59,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(loadRoutes, { prefix: "/api/loads", service: loadService });
   await app.register(scanningRoutes, { prefix: "/api", service: scanningService });
   await app.register(loadingRoutes, { prefix: "/api", service: loadingService });
+  await app.register(transportRoutes, { prefix: "/api", service: transportService });
 
   return app;
 };

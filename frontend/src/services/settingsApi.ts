@@ -3,13 +3,13 @@ import { apiRequest } from "./apiClient";
 
 interface ApiBase { id:string;active:boolean;sortOrder:number;createdAt:string;updatedAt:string }
 interface ApiOperator extends ApiBase { code:string;name:string }
-interface ApiTrailer extends ApiBase { plate:string;description:string }
+interface ApiTrailer extends ApiBase { plate:string;description:string;nextInspectionDate:string|null }
 interface ApiCarrier extends ApiBase { name:string }
 interface ApiOperationalSetting { key:string;value:string;description:string;active:boolean;sortOrder:number;createdAt:string;updatedAt:string }
 
 const splitName=(fullName:string):Pick<Operatore,"nome"|"cognome">=>{const [nome="",...rest]=fullName.trim().split(/\s+/);return{nome,cognome:rest.join(" ")};};
 const fromOperator=(item:ApiOperator):Operatore=>({id:item.id,sigla:item.code,...splitName(item.name),attivo:item.active});
-const fromTrailer=(item:ApiTrailer):Rimorchio=>({id:item.id,targa:item.plate,descrizione:item.description,note:"",attivo:item.active});
+const fromTrailer=(item:ApiTrailer):Rimorchio=>({id:item.id,targa:item.plate,descrizione:item.description,note:"",attivo:item.active,...(item.nextInspectionDate?{prossimaRevisione:item.nextInspectionDate}:{})});
 const fromCarrier=(item:ApiCarrier):Trasportatore=>({id:item.id,nome:item.name,note:"",attivo:item.active});
 const fromOperationalSetting=(item:ApiOperationalSetting):ImpostazioneOperativa=>({chiave:item.key,valore:item.value,descrizione:item.description,attivo:item.active});
 const body=(value:unknown)=>JSON.stringify(value);
@@ -36,7 +36,7 @@ const syncOperationalSettings=async(current:ImpostazioneOperativa[],next:Imposta
 export const saveSettingsToApi=async(next:SettingsData,previous:SettingsData):Promise<SettingsData>=>{
   await Promise.all([
     syncRegistry(previous.operatori,next.operatori,"/operators",(item,index)=>({id:item.id,code:item.sigla.trim(),name:`${item.nome} ${item.cognome}`.trim(),active:item.attivo,sortOrder:index})),
-    syncRegistry(previous.rimorchi,next.rimorchi,"/trailers",(item,index)=>({id:item.id,plate:item.targa.trim(),description:item.descrizione.trim(),active:item.attivo,sortOrder:index})),
+    syncRegistry(previous.rimorchi,next.rimorchi,"/trailers",(item,index)=>({id:item.id,plate:item.targa.trim(),description:item.descrizione.trim(),active:item.attivo,sortOrder:index,nextInspectionDate:item.prossimaRevisione||null})),
     syncRegistry(previous.trasportatori,next.trasportatori,"/carriers",(item,index)=>({id:item.id,name:item.nome.trim(),active:item.attivo,sortOrder:index})),
     syncOperationalSettings(previous.listeOperative,next.listeOperative),
   ]);

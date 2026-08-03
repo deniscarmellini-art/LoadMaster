@@ -3,9 +3,11 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { buildApp } from "./app.js";
 import type { AppConfig } from "./config/environment.js";
+import { addBusinessDays } from "./repositories/transportRepository.js";
 
 const config: AppConfig = {
   port: 3001,
@@ -14,6 +16,22 @@ const config: AppConfig = {
   databasePath: ":memory:",
   frontendOrigin: "http://localhost:5173",
 };
+
+test("il rientro dopo due giorni lavorativi salta il fine settimana",()=>{
+  assert.equal(addBusinessDays("2026-08-03T10:00:00.000Z",2),"2026-08-05T10:00:00.000Z");
+  assert.equal(addBusinessDays("2026-08-06T10:00:00.000Z",2),"2026-08-10T10:00:00.000Z");
+  assert.equal(addBusinessDays("2026-08-07T10:00:00.000Z",2),"2026-08-11T10:00:00.000Z");
+});
+
+test("revisione e fuori servizio dei rimorchi sono persistenti",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"transport-settings-"));const persistentConfig={...config,databasePath:join(directory,"transport.sqlite")};
+  try{const first=await buildApp(persistentConfig);const trailer=(await first.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
+    const inspection=await first.inject({method:"PATCH",url:`/api/trailers/${trailer.id}/inspection`,payload:{nextInspectionDate:"2026-09-01"}});assert.equal(inspection.statusCode,200);
+    const disabled=await first.inject({method:"POST",url:`/api/trailers/${trailer.id}/disable`,payload:{reason:"Manutenzione",notes:"Pneumatici"}});assert.equal(disabled.json<{status:string}>().status,"FUORI_SERVIZIO");await first.close();
+    const second=await buildApp(persistentConfig);const restored=(await second.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string;nextInspectionDate:string;disabledReason:string}>>().find(item=>item.id===trailer.id)!;assert.equal(restored.status,"FUORI_SERVIZIO");assert.equal(restored.nextInspectionDate,"2026-09-01");assert.match(restored.disabledReason,/Manutenzione/);
+    const enabled=await second.inject({method:"POST",url:`/api/trailers/${trailer.id}/enable`});assert.equal(enabled.json<{status:string}>().status,"DISPONIBILE");await second.close();
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
 
 test("GET /api/health restituisce lo stato del servizio", async () => {
   const app = await buildApp(config);
@@ -225,6 +243,11 @@ test("la sessione di carico persiste, si riapre e viene spedita",async()=>{
     const load=(await first.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("L1","C1"),importedPanel("L2","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
     for(const panel of load.pannelli)await first.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
     const session=(await first.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",trailerId:trailer.id}})).json<{id:string;startedAt:string}>();
+    const engaged=(await first.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string;commessa:string}>>().find(item=>item.id===trailer.id);
+    assert.equal(engaged?.status,"IMPEGNATO");assert.equal(engaged?.commessa,"COMM-TEST");
+    const secondLoad=(await first.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("L3","C2")]),commessa:"265539"}})).json<Array<{id:string}>>()[0]!;
+    const duplicateTrailer=await first.inject({method:"POST",url:`/api/loads/${secondLoad.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",trailerId:trailer.id}});
+    assert.equal(duplicateTrailer.statusCode,409);assert.equal(duplicateTrailer.json<{error:{code:string}}>().error.code,"TRAILER_NOT_AVAILABLE");
     const partial=await first.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});
     assert.equal(partial.json<{stato:string;units:unknown[]}>().stato,"IN_CARICO");assert.equal(partial.json<{units:unknown[]}>().units.length,1);
     await first.close();
@@ -235,7 +258,9 @@ test("la sessione di carico persiste, si riapre e viene spedita",async()=>{
     assert.equal((await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/reopen`,payload:{note:"Nuova unità"}})).json<{stato:string}>().stato,"IN_CARICO");
     await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/complete`});
     const shipped=await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}});assert.equal(shipped.json<{stato:string;carrierId:string}>().stato,"SPEDITO");assert.equal(shipped.json<{carrierId:string}>().carrierId,carrier.id);
-    await second.close();const third=await buildApp(persistentConfig);const persisted=await third.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(persisted.json<{stato:string}>().stato,"SPEDITO");await third.close();
+    const travelling=(await second.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string;departedAt:string;availableFrom:string}>>().find(item=>item.id===trailer.id);
+    assert.equal(travelling?.status,"IN_VIAGGIO");assert.ok(travelling?.departedAt);assert.equal(travelling?.availableFrom,addBusinessDays(travelling!.departedAt,2));
+    await second.close();const database=new DatabaseSync(persistentConfig.databasePath);database.prepare("UPDATE TransportAssignments SET availableFrom=? WHERE trailerId=? AND releasedAt IS NULL").run("2020-01-01T00:00:00.000Z",trailer.id);database.close();const third=await buildApp(persistentConfig);const persisted=await third.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(persisted.json<{stato:string}>().stato,"SPEDITO");const available=(await third.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string}>>().find(item=>item.id===trailer.id);assert.equal(available?.status,"DISPONIBILE");await third.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 

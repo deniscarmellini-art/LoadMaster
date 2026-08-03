@@ -14,13 +14,16 @@ import { operatorLabel } from "../models/Settings";
 import type { Commessa, Pannello } from "../types/excel";
 import { packageQrText, panelQrText, parsePackageQr, parsePanelQr } from "../utils/panelQr";
 import { completeLoadingApi, createLoadingSession, loadUnitApi, shipLoadingApi, unloadUnitApi, updateLoadingSession } from "../services/loadingApi";
+import { listTransports } from "../services/transportsApi";
 
 interface Unit{backendId?:string;tipo:TipoUnitaCarico;codice:string;pannelli:Pannello[];peso:number;volume:number;stato:"DISPONIBILE"|"CARICATO"|"SPEDITO";}
 const unitKey=(unit:Unit)=>`${unit.tipo}:${unit.codice}`;
 interface Props{rows:Camion[];commesse:Commessa[];singles:UnitaSingola[];packages:Pacco[];operators:Operatore[];trailers:Rimorchio[];carriers:Trasportatore[];loads:CaricoCamion[];initialLoad?:CaricoCamion|null;onBack:()=>void;onResumeLoad:(loadId:string)=>void;onSessionChange:(load:CaricoCamion)=>void;onScanUnit:(row:Camion,unit:Unit)=>void;onUndoUnit:(row:Camion,unit:Unit)=>void;onComplete:(load:CaricoCamion,units:Unit[],destination:"trailer"|"carrier")=>void;}
 
 export default function TruckLoading({rows,commesse,singles,packages,operators,trailers,carriers,loads,initialLoad,onBack,onResumeLoad,onSessionChange,onScanUnit,onUndoUnit,onComplete}:Props){
-  operators=operators.filter(item=>item.attivo);trailers=trailers.filter(item=>item.attivo);carriers=carriers.filter(item=>item.attivo);
+  const [availableTrailerIds,setAvailableTrailerIds]=useState<Set<string>>(new Set());
+  useEffect(()=>{let active=true;void listTransports().then(items=>{if(active)setAvailableTrailerIds(new Set(items.filter(item=>item.status==="DISPONIBILE"||item.id===initialLoad?.rimorchioId).map(item=>item.id)));}).catch(()=>{if(active)setAvailableTrailerIds(new Set());});return()=>{active=false;};},[initialLoad?.rimorchioId]);
+  operators=operators.filter(item=>item.attivo);trailers=trailers.filter(item=>item.attivo&&availableTrailerIds.has(item.id));carriers=carriers.filter(item=>item.attivo);
   const sessionChangeRef=useRef(onSessionChange);sessionChangeRef.current=onSessionChange;
   const loadsRef=useRef(loads);loadsRef.current=loads;
   const sessionIdRef=useRef(initialLoad?.loadId??crypto.randomUUID());

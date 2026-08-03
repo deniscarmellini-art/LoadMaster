@@ -1,6 +1,7 @@
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
+import RouteOutlinedIcon from "@mui/icons-material/RouteOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
@@ -17,6 +18,7 @@ interface DashboardHeaderProps {
   onOpenWarehouse: () => void;
   onOpenSettings: () => void;
   onOpenLoading: () => void;
+  onOpenTransports: () => void;
   onOpenHistory: () => void;
 }
 
@@ -25,11 +27,12 @@ const navigation = [
   { label: "Scansione pannelli", icon: <QrCodeScannerOutlinedIcon />, page: "scanning" },
   { label: "Magazzino", icon: <Inventory2OutlinedIcon />, page: "warehouse" },
   { label: "Carico camion", icon: <LocalShippingOutlinedIcon />, page: "loading" },
+  { label: "Trasporti", icon: <RouteOutlinedIcon />, page: "transports" },
   { label: "Storico", icon: <HistoryOutlinedIcon /> },
   { label: "Impostazioni", icon: <SettingsOutlinedIcon />, page: "settings" },
 ];
 
-export default function DashboardHeader({ isImporting, onImportClick, onOpenLabels, onOpenScanning, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenHistory }: DashboardHeaderProps) {
+export default function DashboardHeader({ isImporting, onImportClick, onOpenLabels, onOpenScanning, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenTransports, onOpenHistory }: DashboardHeaderProps) {
   return (
     <Paper
       component="header"
@@ -110,7 +113,7 @@ export default function DashboardHeader({ isImporting, onImportClick, onOpenLabe
         {navigation.map((item) => (
           <Button
             key={item.label}
-            onClick={item.label === "Storico" ? onOpenHistory : item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : undefined}
+            onClick={item.label === "Storico" ? onOpenHistory : item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : item.page === "transports" ? onOpenTransports : undefined}
             startIcon={item.icon}
             variant="text"
             sx={{
