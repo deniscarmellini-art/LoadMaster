@@ -24,8 +24,24 @@ Copy-Item .env.example .env
 | `NODE_ENV` | `development` | Ambiente applicativo |
 | `DATABASE_URL` | `./data/sistema-logistico.sqlite` | Percorso del database SQLite locale |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine autorizzata dal CORS |
+| `FRONTEND_DIST_PATH` | — | Percorso assoluto della `frontend/dist`; obbligatorio in produzione |
 
 Non inserire password o segreti nel file `.env`.
+
+## Avvio in produzione
+
+Compilare il frontend con `frontend/.env.production`, copiare `backend/.env.production.example` in `backend/.env`, adeguare i percorsi assoluti al server e avviare il backend:
+
+```powershell
+cd frontend
+npm.cmd run build
+cd ..\backend
+Copy-Item .env.production.example .env
+npm.cmd run build
+npm.cmd start
+```
+
+Con `NODE_ENV=production`, Fastify pubblica la SPA dalla directory indicata da `FRONTEND_DIST_PATH`; API e health check rimangono sotto `/api`. Se la directory non esiste o non contiene `index.html`, l'avvio viene interrotto con un errore.
 
 ## Comandi
 

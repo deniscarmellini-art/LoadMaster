@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -15,7 +15,44 @@ const config: AppConfig = {
   environment: "test",
   databasePath: ":memory:",
   frontendOrigin: "http://localhost:5173",
+  frontendDistPath: null,
 };
+
+test("in produzione pubblica la SPA senza intercettare gli errori API",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"sislog-frontend-"));
+  const assetsPath=join(directory,"assets");
+  mkdirSync(assetsPath);
+  writeFileSync(join(directory,"index.html"),"<!doctype html><html><body>SisLog Dashboard</body></html>");
+  writeFileSync(join(assetsPath,"app.js"),"globalThis.__sislog=true;");
+  const productionConfig:AppConfig={...config,environment:"production",frontendDistPath:directory};
+  try{
+    const app=await buildApp(productionConfig);
+    const health=await app.inject({method:"GET",url:"/api/health"});
+    assert.equal(health.statusCode,200);
+    assert.equal(health.headers["content-type"]?.includes("application/json"),true);
+    const home=await app.inject({method:"GET",url:"/"});
+    assert.equal(home.statusCode,200);assert.match(home.body,/SisLog Dashboard/);
+    const asset=await app.inject({method:"GET",url:"/assets/app.js"});
+    assert.equal(asset.statusCode,200);assert.match(asset.body,/__sislog/);
+    const settings=await app.inject({method:"GET",url:"/settings"});
+    assert.equal(settings.statusCode,200);assert.match(settings.body,/SisLog Dashboard/);
+    const history=await app.inject({method:"GET",url:"/history"});
+    assert.equal(history.statusCode,200);assert.match(history.body,/SisLog Dashboard/);
+    const missingApi=await app.inject({method:"GET",url:"/api/non-esiste"});
+    assert.equal(missingApi.statusCode,404);
+    assert.equal(missingApi.headers["content-type"]?.includes("application/json"),true);
+    assert.equal(missingApi.json<{error:{code:string}}>().error.code,"RESOURCE_NOT_FOUND");
+    await app.close();
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+test("in produzione rifiuta una cartella frontend assente o senza index.html",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"sislog-invalid-frontend-"));
+  try{
+    await assert.rejects(()=>buildApp({...config,environment:"production",frontendDistPath:join(directory,"assente")}),/FRONTEND_DIST_PATH non esiste/);
+    await assert.rejects(()=>buildApp({...config,environment:"production",frontendDistPath:directory}),/non contiene index\.html/);
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
 
 test("il rientro dopo due giorni lavorativi salta il fine settimana",()=>{
   assert.equal(addBusinessDays("2026-08-03T10:00:00.000Z",2),"2026-08-05T10:00:00.000Z");

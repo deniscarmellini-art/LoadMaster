@@ -8,11 +8,17 @@ const response = (code: string, message: string): ErrorResponse => ({
   error: { code, message },
 });
 
-export const registerErrorHandlers = (app: FastifyInstance): void => {
-  app.setNotFoundHandler(async (_request: FastifyRequest, reply: FastifyReply) => {
+export const registerNotFoundHandler = (app:FastifyInstance,spaFallback=false):void=>{
+  app.setNotFoundHandler(async (request: FastifyRequest, reply: FastifyReply) => {
+    if(spaFallback&&request.method==="GET"&&!request.url.startsWith("/api/")&&request.url!=="/api"){
+      await reply.type("text/html; charset=utf-8").sendFile("index.html");
+      return;
+    }
     await reply.status(404).send(response("RESOURCE_NOT_FOUND", "Risorsa non trovata"));
   });
+};
 
+export const registerErrorHandlers = (app: FastifyInstance): void => {
   app.setErrorHandler(async (error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
     if (error instanceof ApiError) {
       await reply.status(error.statusCode).send(response(error.code, error.message));

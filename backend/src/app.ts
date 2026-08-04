@@ -1,8 +1,11 @@
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
+import { existsSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import type { AppConfig } from "./config/environment.js";
-import { registerErrorHandlers } from "./middleware/errorHandler.js";
+import { registerErrorHandlers, registerNotFoundHandler } from "./middleware/errorHandler.js";
 import { systemRoutes } from "./routes/systemRoutes.js";
 import { openSqliteDatabase } from "./database/sqliteDatabase.js";
 import { OperatorRepository } from "./repositories/operatorRepository.js";
@@ -31,6 +34,12 @@ import { OperationalSettingService } from "./services/operationalSettingService.
 import { operationalSettingRoutes } from "./routes/operationalSettingRoutes.js";
 
 export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
+  if(config.environment==="production"){
+    if(!config.frontendDistPath)throw new Error("FRONTEND_DIST_PATH è obbligatorio quando NODE_ENV=production");
+    if(!existsSync(config.frontendDistPath)||!statSync(config.frontendDistPath).isDirectory())throw new Error(`FRONTEND_DIST_PATH non esiste o non è una cartella: ${config.frontendDistPath}`);
+    const indexPath=join(config.frontendDistPath,"index.html");
+    if(!existsSync(indexPath)||!statSync(indexPath).isFile())throw new Error(`Il frontend compilato non contiene index.html: ${indexPath}`);
+  }
   const app = Fastify({
     logger: config.environment !== "test",
   });
@@ -46,10 +55,10 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const transportService=new TransportService(transportRepository);
   const operationalSettingService = new OperationalSettingService(new OperationalSettingRepository(connection.database));
 
-  await app.register(cors, {
-    origin: config.frontendOrigin,
-    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  });
+  if(config.environment!=="production")await app.register(cors, {
+      origin: config.frontendOrigin,
+      methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    });
   registerErrorHandlers(app);
   await app.register(systemRoutes, { prefix: "/api", config });
   await app.register(operatorRoutes, { prefix: "/api/operators", service: operatorService });
@@ -60,6 +69,8 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(scanningRoutes, { prefix: "/api", service: scanningService });
   await app.register(loadingRoutes, { prefix: "/api", service: loadingService });
   await app.register(transportRoutes, { prefix: "/api", service: transportService });
+  if(config.environment==="production")await app.register(fastifyStatic,{root:config.frontendDistPath!,prefix:"/"});
+  registerNotFoundHandler(app,config.environment==="production");
 
   return app;
 };
