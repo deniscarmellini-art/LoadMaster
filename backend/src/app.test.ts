@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { buildApp } from "./app.js";
-import type { AppConfig } from "./config/environment.js";
+import { loadConfig, type AppConfig } from "./config/environment.js";
 import { addBusinessDays } from "./repositories/transportRepository.js";
 
 const config: AppConfig = {
@@ -17,6 +17,15 @@ const config: AppConfig = {
   frontendOrigin: "http://localhost:5173",
   frontendDistPath: null,
 };
+
+test("la configurazione di produzione richiede percorsi assoluti per frontend e database",()=>{
+  const base={NODE_ENV:"production",PORT:"3001",HOST:"0.0.0.0",FRONTEND_ORIGIN:"http://server:3001"};
+  assert.throws(()=>loadConfig({...base,DATABASE_URL:"D:/SisLog/data/app.sqlite"}),/FRONTEND_DIST_PATH è obbligatorio/);
+  assert.throws(()=>loadConfig({...base,FRONTEND_DIST_PATH:"D:/SisLog/frontend/dist"}),/DATABASE_URL è obbligatorio/);
+  assert.throws(()=>loadConfig({...base,DATABASE_URL:"./data/app.sqlite",FRONTEND_DIST_PATH:"D:/SisLog/frontend/dist"}),/DATABASE_URL deve essere un percorso assoluto/);
+  const loaded=loadConfig({...base,DATABASE_URL:"D:/SisLog/data/app.sqlite",FRONTEND_DIST_PATH:"D:/SisLog/frontend/dist"});
+  assert.equal(loaded.host,"0.0.0.0");assert.equal(loaded.port,3001);assert.equal(loaded.databasePath,"D:/SisLog/data/app.sqlite");
+});
 
 test("in produzione pubblica la SPA senza intercettare gli errori API",async()=>{
   const directory=mkdtempSync(join(tmpdir(),"sislog-frontend-"));
@@ -36,8 +45,14 @@ test("in produzione pubblica la SPA senza intercettare gli errori API",async()=>
     assert.equal(asset.statusCode,200);assert.match(asset.body,/__sislog/);
     const settings=await app.inject({method:"GET",url:"/settings"});
     assert.equal(settings.statusCode,200);assert.match(settings.body,/SisLog Dashboard/);
+    const warehouse=await app.inject({method:"GET",url:"/warehouse"});
+    assert.equal(warehouse.statusCode,200);assert.match(warehouse.body,/SisLog Dashboard/);
     const history=await app.inject({method:"GET",url:"/history"});
     assert.equal(history.statusCode,200);assert.match(history.body,/SisLog Dashboard/);
+    const missingAsset=await app.inject({method:"GET",url:"/assets/missing.js"});
+    assert.equal(missingAsset.statusCode,404);assert.equal(missingAsset.headers["content-type"]?.includes("application/json"),true);
+    const missingFavicon=await app.inject({method:"GET",url:"/favicon.ico"});
+    assert.equal(missingFavicon.statusCode,404);assert.equal(missingFavicon.headers["content-type"]?.includes("application/json"),true);
     const missingApi=await app.inject({method:"GET",url:"/api/non-esiste"});
     assert.equal(missingApi.statusCode,404);
     assert.equal(missingApi.headers["content-type"]?.includes("application/json"),true);

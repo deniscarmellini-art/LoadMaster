@@ -44,13 +44,21 @@ const parseFrontendDistPath=(value:string|undefined,nodeEnvironment:NodeEnvironm
   return path;
 };
 
+const parseDatabasePath=(value:string|undefined,nodeEnvironment:NodeEnvironment):string=>{
+  const path=value?.trim();
+  if(nodeEnvironment!=="production")return resolve(path||"./data/sistema-logistico.sqlite");
+  if(!path)throw new Error("DATABASE_URL è obbligatorio quando NODE_ENV=production");
+  if(!isAbsolute(path))throw new Error("DATABASE_URL deve essere un percorso assoluto in produzione");
+  return path;
+};
+
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppConfig => {
   const nodeEnvironment=parseEnvironment(environment.NODE_ENV);
   return{
     port:parsePort(environment.PORT),
     host:environment.HOST?.trim()||"127.0.0.1",
     environment:nodeEnvironment,
-    databasePath:resolve(environment.DATABASE_URL?.trim()||"./data/sistema-logistico.sqlite"),
+    databasePath:parseDatabasePath(environment.DATABASE_URL,nodeEnvironment),
     frontendOrigin:parseOrigin(environment.FRONTEND_ORIGIN),
     frontendDistPath:parseFrontendDistPath(environment.FRONTEND_DIST_PATH,nodeEnvironment),
   };

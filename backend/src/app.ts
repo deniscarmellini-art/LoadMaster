@@ -1,6 +1,6 @@
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -69,8 +69,17 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(scanningRoutes, { prefix: "/api", service: scanningService });
   await app.register(loadingRoutes, { prefix: "/api", service: loadingService });
   await app.register(transportRoutes, { prefix: "/api", service: transportService });
-  if(config.environment==="production")await app.register(fastifyStatic,{root:config.frontendDistPath!,prefix:"/"});
-  registerNotFoundHandler(app,config.environment==="production");
+  if(config.environment==="production"){
+    await app.register(fastifyStatic,{root:config.frontendDistPath!,prefix:"/",wildcard:false,index:false});
+    const sendSpaIndex=async(_request:unknown,reply:FastifyReply)=>reply.type("text/html; charset=utf-8").sendFile("index.html",{maxAge:0,immutable:false});
+    app.get("/",sendSpaIndex);
+    app.get("/*",async(request,reply)=>{
+      const path=request.url.split("?",1)[0]??request.url;
+      if(path==="/api"||path.startsWith("/api/")||path.startsWith("/assets/")||path==="/favicon.ico")return reply.callNotFound();
+      return sendSpaIndex(request,reply);
+    });
+  }
+  registerNotFoundHandler(app);
 
   return app;
 };

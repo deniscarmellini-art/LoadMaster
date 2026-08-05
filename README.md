@@ -56,6 +56,65 @@ LoadMaster
 
 ---
 
+# Pubblicazione su Windows Server
+
+## Prerequisiti
+
+- Windows Server aggiornato e accessibile dalla rete degli operatori.
+- Node.js LTS e npm installati per eseguire build e backend.
+- Porta TCP `3001` consentita nel Windows Firewall.
+- Installazione consigliata in `D:\Applicazioni\SisLog`, con database SQLite su disco locale e non su una condivisione di rete.
+
+## Configurazione
+
+Dopo aver copiato o aggiornato il progetto, creare la configurazione locale del backend senza versionarla:
+
+```powershell
+cd D:\Applicazioni\SisLog\backend
+Copy-Item .env.production.example .env
+notepad .env
+```
+
+Verificare almeno queste variabili:
+
+```env
+PORT=3001
+HOST=0.0.0.0
+NODE_ENV=production
+DATABASE_URL=D:/Applicazioni/SisLog/data/sistema_logistico.sqlite
+FRONTEND_DIST_PATH=D:/Applicazioni/SisLog/frontend/dist
+FRONTEND_ORIGIN=http://NOME-SERVER:3001
+```
+
+`DATABASE_URL` e `FRONTEND_DIST_PATH` devono essere percorsi assoluti. La cartella del database viene creata automaticamente se manca; un database SQLite esistente viene aperto senza essere cancellato o sostituito.
+
+## Build e avvio
+
+Dalla root del progetto:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-production.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\start-production.ps1
+```
+
+Lo script di build installa le dipendenze con `npm ci`, compila prima il frontend e poi il backend, quindi verifica `frontend/dist/index.html` e `backend/dist`. Lo script di avvio esegue esclusivamente `backend/dist/server.js`: non avvia Vite, watcher o server di sviluppo.
+
+Gli operatori accedono a:
+
+```text
+http://NOME-SERVER:3001
+```
+
+Le API restano disponibili sotto `http://NOME-SERVER:3001/api/`. Aprire nel Windows Firewall la porta TCP `3001` solo per le reti necessarie.
+
+## Aggiornamenti e backup
+
+Prima di ogni aggiornamento arrestare SisLog ed eseguire una copia del file indicato da `DATABASE_URL`. Non cancellare `backend/.env` né il database durante build o deploy. Dopo il backup, aggiornare i sorgenti, rilanciare `build-production.ps1` e quindi `start-production.ps1`.
+
+In sviluppo frontend e backend restano separati: Vite usa `localhost:5173`, Fastify usa `localhost:3001` e il CORS è attivo. In produzione Fastify serve sia la SPA compilata sia le API sullo stesso origin e Vite non viene utilizzato.
+
+---
+
 # Prima apertura del progetto
 
 Aprire sempre la cartella:
