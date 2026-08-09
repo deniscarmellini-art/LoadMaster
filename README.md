@@ -56,6 +56,67 @@ LoadMaster
 
 ---
 
+# HTTPS locale per scansione QR da smartphone
+
+La fotocamera browser (`getUserMedia`) richiede HTTPS. L'indirizzo LAN HTTP, per esempio `http://192.168.178.150:5173`, non è sufficiente su smartphone.
+
+## Creare un certificato locale
+
+Installare `mkcert`, creare la CA locale e individuarne il percorso:
+
+```powershell
+winget install FiloSottile.mkcert
+mkcert -install
+mkcert -CAROOT
+```
+
+Ricavare l'IPv4 LAN del PC con `ipconfig`, quindi generare certificato e chiave fuori dal repository, sostituendo l'IP di esempio con quello reale:
+
+```powershell
+New-Item -ItemType Directory -Force C:\SisLog-Certificati
+Set-Location C:\SisLog-Certificati
+mkcert 192.168.178.150 localhost 127.0.0.1 ::1
+```
+
+Non copiare certificati o chiavi nel repository. Creare `frontend/.env.local` partendo da `frontend/.env.local.example` e inserire i nomi generati:
+
+```env
+VITE_API_URL=/api
+VITE_HTTPS_CERT_PATH=C:/SisLog-Certificati/192.168.178.150+3.pem
+VITE_HTTPS_KEY_PATH=C:/SisLog-Certificati/192.168.178.150+3-key.pem
+```
+
+Se entrambe le variabili HTTPS sono assenti, Vite parte normalmente in HTTP. Una configurazione parziale blocca invece l'avvio con un errore esplicito.
+
+## Autorizzare smartphone e tablet
+
+Dal percorso mostrato da `mkcert -CAROOT`, trasferire sul dispositivo solamente `rootCA.pem`, mai `rootCA-key.pem`, e installarlo come CA attendibile. Su iPhone/iPad occorre anche abilitare la piena attendibilità del certificato nelle impostazioni; su Android installarlo dalle impostazioni di sicurezza.
+
+## Avvio e verifica
+
+PC e smartphone devono essere sulla stessa rete. Avviare Fastify in un terminale e Vite in un secondo terminale:
+
+```powershell
+cd backend
+npm run dev
+```
+
+```powershell
+cd frontend
+npm run dev
+```
+
+Aprire sul telefono, usando l'IP reale del PC:
+
+```text
+https://192.168.178.150:5173
+https://192.168.178.150:5173/api/health
+```
+
+Vite inoltra `/api` a `http://127.0.0.1:3001`: il browser usa una sola origine HTTPS, quindi non c'è mixed content e Fastify resta in HTTP. Potrebbe essere necessario consentire la porta TCP 5173 nel firewall privato di Windows. Se l'IP del PC cambia, generare un nuovo certificato oppure assegnare al PC un IP stabile.
+
+---
+
 # Pubblicazione su Windows Server
 
 ## Prerequisiti

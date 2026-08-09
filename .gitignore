@@ -1,4 +1,8 @@
 node_modules/
+frontend/.env.local
+frontend/certs/
+frontend/*.pem
+frontend/*.key
 backend/.env
 backend/data/*.db
 backend/data/*.db-*
