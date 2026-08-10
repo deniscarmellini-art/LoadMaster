@@ -10,6 +10,7 @@ import type { GridColDef } from "@mui/x-data-grid";
 
 import type { Camion } from "../../models/Camion";
 import { dashboardColors } from "../../theme/theme";
+import { runDashboardPrimaryAction } from "./dashboardPrimaryAction";
 
 interface Props {
   rows: Camion[];
@@ -30,13 +31,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
   const [menuRow, setMenuRow] = useState<Camion | null>(null);
   const closeMenu = () => { setAnchorEl(null); setMenuRow(null); };
   const runAction = (action: () => void) => { closeMenu(); action(); };
-  const runPrimaryAction = (row: Camion) => {
-    if (row.stato === "Da completare") onOpenScanning(row);
-    else if (row.stato === "Da caricare") onStartLoad(row);
-    else if (row.stato === "In carico") onContinueLoad(row);
-    else if (row.stato === "Attesa spedizione") onConfirmDeparture(row);
-    else if (row.stato === "Partita") onOpenHistory(row);
-  };
+  const primaryHandlers = { onConfirmDeparture, onContinueLoad, onOpenHistory, onOpenScanning, onStartLoad };
   const columns: GridColDef<Camion>[] = [
     { field: "commessa", headerName: "Commessa", minWidth: 120 },
     { field: "cliente", headerName: "Cliente", flex: 1, minWidth: 180 },
@@ -99,7 +94,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
     <>
     <DataGrid
       columns={columns}
-      onRowDoubleClick={(params) => runPrimaryAction(params.row)}
+      onRowDoubleClick={(params) => runDashboardPrimaryAction(params.row, primaryHandlers)}
       initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
       pageSizeOptions={[10, 25, 50]}
       rowHeight={56}

@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
-import { Box, InputAdornment, Paper, Stack, TextField, Typography } from "@mui/material";
+import { Box, InputAdornment, Paper, Stack, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
 
 import type { Camion } from "../../models/Camion";
 import DashboardGrid from "./DashboardGrid";
+import DashboardMobileCards from "./DashboardMobileCards";
 import { dashboardColors } from "../../theme/theme";
 
 interface DashboardContentProps {
@@ -23,6 +24,10 @@ interface DashboardContentProps {
 
 export default function DashboardContent({ rows, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory }: DashboardContentProps) {
   const [search, setSearch] = useState("");
+  const theme = useTheme();
+  const narrowPhone = useMediaQuery(theme.breakpoints.down("sm"));
+  const landscapePhone = useMediaQuery("(max-width:950px) and (max-height:500px)");
+  const mobile = narrowPhone || landscapePhone;
 
   const visibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase("it-IT");
@@ -63,9 +68,9 @@ export default function DashboardContent({ rows, onDelete, onOpenScanning, onSta
         }}
         value={search}
       />
-      <Box sx={{ height: 620 }}>
-        <DashboardGrid hasPackages={hasPackages} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} />
-      </Box>
+      {mobile
+        ? <DashboardMobileCards hasPackages={hasPackages} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onStartLoad={onStartLoad} rows={visibleRows} />
+        : <Box sx={{ height: 620 }}><DashboardGrid hasPackages={hasPackages} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} /></Box>}
     </Paper>
   );
 }

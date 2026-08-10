@@ -6,7 +6,7 @@ import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
-import { Avatar, Box, Button, CircularProgress, Paper, Stack, Typography } from "@mui/material";
+import { Avatar, Box, Button, CircularProgress, Paper, Stack, Typography, useMediaQuery, useTheme } from "@mui/material";
 
 import essepiLogo from "../../assets/logo-essepi-finestre-xlam.jpg";
 
@@ -33,6 +33,23 @@ const navigation = [
 ];
 
 export default function DashboardHeader({ isImporting, onImportClick, onOpenLabels, onOpenScanning, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenTransports, onOpenHistory }: DashboardHeaderProps) {
+  const theme = useTheme();
+  const narrowPhone = useMediaQuery(theme.breakpoints.down("sm"));
+  const landscapePhone = useMediaQuery("(max-width:950px) and (max-height:500px)");
+  const mobile = narrowPhone || landscapePhone;
+  const actionFor = (item: (typeof navigation)[number]) => item.label === "Storico" ? onOpenHistory : item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : item.page === "transports" ? onOpenTransports : undefined;
+
+  if (mobile) return <Paper component="header" elevation={0} sx={{ border: 1, borderColor: "divider", mb: 1.5, overflow: "hidden", p: 1 }}>
+    <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1 }}>
+      <Box alt="Essepi - finestre & xlam" component="img" src={essepiLogo} sx={{ aspectRatio: "1 / 1", height: 48, objectFit: "contain" }} />
+      <Box sx={{ minWidth: 0, textAlign: "center" }}><Typography component="h1" noWrap sx={{ fontSize: "1.45rem", fontWeight: 900, lineHeight: 1.1 }}>Sistema Logistico</Typography><Typography noWrap color="text.secondary" sx={{ fontSize: ".7rem", mt: .25 }}>Pannelli, pacchi e spedizioni</Typography></Box>
+      <Avatar sx={{ bgcolor: "primary.main", height: 38, width: 38 }}>U</Avatar>
+    </Stack>
+    <Box component="nav" sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: .75 }}>
+      <Button disabled={isImporting} onClick={onImportClick} startIcon={isImporting ? <CircularProgress color="inherit" size={17} /> : <UploadFileOutlinedIcon />} variant="outlined" sx={{ justifyContent: "flex-start", minHeight: 44, minWidth: 0 }}>{isImporting ? "Importazione…" : "Importa distinta"}</Button>
+      {navigation.map((item) => <Button key={item.label} onClick={actionFor(item)} startIcon={item.icon} variant="outlined" sx={{ justifyContent: "flex-start", minHeight: 44, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap" }}>{item.label === "Scansione pannelli" ? "Scansione finito" : item.label}</Button>)}
+    </Box>
+  </Paper>;
   return (
     <Paper
       component="header"
@@ -113,7 +130,7 @@ export default function DashboardHeader({ isImporting, onImportClick, onOpenLabe
         {navigation.map((item) => (
           <Button
             key={item.label}
-            onClick={item.label === "Storico" ? onOpenHistory : item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : item.page === "transports" ? onOpenTransports : undefined}
+            onClick={actionFor(item)}
             startIcon={item.icon}
             variant="text"
             sx={{

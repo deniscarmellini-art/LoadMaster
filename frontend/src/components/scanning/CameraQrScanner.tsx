@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { IScannerControls } from "@zxing/browser";
+import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography, useMediaQuery, useTheme } from "@mui/material";
 
 interface Props {
@@ -9,12 +9,14 @@ interface Props {
 }
 
 const cameraErrorMessage = (error: unknown): string => {
-  if (error instanceof DOMException) {
-    if (error.name === "NotAllowedError" || error.name === "SecurityError") return "Accesso alla fotocamera negato. Abilita il permesso nelle impostazioni del browser.";
-    if (error.name === "NotFoundError" || error.name === "OverconstrainedError") return "Nessuna fotocamera compatibile disponibile sul dispositivo.";
-    if (error.name === "NotReadableError" || error.name === "AbortError") return "La fotocamera è occupata o non può essere avviata. Chiudi le altre applicazioni che la stanno usando.";
-  }
-  return "Impossibile avviare la fotocamera. Verifica i permessi del browser e riprova.";
+  const namedError = typeof error === "object" && error !== null && "name" in error
+    ? { name: String(error.name), message: "message" in error ? String(error.message) : "" }
+    : null;
+  if (namedError?.name === "NotAllowedError" || namedError?.name === "SecurityError") return "Accesso alla fotocamera negato. Abilita il permesso nelle impostazioni del browser.";
+  if (namedError?.name === "NotFoundError" || namedError?.name === "OverconstrainedError") return "Nessuna fotocamera compatibile disponibile sul dispositivo.";
+  if (namedError?.name === "NotReadableError" || namedError?.name === "AbortError") return "La fotocamera è occupata o non può essere avviata. Chiudi le altre applicazioni che la stanno usando.";
+  const detail = namedError ? `${namedError.name}${namedError.message ? `: ${namedError.message}` : ""}` : String(error);
+  return `Impossibile avviare la fotocamera (${detail}).`;
 };
 
 export default function CameraQrScanner({ open, onDetected, onClose }: Props) {
@@ -53,12 +55,30 @@ export default function CameraQrScanner({ open, onDetected, onClose }: Props) {
     let cancelled = false;
     const start = async () => {
       try {
-        const { BrowserQRCodeReader } = await import("@zxing/browser");
         if (cancelled) return;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach(track => track.stop());
+          throw new Error("Elemento video non disponibile");
+        }
+        video.srcObject = stream;
+        await video.play();
+        if (cancelled) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
         const reader = new BrowserQRCodeReader(undefined, { delayBetweenScanAttempts: 120, delayBetweenScanSuccess: 500 });
-        const controls = await reader.decodeFromConstraints(
-          { audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } },
-          videoRef.current ?? undefined,
+        const controls = await reader.decodeFromStream(
+          stream,
+          video,
           (result, _scanError, scanControls) => {
             if (!result || cancelled || detectedRef.current) return;
             detectedRef.current = true;
@@ -70,7 +90,10 @@ export default function CameraQrScanner({ open, onDetected, onClose }: Props) {
         if (cancelled || detectedRef.current) controls.stop();
         else controlsRef.current = controls;
       } catch (startError) {
-        if (!cancelled) setError(cameraErrorMessage(startError));
+        if (!cancelled) {
+          console.error("Errore avvio fotocamera QR", startError);
+          setError(cameraErrorMessage(startError));
+        }
         stopCamera();
       }
     };
@@ -91,8 +114,8 @@ export default function CameraQrScanner({ open, onDetected, onClose }: Props) {
     <DialogTitle>Scansiona QR con fotocamera</DialogTitle>
     <DialogContent sx={{display:"flex",flexDirection:"column",gap:1.5,p:{xs:1.5,sm:2}}}>
       {error ? <Alert severity="error">{error}</Alert> : <>
-        <Box sx={{position:"relative",width:"100%",height:{xs:"min(68dvh, 620px)",sm:480},overflow:"hidden",borderRadius:2,bgcolor:"#000"}}>
-          <Box component="video" ref={videoRef} muted playsInline autoPlay sx={{width:"100%",height:"100%",display:"block",objectFit:"cover"}}/>
+        <Box sx={{position:"relative",width:"100%",height:{xs:"62vh",sm:480},minHeight:{xs:320,sm:480},maxHeight:{xs:620,sm:480},overflow:"hidden",borderRadius:2,bgcolor:"#000"}}>
+          <Box component="video" ref={videoRef} muted playsInline autoPlay sx={{width:"100%",height:"100%",display:"block",objectFit:"cover",transform:"translateZ(0)"}}/>
           <Box aria-hidden sx={{position:"absolute",inset:"18% 10%",border:"3px solid",borderColor:"primary.main",borderRadius:2,boxShadow:"0 0 0 999px rgba(0,0,0,.28)"}}/>
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{textAlign:"center"}}>Inquadra il QR all’interno del riquadro.</Typography>
