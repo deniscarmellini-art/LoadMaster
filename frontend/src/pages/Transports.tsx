@@ -1,59 +1,554 @@
 import { useMemo, useState } from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, MenuItem, Paper, Snackbar, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  MenuItem,
+  Paper,
+  Snackbar,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { ApiClientError } from "../services/apiClient";
-import { createTransportReservation, disableTrailer, enableTrailer, releaseTransportReservation, updatePlannedDeparture, updateTransportReservation, type ManualReservationInput, type TransportItem, type TransportStatus } from "../services/transportsApi";
-import { formatOptionalDate, parseOptionalDate, toIsoDateOnly } from "../utils/dateFormatting";
+import {
+  createTransportReservation,
+  disableTrailer,
+  enableTrailer,
+  releaseTransportReservation,
+  updateTransportReservation,
+  type ManualReservationInput,
+  type TransportItem,
+  type TransportStatus,
+} from "../services/transportsApi";
+import { formatOptionalDate, parseOptionalDate } from "../utils/dateFormatting";
 
-interface Props { items:TransportItem[]; onBack:()=>void; onRefresh:()=>Promise<void>; }
-const labels:Record<TransportStatus,string>={DISPONIBILE:"Disponibile",IMPEGNATO:"Impegnato",CARICATO:"Caricato",IN_VIAGGIO:"In viaggio",FUORI_SERVIZIO:"Fuori servizio"};
-const statusStyle:Record<TransportStatus,{bgcolor:string;color:string}>={DISPONIBILE:{bgcolor:"success.main",color:"success.contrastText"},IMPEGNATO:{bgcolor:"#EF6C00",color:"#fff"},CARICATO:{bgcolor:"#F9A825",color:"#111"},IN_VIAGGIO:{bgcolor:"info.main",color:"info.contrastText"},FUORI_SERVIZIO:{bgcolor:"error.main",color:"error.contrastText"}};
-const emptyReservation:ManualReservationInput={commessa:"",cliente:"",carico:"",plannedDepartureDate:""};
-const dateTime=(value:string|null)=>{if(!value)return"—";const date=new Date(value);return Number.isNaN(date.getTime())?"—":date.toLocaleString("it-IT");};
+interface Props {
+  items: TransportItem[];
+  onBack: () => void;
+  onRefresh: () => Promise<void>;
+}
+const labels: Record<TransportStatus, string> = {
+  DISPONIBILE: "Disponibile",
+  IMPEGNATO: "Impegnato",
+  CARICATO: "Caricato",
+  IN_VIAGGIO: "In viaggio",
+  FUORI_SERVIZIO: "Fuori servizio",
+};
+const statusStyle: Record<TransportStatus, { bgcolor: string; color: string }> =
+  {
+    DISPONIBILE: { bgcolor: "success.main", color: "success.contrastText" },
+    IMPEGNATO: { bgcolor: "#EF6C00", color: "#fff" },
+    CARICATO: { bgcolor: "#F9A825", color: "#111" },
+    IN_VIAGGIO: { bgcolor: "info.main", color: "info.contrastText" },
+    FUORI_SERVIZIO: { bgcolor: "error.main", color: "error.contrastText" },
+  };
+const emptyReservation: ManualReservationInput = {
+  commessa: "",
+  cliente: "",
+  carico: "",
+};
+const dateTime = (value: string | null) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("it-IT");
+};
 
-export default function Transports({items,onBack,onRefresh}:Props){
-  const [search,setSearch]=useState("");
-  const [status,setStatus]=useState<TransportStatus|"">("");
-  const [dueOnly,setDueOnly]=useState(false);
-  const [disableId,setDisableId]=useState<string|null>(null);
-  const [reason,setReason]=useState("");
-  const [notes,setNotes]=useState("");
-  const [reservationTrailer,setReservationTrailer]=useState<TransportItem|null>(null);
-  const [reservation,setReservation]=useState<ManualReservationInput>(emptyReservation);
-  const [editingPlannedId,setEditingPlannedId]=useState<string|null>(null);
-  const [editingPlannedValue,setEditingPlannedValue]=useState("");
-  const [releaseTrailer,setReleaseTrailer]=useState<TransportItem|null>(null);
-  const [notice,setNotice]=useState<{severity:"success"|"error";text:string}|null>(null);
-  const filtered=useMemo(()=>{const needle=search.trim().toLocaleUpperCase("it-IT"),limit=Date.now()+30*86400000;return items.filter(item=>{const inspection=parseOptionalDate(item.nextInspectionDate);return(!needle||[item.plate,item.commessa,item.cliente,item.camion].some(value=>value?.toLocaleUpperCase("it-IT").includes(needle)))&&(!status||item.status===status)&&(!dueOnly||(inspection!==null&&inspection.getTime()<=limit));});},[items,search,status,dueOnly]);
-  const plannedInputValid=!reservation.plannedDepartureDate?.trim()||toIsoDateOnly(reservation.plannedDepartureDate)!==null;
-  const reservationValid=Boolean(reservation.commessa.trim()&&reservation.cliente.trim()&&reservation.carico.trim()&&plannedInputValid);
-  const openReservation=(item:TransportItem)=>{setReservationTrailer(item);setReservation(item.source==="MANUAL"?{commessa:item.commessa??"",cliente:item.cliente??"",carico:item.camion??"",plannedDepartureDate:item.plannedDepartureDate?formatOptionalDate(item.plannedDepartureDate):""}:emptyReservation);};
-  const saveReservation=async()=>{if(!reservationTrailer||!reservationValid)return;const payload={...reservation,plannedDepartureDate:toIsoDateOnly(reservation.plannedDepartureDate??"")};try{if(reservationTrailer.source==="MANUAL")await updateTransportReservation(reservationTrailer.id,payload);else await createTransportReservation(reservationTrailer.id,payload);await onRefresh();setReservationTrailer(null);setNotice({severity:"success",text:reservationTrailer.source==="MANUAL"?"Prenotazione modificata.":"Rimorchio impegnato."});}catch(error){setNotice({severity:"error",text:error instanceof ApiClientError&&error.code==="TRAILER_NOT_AVAILABLE"?"Il rimorchio non è più disponibile.":"Errore durante il salvataggio della prenotazione."});}};
-  const startPlannedEdit=(item:TransportItem)=>{if(item.status!=="IMPEGNATO"&&item.status!=="CARICATO")return;setEditingPlannedId(item.id);setEditingPlannedValue(item.plannedDepartureDate?formatOptionalDate(item.plannedDepartureDate):"");};
-  const savePlannedInline=async(item:TransportItem)=>{if(editingPlannedId!==item.id)return;const normalized=toIsoDateOnly(editingPlannedValue);if(editingPlannedValue.trim()&&!normalized){setNotice({severity:"error",text:"Inserire la data nel formato gg/mm/aaaa."});return;}try{const updated=await updatePlannedDeparture(item.id,normalized);setEditingPlannedId(null);await onRefresh();setNotice({severity:"success",text:`Partenza prevista aggiornata${updated.plannedDepartureDate?`: ${formatOptionalDate(updated.plannedDepartureDate)}`:"."}`});}catch{setNotice({severity:"error",text:"Errore durante il salvataggio della partenza prevista."});}};
-  const releaseReservation=async()=>{if(!releaseTrailer)return;try{await releaseTransportReservation(releaseTrailer.id);await onRefresh();setReleaseTrailer(null);setNotice({severity:"success",text:"Prenotazione liberata. Rimorchio disponibile."});}catch{setNotice({severity:"error",text:"La prenotazione non può essere liberata."});}};
-  const performDisable=async()=>{if(!disableId||!reason)return;try{await disableTrailer(disableId,reason,notes);await onRefresh();setDisableId(null);setReason("");setNotes("");setNotice({severity:"success",text:"Rimorchio messo fuori servizio."});}catch(error){setNotice({severity:"error",text:error instanceof ApiClientError&&error.code==="RESOURCE_IN_USE"?"Il rimorchio ha un’assegnazione attiva.":"Errore durante la disabilitazione."});}};
-  const performEnable=async(id:string)=>{try{await enableTrailer(id);await onRefresh();setNotice({severity:"success",text:"Rimorchio riattivato."});}catch(error){setNotice({severity:"error",text:error instanceof ApiClientError&&error.code==="RESOURCE_IN_USE"?"Il rimorchio ha un trasporto attivo e non può essere riattivato.":"Errore durante la riattivazione."});}};
-  return <Box>
-    <Box sx={{display:"flex",alignItems:"center",mb:2}}><Button startIcon={<ArrowBackIcon/>} onClick={onBack}>Dashboard</Button><Typography variant="h4" sx={{fontWeight:800,mx:"auto"}}>Trasporti</Typography></Box>
-    <Paper sx={{p:2}}>
-      <Box sx={{display:"grid",gridTemplateColumns:{xs:"1fr",md:"minmax(280px,1fr) 220px auto"},gap:1.5,mb:2}}><TextField label="Cerca targa, commessa o cliente" value={search} onChange={event=>setSearch(event.target.value)}/><TextField select label="Stato" value={status} onChange={event=>setStatus(event.target.value as TransportStatus|"")}><MenuItem value="">Tutti</MenuItem>{Object.entries(labels).map(([key,label])=><MenuItem key={key} value={key}>{label}</MenuItem>)}</TextField><Button variant={dueOnly?"contained":"outlined"} onClick={()=>setDueOnly(value=>!value)}>Revisione in scadenza</Button></Box>
-      <TableContainer><Table sx={{minWidth:1280}} size="small"><TableHead><TableRow>{["Targa","Descrizione","Stato","Commessa associata","Cliente","Carico / Camion","Partenza prevista","Data partenza","Rientro previsto","Prossima revisione","Azioni"].map(label=><TableCell key={label}>{label}</TableCell>)}</TableRow></TableHead><TableBody>
-        {filtered.map(item=>{
-          const inspectionDate=parseOptionalDate(item.nextInspectionDate),inspection=inspectionDate?.getTime()??null,days=inspection===null?null:Math.ceil((inspection-Date.now())/86400000),inspectionColor=days!==null&&days<0?"error.main":days!==null&&days<=30?"warning.main":"text.primary",plannedEditable=item.status==="IMPEGNATO"||item.status==="CARICATO";
-          return <TableRow key={item.id} hover>
-            <TableCell sx={{fontWeight:700,color:"primary.main",whiteSpace:"nowrap"}}>{item.plate}</TableCell><TableCell>{item.description||"—"}</TableCell><TableCell><Chip label={labels[item.status]} size="small" sx={{...statusStyle[item.status],minWidth:112}}/></TableCell><TableCell>{item.commessa??"—"}</TableCell><TableCell>{item.cliente??"—"}</TableCell><TableCell>{item.camion??"—"}</TableCell>
-            <TableCell sx={{whiteSpace:"nowrap",minWidth:150}}>{editingPlannedId===item.id?<TextField autoFocus size="small" value={editingPlannedValue} placeholder="gg/mm/aaaa" error={Boolean(editingPlannedValue.trim()&&!toIsoDateOnly(editingPlannedValue))} onChange={event=>setEditingPlannedValue(event.target.value)} onBlur={()=>void savePlannedInline(item)} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();event.currentTarget.blur();}if(event.key==="Escape")setEditingPlannedId(null);}} sx={{width:135}}/>:<Button color="inherit" disabled={!plannedEditable} onClick={()=>startPlannedEdit(item)} sx={{minWidth:0,p:.5,textTransform:"none",justifyContent:"flex-start",color:plannedEditable?"primary.main":"text.primary"}}>{formatOptionalDate(item.plannedDepartureDate)}</Button>}</TableCell>
-            <TableCell sx={{whiteSpace:"nowrap"}}>{dateTime(item.departedAt)}</TableCell><TableCell sx={{whiteSpace:"nowrap"}}>{dateTime(item.availableFrom)}</TableCell><TableCell sx={{color:inspectionColor,fontWeight:days!==null&&days<=30?700:400,whiteSpace:"nowrap"}}>{formatOptionalDate(item.nextInspectionDate)}</TableCell>
-            <TableCell><Box sx={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:.5}}>{item.status==="DISPONIBILE"&&<><Button size="small" onClick={()=>openReservation(item)}>Impegna</Button><Button size="small" color="error" onClick={()=>{setDisableId(item.id);setReason("");setNotes("");}}>Disabilita</Button></>}{item.status==="IMPEGNATO"&&item.source==="MANUAL"&&<><Button size="small" onClick={()=>openReservation(item)}>Modifica prenotazione</Button><Button size="small" color="warning" onClick={()=>setReleaseTrailer(item)}>Libera</Button></>}{item.status==="FUORI_SERVIZIO"&&<Button size="small" onClick={()=>void performEnable(item.id)}>Riattiva</Button>}</Box>{item.disabledReason&&<Typography variant="caption" color="error.main" sx={{display:"block",mt:.5}}>{item.disabledReason}</Typography>}</TableCell>
-          </TableRow>;
-        })}
-        {!filtered.length&&<TableRow><TableCell colSpan={11} align="center" sx={{py:4,color:"text.secondary"}}>Nessun rimorchio corrisponde ai filtri.</TableCell></TableRow>}
-      </TableBody></Table></TableContainer>
-    </Paper>
-    <Dialog open={reservationTrailer!==null} onClose={()=>setReservationTrailer(null)} fullWidth maxWidth="sm"><DialogTitle>{reservationTrailer?.source==="MANUAL"?"Modifica prenotazione":"Impegna rimorchio"}</DialogTitle><DialogContent><Box sx={{display:"grid",gap:2,pt:1}}><TextField required label="Commessa" value={reservation.commessa} onChange={event=>setReservation(current=>({...current,commessa:event.target.value}))}/><TextField required label="Cliente" value={reservation.cliente} onChange={event=>setReservation(current=>({...current,cliente:event.target.value}))}/><TextField required label="Carico / Camion" value={reservation.carico} onChange={event=>setReservation(current=>({...current,carico:event.target.value}))}/><TextField label="Partenza prevista" placeholder="gg/mm/aaaa" value={reservation.plannedDepartureDate??""} error={!plannedInputValid} helperText={!plannedInputValid?"Usare il formato gg/mm/aaaa":"Facoltativa"} onChange={event=>setReservation(current=>({...current,plannedDepartureDate:event.target.value}))}/></Box></DialogContent><DialogActions><Button onClick={()=>setReservationTrailer(null)}>Annulla</Button><Button variant="contained" disabled={!reservationValid} onClick={()=>void saveReservation()}>Conferma</Button></DialogActions></Dialog>
-    <Dialog open={releaseTrailer!==null} onClose={()=>setReleaseTrailer(null)}><DialogTitle>Libera rimorchio</DialogTitle><DialogContent><DialogContentText>Chiudere la prenotazione di {releaseTrailer?.plate} e riportare il rimorchio a DISPONIBILE?</DialogContentText></DialogContent><DialogActions><Button onClick={()=>setReleaseTrailer(null)}>Annulla</Button><Button variant="contained" color="warning" onClick={()=>void releaseReservation()}>Libera</Button></DialogActions></Dialog>
-    <Dialog open={disableId!==null} onClose={()=>setDisableId(null)} fullWidth maxWidth="sm"><DialogTitle>Metti rimorchio fuori servizio</DialogTitle><DialogContent><TextField select required fullWidth label="Motivo" value={reason} onChange={event=>setReason(event.target.value)} sx={{mt:1,mb:2}}><MenuItem value="" disabled>Seleziona motivo</MenuItem>{["Revisione","Manutenzione","Guasto","Altro"].map(value=><MenuItem key={value} value={value}>{value}</MenuItem>)}</TextField><TextField fullWidth multiline minRows={3} label="Note (facoltative)" value={notes} onChange={event=>setNotes(event.target.value)}/><TextField fullWidth label="Data inizio" value={new Date().toLocaleString("it-IT")} slotProps={{input:{readOnly:true}}} sx={{mt:2}}/></DialogContent><DialogActions><Button onClick={()=>setDisableId(null)}>Annulla</Button><Button color="error" variant="contained" disabled={!reason} onClick={()=>void performDisable()}>Disabilita</Button></DialogActions></Dialog>
-    <Snackbar open={notice!==null} autoHideDuration={3500} onClose={()=>setNotice(null)}><Alert severity={notice?.severity??"success"}>{notice?.text}</Alert></Snackbar>
-  </Box>;
+export default function Transports({ items, onBack, onRefresh }: Props) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<TransportStatus | "">("");
+  const [dueOnly, setDueOnly] = useState(false);
+  const [disableId, setDisableId] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [notes, setNotes] = useState("");
+  const [reservationTrailer, setReservationTrailer] =
+    useState<TransportItem | null>(null);
+  const [reservation, setReservation] =
+    useState<ManualReservationInput>(emptyReservation);
+  const [releaseTrailer, setReleaseTrailer] = useState<TransportItem | null>(
+    null,
+  );
+  const [notice, setNotice] = useState<{
+    severity: "success" | "error";
+    text: string;
+  } | null>(null);
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLocaleUpperCase("it-IT"),
+      limit = Date.now() + 30 * 86400000;
+    return items.filter((item) => {
+      const inspection = parseOptionalDate(item.nextInspectionDate);
+      return (
+        (!needle ||
+          [item.plate, item.commessa, item.cliente, item.camion].some((value) =>
+            value?.toLocaleUpperCase("it-IT").includes(needle),
+          )) &&
+        (!status || item.status === status) &&
+        (!dueOnly || (inspection !== null && inspection.getTime() <= limit))
+      );
+    });
+  }, [items, search, status, dueOnly]);
+  const reservationValid = Boolean(
+    reservation.commessa.trim() &&
+      reservation.cliente.trim() &&
+      reservation.carico.trim(),
+  );
+  const openReservation = (item: TransportItem) => {
+    setReservationTrailer(item);
+    setReservation(
+      item.source === "MANUAL"
+        ? {
+            commessa: item.commessa ?? "",
+            cliente: item.cliente ?? "",
+            carico: item.camion ?? "",
+          }
+        : emptyReservation,
+    );
+  };
+  const saveReservation = async () => {
+    if (!reservationTrailer || !reservationValid) return;
+    try {
+      if (reservationTrailer.source === "MANUAL")
+        await updateTransportReservation(reservationTrailer.id, reservation);
+      else await createTransportReservation(reservationTrailer.id, reservation);
+      await onRefresh();
+      setReservationTrailer(null);
+      setNotice({
+        severity: "success",
+        text:
+          reservationTrailer.source === "MANUAL"
+            ? "Prenotazione modificata."
+            : "Rimorchio impegnato.",
+      });
+    } catch (error) {
+      setNotice({
+        severity: "error",
+        text:
+          error instanceof ApiClientError &&
+          error.code === "TRAILER_NOT_AVAILABLE"
+            ? "Il rimorchio non è più disponibile."
+            : "Errore durante il salvataggio della prenotazione.",
+      });
+    }
+  };
+  const releaseReservation = async () => {
+    if (!releaseTrailer) return;
+    try {
+      await releaseTransportReservation(releaseTrailer.id);
+      await onRefresh();
+      setReleaseTrailer(null);
+      setNotice({
+        severity: "success",
+        text: "Prenotazione liberata. Rimorchio disponibile.",
+      });
+    } catch {
+      setNotice({
+        severity: "error",
+        text: "La prenotazione non può essere liberata.",
+      });
+    }
+  };
+  const performDisable = async () => {
+    if (!disableId || !reason) return;
+    try {
+      await disableTrailer(disableId, reason, notes);
+      await onRefresh();
+      setDisableId(null);
+      setReason("");
+      setNotes("");
+      setNotice({
+        severity: "success",
+        text: "Rimorchio messo fuori servizio.",
+      });
+    } catch (error) {
+      setNotice({
+        severity: "error",
+        text:
+          error instanceof ApiClientError && error.code === "RESOURCE_IN_USE"
+            ? "Il rimorchio ha un’assegnazione attiva."
+            : "Errore durante la disabilitazione.",
+      });
+    }
+  };
+  const performEnable = async (id: string) => {
+    try {
+      await enableTrailer(id);
+      await onRefresh();
+      setNotice({ severity: "success", text: "Rimorchio riattivato." });
+    } catch (error) {
+      setNotice({
+        severity: "error",
+        text:
+          error instanceof ApiClientError && error.code === "RESOURCE_IN_USE"
+            ? "Il rimorchio ha un trasporto attivo e non può essere riattivato."
+            : "Errore durante la riattivazione.",
+      });
+    }
+  };
+  return (
+    <Box>
+      <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={onBack}>
+          Dashboard
+        </Button>
+        <Typography variant="h4" sx={{ fontWeight: 800, mx: "auto" }}>
+          Trasporti
+        </Typography>
+      </Box>
+      <Paper sx={{ p: 2 }}>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: {
+              xs: "1fr",
+              md: "minmax(280px,1fr) 220px auto",
+            },
+            gap: 1.5,
+            mb: 2,
+          }}
+        >
+          <TextField
+            label="Cerca targa, commessa o cliente"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <TextField
+            select
+            label="Stato"
+            value={status}
+            onChange={(event) =>
+              setStatus(event.target.value as TransportStatus | "")
+            }
+          >
+            <MenuItem value="">Tutti</MenuItem>
+            {Object.entries(labels).map(([key, label]) => (
+              <MenuItem key={key} value={key}>
+                {label}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Button
+            variant={dueOnly ? "contained" : "outlined"}
+            onClick={() => setDueOnly((value) => !value)}
+          >
+            Revisione in scadenza
+          </Button>
+        </Box>
+        <TableContainer>
+          <Table sx={{ minWidth: 1280 }} size="small">
+            <TableHead>
+              <TableRow>
+                {[
+                  "Targa",
+                  "Descrizione",
+                  "Stato",
+                  "Commessa associata",
+                  "Cliente",
+                  "Carico / Camion",
+                  "Partenza prevista",
+                  "Data partenza",
+                  "Rientro previsto",
+                  "Prossima revisione",
+                  "Azioni",
+                ].map((label) => (
+                  <TableCell key={label}>{label}</TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filtered.map((item) => {
+                const inspectionDate = parseOptionalDate(
+                    item.nextInspectionDate,
+                  ),
+                  inspection = inspectionDate?.getTime() ?? null,
+                  days =
+                    inspection === null
+                      ? null
+                      : Math.ceil((inspection - Date.now()) / 86400000),
+                  inspectionColor =
+                    days !== null && days < 0
+                      ? "error.main"
+                      : days !== null && days <= 30
+                        ? "warning.main"
+                        : "text.primary";
+                return (
+                  <TableRow key={item.id} hover>
+                    <TableCell
+                      sx={{
+                        fontWeight: 700,
+                        color: "primary.main",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {item.plate}
+                    </TableCell>
+                    <TableCell>{item.description || "—"}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={labels[item.status]}
+                        size="small"
+                        sx={{ ...statusStyle[item.status], minWidth: 112 }}
+                      />
+                    </TableCell>
+                    <TableCell>{item.commessa ?? "—"}</TableCell>
+                    <TableCell>{item.cliente ?? "—"}</TableCell>
+                    <TableCell>{item.camion ?? "—"}</TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", minWidth: 150 }}>
+                      {formatOptionalDate(item.plannedDepartureDate)}
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      {dateTime(item.departedAt)}
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      {dateTime(item.availableFrom)}
+                    </TableCell>
+                    <TableCell
+                      sx={{
+                        color: inspectionColor,
+                        fontWeight: days !== null && days <= 30 ? 700 : 400,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatOptionalDate(item.nextInspectionDate)}
+                    </TableCell>
+                    <TableCell>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: 0.5,
+                        }}
+                      >
+                        {item.status === "DISPONIBILE" && (
+                          <>
+                            <Button
+                              size="small"
+                              onClick={() => openReservation(item)}
+                            >
+                              Impegna
+                            </Button>
+                            <Button
+                              size="small"
+                              color="error"
+                              onClick={() => {
+                                setDisableId(item.id);
+                                setReason("");
+                                setNotes("");
+                              }}
+                            >
+                              Disabilita
+                            </Button>
+                          </>
+                        )}
+                        {item.status === "IMPEGNATO" &&
+                          item.source === "MANUAL" && (
+                            <>
+                              <Button
+                                size="small"
+                                onClick={() => openReservation(item)}
+                              >
+                                Modifica prenotazione
+                              </Button>
+                              <Button
+                                size="small"
+                                color="warning"
+                                onClick={() => setReleaseTrailer(item)}
+                              >
+                                Libera
+                              </Button>
+                            </>
+                          )}
+                        {item.status === "FUORI_SERVIZIO" && (
+                          <Button
+                            size="small"
+                            onClick={() => void performEnable(item.id)}
+                          >
+                            Riattiva
+                          </Button>
+                        )}
+                      </Box>
+                      {item.disabledReason && (
+                        <Typography
+                          variant="caption"
+                          color="error.main"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {item.disabledReason}
+                        </Typography>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!filtered.length && (
+                <TableRow>
+                  <TableCell
+                    colSpan={11}
+                    align="center"
+                    sx={{ py: 4, color: "text.secondary" }}
+                  >
+                    Nessun rimorchio corrisponde ai filtri.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+      <Dialog
+        open={reservationTrailer !== null}
+        onClose={() => setReservationTrailer(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          {reservationTrailer?.source === "MANUAL"
+            ? "Modifica prenotazione"
+            : "Impegna rimorchio"}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "grid", gap: 2, pt: 1 }}>
+            <TextField
+              required
+              label="Commessa"
+              value={reservation.commessa}
+              onChange={(event) =>
+                setReservation((current) => ({
+                  ...current,
+                  commessa: event.target.value,
+                }))
+              }
+            />
+            <TextField
+              required
+              label="Cliente"
+              value={reservation.cliente}
+              onChange={(event) =>
+                setReservation((current) => ({
+                  ...current,
+                  cliente: event.target.value,
+                }))
+              }
+            />
+            <TextField
+              required
+              label="Carico / Camion"
+              value={reservation.carico}
+              onChange={(event) =>
+                setReservation((current) => ({
+                  ...current,
+                  carico: event.target.value,
+                }))
+              }
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReservationTrailer(null)}>Annulla</Button>
+          <Button
+            variant="contained"
+            disabled={!reservationValid}
+            onClick={() => void saveReservation()}
+          >
+            Conferma
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={releaseTrailer !== null}
+        onClose={() => setReleaseTrailer(null)}
+      >
+        <DialogTitle>Libera rimorchio</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Chiudere la prenotazione di {releaseTrailer?.plate} e riportare il
+            rimorchio a DISPONIBILE?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReleaseTrailer(null)}>Annulla</Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={() => void releaseReservation()}
+          >
+            Libera
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={disableId !== null}
+        onClose={() => setDisableId(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Metti rimorchio fuori servizio</DialogTitle>
+        <DialogContent>
+          <TextField
+            select
+            required
+            fullWidth
+            label="Motivo"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            sx={{ mt: 1, mb: 2 }}
+          >
+            <MenuItem value="" disabled>
+              Seleziona motivo
+            </MenuItem>
+            {["Revisione", "Manutenzione", "Guasto", "Altro"].map((value) => (
+              <MenuItem key={value} value={value}>
+                {value}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            fullWidth
+            multiline
+            minRows={3}
+            label="Note (facoltative)"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+          />
+          <TextField
+            fullWidth
+            label="Data inizio"
+            value={new Date().toLocaleString("it-IT")}
+            slotProps={{ input: { readOnly: true } }}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDisableId(null)}>Annulla</Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={!reason}
+            onClick={() => void performDisable()}
+          >
+            Disabilita
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar
+        open={notice !== null}
+        autoHideDuration={3500}
+        onClose={() => setNotice(null)}
+      >
+        <Alert severity={notice?.severity ?? "success"}>{notice?.text}</Alert>
+      </Snackbar>
+    </Box>
+  );
 }

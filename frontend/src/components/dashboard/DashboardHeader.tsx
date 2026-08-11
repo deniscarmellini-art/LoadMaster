@@ -2,6 +2,7 @@ import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
 import RouteOutlinedIcon from "@mui/icons-material/RouteOutlined";
+import EventNoteOutlinedIcon from "@mui/icons-material/EventNoteOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
@@ -19,6 +20,7 @@ interface DashboardHeaderProps {
   onOpenSettings: () => void;
   onOpenLoading: () => void;
   onOpenTransports: () => void;
+  onOpenShipments: () => void;
   onOpenHistory: () => void;
 }
 
@@ -28,16 +30,17 @@ const navigation = [
   { label: "Magazzino", icon: <Inventory2OutlinedIcon />, page: "warehouse" },
   { label: "Carico camion", icon: <LocalShippingOutlinedIcon />, page: "loading" },
   { label: "Trasporti", icon: <RouteOutlinedIcon />, page: "transports" },
+  { label: "Spedizioni", icon: <EventNoteOutlinedIcon />, page: "shipments" },
   { label: "Storico", icon: <HistoryOutlinedIcon /> },
   { label: "Impostazioni", icon: <SettingsOutlinedIcon />, page: "settings" },
 ];
 
-export default function DashboardHeader({ isImporting, onImportClick, onOpenLabels, onOpenScanning, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenTransports, onOpenHistory }: DashboardHeaderProps) {
+export default function DashboardHeader({ isImporting, onImportClick, onOpenLabels, onOpenScanning, onOpenWarehouse, onOpenSettings, onOpenLoading, onOpenTransports, onOpenShipments, onOpenHistory }: DashboardHeaderProps) {
   const theme = useTheme();
   const narrowPhone = useMediaQuery(theme.breakpoints.down("sm"));
   const landscapePhone = useMediaQuery("(max-width:950px) and (max-height:500px)");
   const mobile = narrowPhone || landscapePhone;
-  const actionFor = (item: (typeof navigation)[number]) => item.label === "Storico" ? onOpenHistory : item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : item.page === "transports" ? onOpenTransports : undefined;
+  const actionFor = (item: (typeof navigation)[number]) => item.label === "Storico" ? onOpenHistory : item.page === "labels" ? onOpenLabels : item.page === "warehouse" ? onOpenWarehouse : item.page === "scanning" ? onOpenScanning : item.page === "settings" ? onOpenSettings : item.page === "loading" ? onOpenLoading : item.page === "transports" ? onOpenTransports : item.page === "shipments" ? onOpenShipments : undefined;
 
   if (mobile) return <Paper component="header" elevation={0} sx={{ border: 1, borderColor: "divider", mb: 1.5, overflow: "hidden", p: 1 }}>
     <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1 }}>

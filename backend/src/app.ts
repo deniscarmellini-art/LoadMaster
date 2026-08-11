@@ -32,6 +32,9 @@ import { transportRoutes } from "./routes/transportRoutes.js";
 import { OperationalSettingRepository } from "./repositories/operationalSettingRepository.js";
 import { OperationalSettingService } from "./services/operationalSettingService.js";
 import { operationalSettingRoutes } from "./routes/operationalSettingRoutes.js";
+import { ShipmentRepository } from "./repositories/shipmentRepository.js";
+import { ShipmentService } from "./services/shipmentService.js";
+import { shipmentRoutes } from "./routes/shipmentRoutes.js";
 
 export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   if(config.environment==="production"){
@@ -52,6 +55,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const loadService = new LoadService(new LoadRepository(connection.database),transportRepository);
   const scanningService = new ScanningService(new ScanningRepository(connection.database));
   const loadingService = new LoadingService(new LoadingRepository(connection.database,transportRepository),transportRepository);
+  const shipmentService = new ShipmentService(new ShipmentRepository(connection.database),loadingService);
   const transportService=new TransportService(transportRepository);
   const operationalSettingService = new OperationalSettingService(new OperationalSettingRepository(connection.database));
 
@@ -69,6 +73,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(scanningRoutes, { prefix: "/api", service: scanningService });
   await app.register(loadingRoutes, { prefix: "/api", service: loadingService });
   await app.register(transportRoutes, { prefix: "/api", service: transportService });
+  await app.register(shipmentRoutes, { prefix: "/api/shipments", service: shipmentService });
   if(config.environment==="production"){
     await app.register(fastifyStatic,{root:config.frontendDistPath!,prefix:"/",wildcard:false,index:false});
     const sendSpaIndex=async(_request:unknown,reply:FastifyReply)=>reply.type("text/html; charset=utf-8").sendFile("index.html",{maxAge:0,immutable:false});

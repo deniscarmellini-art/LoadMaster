@@ -134,6 +134,17 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_active_trailer ON TransportAssignments(trailerId) WHERE releasedAt IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_active_load ON TransportAssignments(loadId) WHERE releasedAt IS NULL;
+    CREATE TABLE IF NOT EXISTS ShipmentPlans (
+      id TEXT PRIMARY KEY, loadId TEXT NULL REFERENCES Loads(id), manualCommessa TEXT NULL, manualCliente TEXT NULL,
+      manualCarico TEXT NULL, plannedLoadingDate TEXT NULL, plannedDepartureDate TEXT NULL,
+      originalPlannedDepartureDate TEXT NULL, plannedDepartureDateChangedAt TEXT NULL, actualDepartureDate TEXT NULL,
+      transportType TEXT NULL CHECK(transportType IS NULL OR transportType IN('BILICO_ESSEPI','TRASPORTATORE_ESTERNO')),
+      trailerId TEXT NULL REFERENCES Trailers(id), carrierId TEXT NULL REFERENCES Carriers(id), notes TEXT NULL,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+      CHECK(NOT(trailerId IS NOT NULL AND carrierId IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_plan_load ON ShipmentPlans(loadId) WHERE loadId IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_plan_manual ON ShipmentPlans(UPPER(TRIM(manualCommessa)),UPPER(REPLACE(REPLACE(TRIM(COALESCE(manualCarico,'')),' ',''),'-',''))) WHERE loadId IS NULL;
     CREATE INDEX IF NOT EXISTS idx_events_load ON OperationalEvents(loadId,timestamp);
   `);
   migratePanelScanningColumns(database);
@@ -145,6 +156,7 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
   migrateTransportColumns(database);
   migrateTransportAssignmentSchema(database);
   migratePlannedDepartureDate(database);
+  migrateShipmentPlanDepartureTracking(database);
   migrateTransportAssignments(database);
   seedSettings(database);
   return {
@@ -157,6 +169,7 @@ const migrateTransportColumns=(database:DatabaseSync):void=>{const columns=new S
 
 const migrateTransportAssignmentSchema=(database:DatabaseSync):void=>{const definition=database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='TransportAssignments'").get() as {sql:string}|undefined,columns=new Set((database.prepare("PRAGMA table_info(TransportAssignments)").all() as Array<{name:string}>).map(item=>item.name));if(columns.has("source")&&columns.has("manualCommessa")&&definition?.sql.includes("'CARICATO'"))return;database.exec("PRAGMA foreign_keys=OFF; DROP INDEX IF EXISTS idx_transport_active_trailer; DROP INDEX IF EXISTS idx_transport_active_load; ALTER TABLE TransportAssignments RENAME TO TransportAssignmentsLegacy; CREATE TABLE TransportAssignments(id TEXT PRIMARY KEY,trailerId TEXT NOT NULL REFERENCES Trailers(id),loadId TEXT NULL REFERENCES Loads(id),loadingSessionId TEXT NULL REFERENCES LoadingSessions(id),source TEXT NOT NULL DEFAULT 'LOAD' CHECK(source IN('MANUAL','LOAD')),manualCommessa TEXT NULL,manualCliente TEXT NULL,manualCarico TEXT NULL,plannedDepartureDate TEXT NULL,stato TEXT NOT NULL CHECK(stato IN('IMPEGNATO','CARICATO','IN_VIAGGIO','CONCLUSO')),assignedAt TEXT NOT NULL,departedAt TEXT NULL,availableFrom TEXT NULL,releasedAt TEXT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);");database.exec("INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,source,manualCommessa,manualCliente,manualCarico,plannedDepartureDate,stato,assignedAt,departedAt,availableFrom,releasedAt,createdAt,updatedAt) SELECT a.id,a.trailerId,a.loadId,a.loadingSessionId,'LOAD',NULL,NULL,NULL,NULL,CASE WHEN a.stato='IMPEGNATO' AND EXISTS(SELECT 1 FROM LoadingSessions s WHERE s.id=a.loadingSessionId AND s.stato='ATTESA_SPEDIZIONE') THEN 'CARICATO' ELSE a.stato END,a.assignedAt,a.departedAt,a.availableFrom,a.releasedAt,a.createdAt,a.updatedAt FROM TransportAssignmentsLegacy a; DROP TABLE TransportAssignmentsLegacy; CREATE UNIQUE INDEX idx_transport_active_trailer ON TransportAssignments(trailerId) WHERE releasedAt IS NULL; CREATE UNIQUE INDEX idx_transport_active_load ON TransportAssignments(loadId) WHERE releasedAt IS NULL AND loadId IS NOT NULL; PRAGMA foreign_keys=ON;");};
 const migratePlannedDepartureDate=(database:DatabaseSync):void=>{const columns=new Set((database.prepare("PRAGMA table_info(TransportAssignments)").all() as Array<{name:string}>).map(item=>item.name));if(!columns.has("plannedDepartureDate"))database.exec("ALTER TABLE TransportAssignments ADD COLUMN plannedDepartureDate TEXT NULL");};
+const migrateShipmentPlanDepartureTracking=(database:DatabaseSync):void=>{const columns=new Set((database.prepare("PRAGMA table_info(ShipmentPlans)").all() as Array<{name:string}>).map(item=>item.name));if(!columns.has("originalPlannedDepartureDate"))database.exec("ALTER TABLE ShipmentPlans ADD COLUMN originalPlannedDepartureDate TEXT NULL");if(!columns.has("plannedDepartureDateChangedAt"))database.exec("ALTER TABLE ShipmentPlans ADD COLUMN plannedDepartureDateChangedAt TEXT NULL");database.exec("UPDATE ShipmentPlans SET originalPlannedDepartureDate=plannedDepartureDate WHERE originalPlannedDepartureDate IS NULL AND plannedDepartureDate IS NOT NULL");};
 
 const addWeekdays=(iso:string,days:number):string=>{const date=new Date(iso);let added=0;while(added<days){date.setUTCDate(date.getUTCDate()+1);if(date.getUTCDay()!==0&&date.getUTCDay()!==6)added++;}return date.toISOString();};
 const migrateTransportAssignments=(database:DatabaseSync):void=>{const rows=database.prepare("SELECT id,loadId,trailerId,stato,startedAt,shippedAt FROM LoadingSessions WHERE trailerId IS NOT NULL AND stato IN('DA_CARICARE','IN_CARICO','ATTESA_SPEDIZIONE','SPEDITO') ORDER BY startedAt DESC").all() as Array<{id:string;loadId:string;trailerId:string;stato:string;startedAt:string;shippedAt:string|null}>;const now=new Date().toISOString(),insert=database.prepare("INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,stato,assignedAt,departedAt,availableFrom,releasedAt,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,NULL,?,?)");for(const row of rows){if(database.prepare("SELECT 1 FROM TransportAssignments WHERE (trailerId=? OR loadId=?) AND releasedAt IS NULL").get(row.trailerId,row.loadId))continue;const departed=row.stato==="SPEDITO"?row.shippedAt:null,available=departed?addWeekdays(departed,2):null;if(row.stato==="SPEDITO"&&(!available||available<=now))continue;insert.run(crypto.randomUUID(),row.trailerId,row.loadId,row.id,row.stato==="SPEDITO"?"IN_VIAGGIO":"IMPEGNATO",row.startedAt,departed,available,now,now);}};
