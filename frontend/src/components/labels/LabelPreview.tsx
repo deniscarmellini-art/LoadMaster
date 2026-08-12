@@ -16,7 +16,7 @@ export default function LabelPreview({ panel, fields, index }:Props) {
       <Box className="heading-panel"><small>Pannello</small><strong className="heading-value">{panel.numeroPannello}</strong><span>Master panel <b>{panel.numeroMasterPanel}</b></span></Box>
       <Box className="heading-order"><small>Commessa</small><strong className="heading-value">{fields.commessa}</strong></Box>
       <Box className="heading-truck"><small>Camion</small><strong className="heading-value">{show(panel.numeroCamion)}</strong></Box>
-      <Box className="heading-ce"><img className="heading-ce-mark" src="/ce-mark-official.png" alt="Marcatura CE" /><b>{fields.autMin}</b><small>C. TRASF. Aut-Min.</small><b>{fields.codiceEta}</b><small>Codice ETA</small><small className="heading-cpr-label">CPR</small><b className="heading-cpr-value">{fields.cpr}</b></Box>
+      <Box className="heading-ce"><img className="heading-ce-mark" src="/ce-mark-official.png" alt="Marcatura CE" /><Box className="heading-certification"><small>C. TRAF. AUT_MIN</small><b>{fields.autMin}</b></Box><Box className="heading-certification"><small>CODICE ETA</small><b>{fields.codiceEta}</b></Box><Box className="heading-certification"><small>CODICE CPR</small><b>{fields.cpr}</b></Box></Box>
     </Box>
     <Box className="label-details">
       <span>Matricola</span><b className="large">{serial}</b><span>Tipologia</span><b>{show(fields.tipologia || panel.tipoPannello)}</b>

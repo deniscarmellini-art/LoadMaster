@@ -13,6 +13,7 @@ import {
   MenuItem,
   Paper,
   Snackbar,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -198,14 +199,14 @@ export default function Transports({ items, onBack, onRefresh }: Props) {
   };
   return (
     <Box>
-      <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={onBack}>
+      <Stack direction={{ xs: "column", sm: "row" }} sx={{ alignItems: { xs: "stretch", sm: "center" }, gap: { xs: 1, sm: 0 }, mb: 2 }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}>
           Dashboard
         </Button>
-        <Typography variant="h4" sx={{ fontWeight: 800, mx: "auto" }}>
+        <Typography variant="h4" sx={{ fontWeight: 800, mx: { xs: 0, sm: "auto" }, textAlign: "center" }}>
           Trasporti
         </Typography>
-      </Box>
+      </Stack>
       <Paper sx={{ p: 2 }}>
         <Box
           sx={{
@@ -245,7 +246,7 @@ export default function Transports({ items, onBack, onRefresh }: Props) {
             Revisione in scadenza
           </Button>
         </Box>
-        <TableContainer>
+        <TableContainer sx={{ display: { xs: "none", sm: "block" } }}>
           <Table sx={{ minWidth: 1280 }} size="small">
             <TableHead>
               <TableRow>
@@ -406,6 +407,92 @@ export default function Transports({ items, onBack, onRefresh }: Props) {
             </TableBody>
           </Table>
         </TableContainer>
+        <Stack sx={{ display: { xs: "flex", sm: "none" }, gap: 1.25 }}>
+          {filtered.map((item) => {
+            const inspectionDate = parseOptionalDate(item.nextInspectionDate);
+            const inspectionDays = inspectionDate === null ? null : Math.ceil((inspectionDate.getTime() - Date.now()) / 86400000);
+            const inspectionColor = inspectionDays !== null && inspectionDays < 0 ? "error.main" : inspectionDays !== null && inspectionDays <= 30 ? "warning.main" : "text.primary";
+            const hasAssignment = Boolean(item.commessa || item.cliente || item.camion);
+            return (
+              <Paper key={item.id} variant="outlined" sx={{ p: 1.5 }}>
+                <Stack direction="row" sx={{ alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography color="primary.main" sx={{ fontSize: "1.1rem", fontWeight: 900, overflowWrap: "anywhere" }}>
+                      {item.plate}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {item.description || "—"}
+                    </Typography>
+                  </Box>
+                  <Chip label={labels[item.status]} size="small" sx={{ ...statusStyle[item.status], flexShrink: 0, minWidth: 108 }} />
+                </Stack>
+                {hasAssignment && (
+                  <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 1, mt: 1.5 }}>
+                    {[
+                      ["Commessa", item.commessa ?? "—"],
+                      ["Cliente", item.cliente ?? "—"],
+                      ["Carico / Camion", item.camion ?? "—"],
+                    ].map(([label, value]) => (
+                      <Box key={label} sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" color="text.secondary">{label}</Typography>
+                        <Typography sx={{ fontWeight: label === "Commessa" || label === "Carico / Camion" ? 800 : 400, overflowWrap: "anywhere" }}>{value}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+                <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 1, mt: 1.5 }}>
+                  {item.status !== "DISPONIBILE" && item.status !== "FUORI_SERVIZIO" && (
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="caption" color="text.secondary">Partenza prevista</Typography>
+                      <Typography sx={{ fontWeight: 800 }}>{formatOptionalDate(item.plannedDepartureDate)}</Typography>
+                    </Box>
+                  )}
+                  {(item.status === "IN_VIAGGIO" || item.departedAt) && (
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="caption" color="text.secondary">Partenza effettiva</Typography>
+                      <Typography>{dateTime(item.departedAt)}</Typography>
+                    </Box>
+                  )}
+                  {(item.status === "IN_VIAGGIO" || item.availableFrom) && (
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="caption" color="text.secondary">Rientro previsto</Typography>
+                      <Typography>{dateTime(item.availableFrom)}</Typography>
+                    </Box>
+                  )}
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="caption" color="text.secondary">Prossima revisione</Typography>
+                    <Typography sx={{ color: inspectionColor, fontWeight: inspectionDays !== null && inspectionDays <= 30 ? 700 : 400 }}>
+                      {formatOptionalDate(item.nextInspectionDate)}
+                    </Typography>
+                  </Box>
+                </Box>
+                {item.disabledReason && (
+                  <Typography variant="body2" color="error.main" sx={{ mt: 1.25 }}>
+                    Motivo: {item.disabledReason}
+                  </Typography>
+                )}
+                <Stack sx={{ gap: 1, mt: 1.5 }}>
+                  {item.status === "DISPONIBILE" && (
+                    <>
+                      <Button fullWidth size="large" variant="outlined" onClick={() => openReservation(item)}>Impegna</Button>
+                      <Button fullWidth size="large" color="error" variant="outlined" onClick={() => { setDisableId(item.id); setReason(""); setNotes(""); }}>Disabilita</Button>
+                    </>
+                  )}
+                  {item.status === "IMPEGNATO" && item.source === "MANUAL" && (
+                    <>
+                      <Button fullWidth size="large" variant="outlined" onClick={() => openReservation(item)}>Modifica prenotazione</Button>
+                      <Button fullWidth size="large" color="warning" variant="outlined" onClick={() => setReleaseTrailer(item)}>Libera</Button>
+                    </>
+                  )}
+                  {item.status === "FUORI_SERVIZIO" && (
+                    <Button fullWidth size="large" variant="outlined" onClick={() => void performEnable(item.id)}>Riattiva</Button>
+                  )}
+                </Stack>
+              </Paper>
+            );
+          })}
+          {!filtered.length && <Typography color="text.secondary" sx={{ py: 3, textAlign: "center" }}>Nessun rimorchio corrisponde ai filtri.</Typography>}
+        </Stack>
       </Paper>
       <Dialog
         open={reservationTrailer !== null}

@@ -1,6 +1,6 @@
 import type { Commessa,Pannello } from "../types/excel";
 import { apiRequest } from "./apiClient";
-import { normalizeOrder,normalizeTruck } from "../utils/loadIdentity";
+import { normalizeOrder } from "../utils/loadIdentity";
 
 type LoadStatus="DA_COMPLETARE"|"DA_CARICARE"|"IN_CARICO"|"ATTESA_SPEDIZIONE"|"SPEDITO";
 type PanelStatus="MANCANTE"|"IN_LAVORAZIONE_PACCO"|"DISPONIBILE"|"CARICATO"|"SPEDITO";
@@ -14,5 +14,5 @@ const compose=(loads:ApiLoad[]):Commessa[]=>{const grouped=new Map<string,Commes
 export const fetchLoads=():Promise<ApiLoad[]>=>apiRequest<ApiLoad[]>("/loads");
 export const loadCommesseFromApi=async():Promise<Commessa[]>=>compose(await fetchLoads());
 export const importCommessaToApi=async(commessa:Commessa):Promise<Commessa[]>=>{await apiRequest<ApiLoad[]>("/loads/import",{method:"POST",body:JSON.stringify(toBody(commessa))});return loadCommesseFromApi();};
-export const updateCommessaInApi=async(commessa:Commessa,removeMissing:boolean):Promise<Commessa[]>=>{const loads=await fetchLoads();const targets=loads.filter(load=>normalizeOrder(load.commessa)===normalizeOrder(commessa.ordine));const panelsByTruck=new Map<string,Pannello[]>();for(const panel of commessa.pannelli){const key=normalizeTruck(panel.numeroCamion);panelsByTruck.set(key,[...(panelsByTruck.get(key)??[]),panel]);}for(const [truck,panels] of panelsByTruck){const target=targets.find(load=>normalizeTruck(load.camion)===truck);if(target){await apiRequest<ApiLoad>(`/loads/${target.id}/import`,{method:"PUT",body:JSON.stringify(toBody(commessa,panels,removeMissing))});}else{await apiRequest<ApiLoad[]>("/loads/import",{method:"POST",body:JSON.stringify(toBody(commessa,panels))});}}return loadCommesseFromApi();};
-export const deleteCommessaFromApi=async(ordine:string):Promise<Commessa[]>=>{const loads=await fetchLoads();for(const load of loads.filter(item=>normalizeOrder(item.commessa)===normalizeOrder(ordine)))await apiRequest<void>(`/loads/${load.id}`,{method:"DELETE"});return loadCommesseFromApi();};
+export const updateCommessaInApi=async(commessa:Commessa,removeMissing:boolean):Promise<Commessa[]>=>{await apiRequest<ApiLoad[]>(`/orders/${encodeURIComponent(commessa.ordine)}/import`,{method:"PUT",body:JSON.stringify(toBody(commessa,commessa.pannelli,removeMissing))});return loadCommesseFromApi();};
+export const deleteCommessaFromApi=async(ordine:string,confirmPlanning=false):Promise<Commessa[]>=>{const query=confirmPlanning?"?confirmPlanning=true":"";await apiRequest<void>(`/orders/${encodeURIComponent(ordine)}${query}`,{method:"DELETE"});return loadCommesseFromApi();};

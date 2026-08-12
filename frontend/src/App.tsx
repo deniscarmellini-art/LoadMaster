@@ -24,6 +24,7 @@ import TruckLoading from "./pages/TruckLoading";
 import History from "./pages/History";
 import Transports from "./pages/Transports";
 import Shipments from "./pages/Shipments";
+import MobileDashboardReturn from "./components/navigation/MobileDashboardReturn";
 import theme from "./theme/theme";
 import { creaDashboard } from "./services/dashboardService";
 import type { Camion } from "./models/Camion";
@@ -165,9 +166,15 @@ export default function App() {
     setTransports(transportItems);
     setShipments(shipmentItems);
   }, [settings.operatori]);
+  const refreshShipments = useCallback(async () => {
+    setShipments(await listShipments());
+  }, []);
   useEffect(() => {
     void refreshScanningData().catch(() => undefined);
   }, [refreshScanningData]);
+  useEffect(() => {
+    if (page === "shipments") void refreshShipments().catch(() => undefined);
+  }, [page, refreshShipments]);
   const changeSettings = async (next: typeof settings): Promise<boolean> => {
     const previous = settings;
     setSettings(next);
@@ -241,16 +248,10 @@ export default function App() {
   const removedPanels = pendingImport
     ? (() => {
         const incomingKeys = new Set(pendingImport.pannelli.map(panelKey));
-        const incomingTrucks = new Set(
-          pendingImport.pannelli.map((panel) =>
-            normalizeTruck(panel.numeroCamion),
-          ),
-        );
         return commesse.flatMap((item) =>
           normalizeOrder(item.ordine) === normalizeOrder(pendingImport.ordine)
             ? item.pannelli.filter(
                 (panel) =>
-                  incomingTrucks.has(normalizeTruck(panel.numeroCamion)) &&
                   !incomingKeys.has(panelKey(panel)),
               )
             : [],
@@ -285,8 +286,8 @@ export default function App() {
       try {
         setCommesse(await updateCommessaInApi(pendingImport, false));
         setPendingImport(null);
-      } catch {
-        alert("Errore durante l'aggiornamento della distinta.");
+      } catch (error: unknown) {
+        alert(error instanceof Error?error.message:"Errore durante l'aggiornamento della distinta.");
       }
     }
   };
@@ -300,8 +301,8 @@ export default function App() {
       setCommesse(await updateCommessaInApi(pendingImport, removeMissing));
       setConfirmRemoved(false);
       setPendingImport(null);
-    } catch {
-      alert("Errore durante l'aggiornamento della distinta.");
+    } catch (error: unknown) {
+      alert(error instanceof Error?error.message:"Errore durante l'aggiornamento della distinta.");
     }
   };
 
@@ -342,8 +343,8 @@ export default function App() {
           <Dashboard
             commesse={commesse}
             onImported={handleImported}
-            onDeleteCommessa={async (ordine) => {
-              setCommesse(await deleteCommessaFromApi(ordine));
+            onDeleteCommessa={async (ordine, confirmPlanning) => {
+              setCommesse(await deleteCommessaFromApi(ordine, confirmPlanning));
             }}
             onOpenLabels={() => setPage("labels")}
             onOpenScanning={openScanning}
@@ -515,7 +516,7 @@ export default function App() {
             carriers={settings.trasportatori}
             transports={transports}
             onBack={() => setPage("dashboard")}
-            onRefresh={refreshScanningData}
+            onRefresh={refreshShipments}
           />
         ) : page === "history" ? (
           <History
@@ -725,6 +726,16 @@ export default function App() {
             target={scanningTarget}
           />
         ) : null}
+        {page !== "dashboard" && !loadsLoading && !loadsError && (
+          <MobileDashboardReturn
+            onBack={() => {
+              setHistoryLoadId(undefined);
+              setResumeLoad(null);
+              setScanningTarget(null);
+              setPage("dashboard");
+            }}
+          />
+        )}
       </MainLayout>
       <Dialog
         open={blockedImport !== null}

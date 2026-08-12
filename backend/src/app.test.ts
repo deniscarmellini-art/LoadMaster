@@ -296,6 +296,62 @@ test("aggiorna la distinta senza duplicare pannelli e consente l'eliminazione",a
   await app.close();
 });
 
+test("aggiornando una distinta rimuove atomicamente un camion non più presente",async()=>{
+  const app=await buildApp(config);
+  const original={...importedLoad([importedPanel("1","C1",10),importedPanel("2","C2",20)]),commessa:"UPDATE-TRUCKS"};
+  await app.inject({method:"POST",url:"/api/loads/import",payload:original});
+  const updated=await app.inject({method:"PUT",url:"/api/orders/UPDATE-TRUCKS/import",payload:{...original,removeMissing:true,pannelli:[importedPanel("1","C1",99)]}});
+  assert.equal(updated.statusCode,200);
+  const loads=updated.json<Array<{camion:string;pannelli:Array<{peso:number}>}>>();
+  assert.deepEqual(loads.map(load=>load.camion),["C1"]);assert.equal(loads[0]?.pannelli[0]?.peso,99);
+  await app.close();
+});
+
+test("l'aggiornamento multi-camion esegue rollback se il camion rimosso ha attività",async()=>{
+  const app=await buildApp(config);
+  const original={...importedLoad([importedPanel("1","C1",10),importedPanel("2","C2",20)]),commessa:"UPDATE-BLOCKED"};
+  const loads=(await app.inject({method:"POST",url:"/api/loads/import",payload:original})).json<Array<{camion:string;pannelli:Array<{id:string}>}>>();
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const c2=loads.find(load=>load.camion==="C2")!;await app.inject({method:"PATCH",url:`/api/panels/${c2.pannelli[0]!.id}/scan`,payload:{operatorId:operator.id}});
+  const blocked=await app.inject({method:"PUT",url:"/api/orders/UPDATE-BLOCKED/import",payload:{...original,removeMissing:true,pannelli:[importedPanel("1","C1",99)]}});
+  assert.equal(blocked.statusCode,409);assert.equal(blocked.json<{error:{code:string}}>().error.code,"RESOURCE_IN_USE");
+  const restored=(await app.inject({method:"GET",url:"/api/loads"})).json<Array<{commessa:string;camion:string;pannelli:Array<{peso:number}>}>>().filter(load=>load.commessa==="UPDATE-BLOCKED");
+  assert.equal(restored.length,2);assert.equal(restored.find(load=>load.camion==="C1")?.pannelli[0]?.peso,10);
+  await app.close();
+});
+
+test("elimina atomicamente la commessa 265588 dopo conferma della pianificazione preventiva",async()=>{
+  const app=await buildApp(config);
+  const payload={...importedLoad([importedPanel("139","C7"),importedPanel("140","C7")]),commessa:"265588"};
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload})).json<Array<{id:string}>>()[0]!;
+  const plan=await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"265588",cliente:"Cliente Test",camion:"C7",plannedDepartureDate:"2026-08-18",transportType:"BILICO_ESSEPI",trailerId:null,carrierId:null}});
+  assert.equal(plan.statusCode,200);
+  const trailer=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
+  assert.equal((await app.inject({method:"POST",url:`/api/trailers/${trailer.id}/reservation`,payload:{commessa:"265588",cliente:"Cliente Test",carico:"C7"}})).statusCode,200);
+  const warning=await app.inject({method:"DELETE",url:"/api/orders/265588"});
+  assert.equal(warning.statusCode,409);assert.equal(warning.json<{error:{code:string}}>().error.code,"PREVENTIVE_PLAN_CONFIRMATION_REQUIRED");
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${load.id}`})).statusCode,200);
+  const removed=await app.inject({method:"DELETE",url:"/api/orders/265588?confirmPlanning=true"});
+  assert.equal(removed.statusCode,204);
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${load.id}`})).statusCode,404);
+  assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{commessa:string}>>().some(item=>item.commessa==="265588"),false);
+  assert.equal((await app.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string}>>().find(item=>item.id===trailer.id)?.status,"DISPONIBILE");
+  await app.close();
+});
+
+test("la cancellazione multi-camion non rimuove nulla se un camion contiene attività",async()=>{
+  const app=await buildApp(config);
+  const payload={...importedLoad([importedPanel("1","C1"),importedPanel("2","C2")]),commessa:"MULTI-DELETE"};
+  const loads=(await app.inject({method:"POST",url:"/api/loads/import",payload})).json<Array<{id:string;pannelli:Array<{id:string}>}>>();
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  await app.inject({method:"PATCH",url:`/api/panels/${loads[1]!.pannelli[0]!.id}/scan`,payload:{operatorId:operator.id}});
+  const blocked=await app.inject({method:"DELETE",url:"/api/orders/MULTI-DELETE"});
+  assert.equal(blocked.statusCode,409);assert.equal(blocked.json<{error:{code:string}}>().error.code,"RESOURCE_IN_USE");
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${loads[0]!.id}`})).statusCode,200);
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${loads[1]!.id}`})).statusCode,200);
+  await app.close();
+});
+
 test("commesse e pannelli persistono dopo il riavvio backend",async()=>{
   const directory=mkdtempSync(join(tmpdir(),"loads-persistence-"));const persistentConfig={...config,databasePath:join(directory,"operational.sqlite")};
   try{const first=await buildApp(persistentConfig);await first.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("77","C7")])});await first.close();const second=await buildApp(persistentConfig);const loads=await second.inject({method:"GET",url:"/api/loads"});assert.equal(loads.json<Array<{pannelli:unknown[]}>>()[0]?.pannelli.length,1);await second.close();}finally{rmSync(directory,{recursive:true,force:true});}

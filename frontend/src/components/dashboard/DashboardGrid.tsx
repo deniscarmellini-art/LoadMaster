@@ -94,11 +94,15 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
     <>
     <DataGrid
       columns={columns}
+      disableColumnFilter
+      disableColumnMenu
+      disableColumnSelector
       onRowDoubleClick={(params) => runDashboardPrimaryAction(params.row, primaryHandlers)}
       initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
       pageSizeOptions={[10, 25, 50]}
       rowHeight={56}
       rows={rows}
+      sortingOrder={["asc", "desc"]}
       sx={{
         bgcolor: dashboardColors.grid,
         border: 0,

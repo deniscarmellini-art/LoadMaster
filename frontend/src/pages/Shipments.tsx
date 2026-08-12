@@ -382,17 +382,36 @@ export default function Shipments({
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="it">
       <Box>
-        <Stack direction="row" sx={{ alignItems: "center", mb: 2 }}>
-          <Button startIcon={<ArrowBackIcon />} onClick={onBack}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          sx={{
+            alignItems: { xs: "stretch", sm: "center" },
+            gap: { xs: 1, sm: 0 },
+            mb: 2,
+          }}
+        >
+          <Button
+            startIcon={<ArrowBackIcon />}
+            onClick={onBack}
+            sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}
+          >
             Dashboard
           </Button>
           <Typography
             variant={mobile ? "h5" : "h4"}
-            sx={{ fontWeight: 800, mx: "auto" }}
+            sx={{
+              fontWeight: 800,
+              mx: { xs: 0, sm: "auto" },
+              textAlign: "center",
+            }}
           >
             Spedizioni
           </Typography>
-          <Button variant="contained" onClick={() => open()}>
+          <Button
+            variant="contained"
+            onClick={() => open()}
+            sx={{ alignSelf: { xs: "flex-end", sm: "auto" } }}
+          >
             + Pianifica spedizione
           </Button>
         </Stack>

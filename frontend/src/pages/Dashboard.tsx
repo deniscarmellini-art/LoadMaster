@@ -30,11 +30,12 @@ import type { Operatore, Rimorchio, Trasportatore } from "../models/Settings";
 import type { ShipmentItem } from "../services/shipmentsApi";
 import { operatorLabel } from "../models/Settings";
 import PackagePrintPreview from "../components/scanning/PackagePrintPreview";
+import { ApiClientError } from "../services/apiClient";
 
 interface DashboardProps {
   commesse: Commessa[];
   onImported: (commessa: Commessa) => Promise<void>;
-  onDeleteCommessa: (ordine: string) => Promise<void>;
+  onDeleteCommessa: (ordine: string, confirmPlanning?: boolean) => Promise<void>;
   onOpenLabels: () => void;
   onOpenScanning: (row: Camion) => void;
   onOpenScanningList: () => void;
@@ -85,6 +86,8 @@ function Dashboard({
   onConfirmDeparture,
 }: DashboardProps) {
   const [deleteOrder, setDeleteOrder] = useState<string | null>(null);
+  const [deletePlanningWarning, setDeletePlanningWarning] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [reopenRow, setReopenRow] = useState<Camion | null>(null);
   const [reopenOperatorId, setReopenOperatorId] = useState("");
@@ -161,19 +164,17 @@ function Dashboard({
     setSelectedPackageCodes(new Set(codes));
     setPackagePrintRow(row);
   };
-  const deletePanels = commesse
-    .filter((item) => item.ordine === deleteOrder)
-    .flatMap((item) => item.pannelli);
-  const hasProductionData = deletePanels.some(
-    (panel) => panel.preparato || panel.caricato,
-  );
-  const confirmDelete = async () => {
-    if (!deleteOrder || hasProductionData) return;
+  const closeDeleteDialog=()=>{setDeleteOrder(null);setDeletePlanningWarning(false);setDeleteError(null);};
+  const confirmDelete = async (confirmPlanning=false) => {
+    if (!deleteOrder) return;
     try {
-      await onDeleteCommessa(deleteOrder);
-      setDeleteOrder(null);
-    } catch {
-      alert("Errore durante l'eliminazione della commessa.");
+      await onDeleteCommessa(deleteOrder,confirmPlanning);
+      closeDeleteDialog();
+    } catch(error:unknown) {
+      if(error instanceof ApiClientError&&error.code==="PREVENTIVE_PLAN_CONFIRMATION_REQUIRED"){
+        setDeletePlanningWarning(true);setDeleteError(null);return;
+      }
+      setDeleteError(error instanceof Error?error.message:"Errore durante l'eliminazione della commessa.");
     }
   };
   const openFilePicker = () => {
@@ -224,7 +225,7 @@ function Dashboard({
         onOpenShipments={onOpenShipments}
       />
       <DashboardContent
-        onDelete={(row) => setDeleteOrder(row.commessa)}
+        onDelete={(row) => {setDeleteOrder(row.commessa);setDeletePlanningWarning(false);setDeleteError(null);}}
         onContinueLoad={(row) => {
           const load = truckLoads.find(
             (item) =>
@@ -257,28 +258,40 @@ function Dashboard({
         onUpdate={openFilePicker}
         rows={activeRows}
       />
-      <Dialog open={deleteOrder !== null} onClose={() => setDeleteOrder(null)}>
+      <DashboardHeader
+        section="menu"
+        isImporting={isImporting}
+        onImportClick={openFilePicker}
+        onOpenHistory={() => onOpenHistory()}
+        onOpenLabels={onOpenLabels}
+        onOpenLoading={onOpenLoading}
+        onOpenTransports={onOpenTransports}
+        onOpenShipments={onOpenShipments}
+        onOpenScanning={onOpenScanningList}
+        onOpenSettings={onOpenSettings}
+        onOpenWarehouse={onOpenWarehouse}
+      />
+      <Dialog open={deleteOrder !== null} onClose={closeDeleteDialog}>
         <DialogTitle>
-          {hasProductionData
-            ? "Impossibile eliminare la commessa"
+          {deletePlanningWarning
+            ? "Elimina commessa e pianificazione"
             : "Elimina commessa"}
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {hasProductionData
-              ? `La commessa ${deleteOrder} contiene dati di produzione e deve essere prima archiviata oppure svuotata.`
+            {deletePlanningWarning
+              ? "La commessa ha una pianificazione spedizione collegata. Eliminando la commessa verrà eliminata anche la pianificazione. Vuoi continuare?"
               : `Vuoi eliminare definitivamente la commessa ${deleteOrder} e tutti i pannelli associati?`}
           </DialogContentText>
+          {deleteError&&<Alert severity="error" sx={{mt:2}}>{deleteError}</Alert>}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteOrder(null)}>
-            {hasProductionData ? "Chiudi" : "Annulla"}
+          <Button onClick={closeDeleteDialog}>
+            Annulla
           </Button>
-          {!hasProductionData && (
-            <Button color="error" variant="contained" onClick={confirmDelete}>
-              Elimina
-            </Button>
-          )}
+          <Button color="error" variant="contained" onClick={()=>void confirmDelete(deletePlanningWarning)}>
+            {deletePlanningWarning?"Elimina commessa e pianificazione":"Elimina"}
+          </Button>
         </DialogActions>
       </Dialog>
       <Dialog
