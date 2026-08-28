@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -49,6 +49,8 @@ import {
   cancelPanelApi,
   loadScanningSnapshot,
   removePanelFromPackage,
+  updatePanelManualLocation,
+  updatePackageManualLocation,
 } from "./services/scanningApi";
 import {
   listLoadingSessions,
@@ -57,6 +59,7 @@ import {
 } from "./services/loadingApi";
 import { listTransports, type TransportItem } from "./services/transportsApi";
 import { listShipments, type ShipmentItem } from "./services/shipmentsApi";
+import useAutoRefresh from "./hooks/useAutoRefresh";
 
 const panelKey = (panel: Pannello) =>
   `${normalizeTruck(panel.numeroCamion)}\u0000${String(panel.numeroPannello).trim()}`;
@@ -103,34 +106,72 @@ export default function App() {
     camion: string;
   } | null>(null);
   const [confirmRemoved, setConfirmRemoved] = useState(false);
-  useEffect(() => {
-    let active = true;
-    void loadSettingsFromApi()
+  const settingsRef = useRef(settings);
+  const scanningRefreshRef = useRef<Promise<void> | null>(null);
+  const settingsRefreshRef = useRef<Promise<void> | null>(null);
+  settingsRef.current = settings;
+
+  const refreshSettings = useCallback(async () => {
+    if (settingsRefreshRef.current) return settingsRefreshRef.current;
+    const request = loadSettingsFromApi()
       .then((value) => {
-        if (active) {
-          setSettings(value);
-          setSettingsLoadErrors([]);
-        }
+        setSettings(value);
+        setSettingsLoadErrors([]);
       })
       .catch(() => {
-        if (active)
-          setSettingsLoadErrors([
-            "Backend non raggiungibile: impossibile caricare le anagrafiche.",
-          ]);
+        setSettingsLoadErrors([
+          "Backend non raggiungibile: impossibile caricare le anagrafiche.",
+        ]);
       });
-    return () => {
-      active = false;
+    settingsRefreshRef.current = request;
+    try {
+      await request;
+    } finally {
+      if (settingsRefreshRef.current === request)
+        settingsRefreshRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSettings();
+  }, [refreshSettings]);
+  const refreshScanningData = useCallback(async () => {
+    if (scanningRefreshRef.current) return scanningRefreshRef.current;
+    const operatorName = (id: string) => {
+      const value = settingsRef.current.operatori.find((item) => item.id === id);
+      return value ? operatorLabel(value) : id;
     };
+    const request = Promise.all([
+      loadCommesseFromApi(),
+      loadScanningSnapshot(operatorName),
+      listLoadingSessions(operatorName),
+      listTransports(),
+      listShipments(),
+    ]).then(([loads, snapshot, sessions, transportItems, shipmentItems]) => {
+      setCommesse(loads);
+      setSingles(snapshot.singles);
+      setPackages(snapshot.packages);
+      setPackageDrafts(snapshot.drafts);
+      setPackageDraftIds(snapshot.draftIds);
+      setTruckLoads(sessions);
+      setTransports(transportItems);
+      setShipments(shipmentItems);
+      setLoadsError(null);
+    });
+    scanningRefreshRef.current = request;
+    try {
+      await request;
+    } finally {
+      if (scanningRefreshRef.current === request)
+        scanningRefreshRef.current = null;
+    }
+  }, []);
+  const refreshShipments = useCallback(async () => {
+    setShipments(await listShipments());
   }, []);
   useEffect(() => {
     let active = true;
-    void loadCommesseFromApi()
-      .then((value) => {
-        if (active) {
-          setCommesse(value);
-          setLoadsError(null);
-        }
-      })
+    void refreshScanningData()
       .catch(() => {
         if (active)
           setLoadsError(
@@ -143,38 +184,26 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
-  const refreshScanningData = useCallback(async () => {
-    const operatorName = (id: string) => {
-      const value = settings.operatori.find((item) => item.id === id);
-      return value ? operatorLabel(value) : id;
-    };
-    const [loads, snapshot, sessions, transportItems, shipmentItems] =
-      await Promise.all([
-        loadCommesseFromApi(),
-        loadScanningSnapshot(operatorName),
-        listLoadingSessions(operatorName),
-        listTransports(),
-        listShipments(),
-      ]);
-    setCommesse(loads);
-    setSingles(snapshot.singles);
-    setPackages(snapshot.packages);
-    setPackageDrafts(snapshot.drafts);
-    setPackageDraftIds(snapshot.draftIds);
-    setTruckLoads(sessions);
-    setTransports(transportItems);
-    setShipments(shipmentItems);
-  }, [settings.operatori]);
-  const refreshShipments = useCallback(async () => {
-    setShipments(await listShipments());
-  }, []);
-  useEffect(() => {
-    void refreshScanningData().catch(() => undefined);
   }, [refreshScanningData]);
-  useEffect(() => {
-    if (page === "shipments") void refreshShipments().catch(() => undefined);
-  }, [page, refreshShipments]);
+  const refreshIntervals: Partial<Record<typeof page, number>> = {
+    dashboard: 15_000,
+    scanning: 10_000,
+    "scanning-list": 10_000,
+    warehouse: 15_000,
+    loading: 7_500,
+    transports: 15_000,
+    shipments: 15_000,
+  };
+  const refreshDataOnFocus = page !== "labels" && page !== "settings";
+  useAutoRefresh(refreshScanningData, {
+    enabled: refreshDataOnFocus,
+    intervalMs: refreshIntervals[page],
+    scopeKey: page,
+  });
+  useAutoRefresh(refreshSettings, {
+    enabled: page === "settings",
+    scopeKey: page,
+  });
   const changeSettings = async (next: typeof settings): Promise<boolean> => {
     const previous = settings;
     setSettings(next);
@@ -203,6 +232,19 @@ export default function App() {
       setPage("loading");
     },
     [truckLoads],
+  );
+  const trailerLocationByLoadId = new Map(
+    truckLoads
+      .filter((load) => Boolean(load.backendLoadId))
+      .map((load) => {
+        const trailer = settings.rimorchi.find(
+          (item) => item.id === load.rimorchioId,
+        );
+        const location = trailer
+          ? [trailer.targa, trailer.descrizione].filter(Boolean).join(" — ")
+          : "Da assegnare";
+        return [load.backendLoadId!, location] as const;
+      }),
   );
 
   const handleImported = useCallback(
@@ -485,8 +527,21 @@ export default function App() {
                   panel.scannedByOperatorId ?? "",
                 ).then(refreshScanningData);
             }}
+            onUpdatePanelLocation={async (panel, location) => {
+              if (!panel.backendId)
+                throw new Error("Identificativo pannello non disponibile");
+              await updatePanelManualLocation(panel.backendId, location);
+              await refreshScanningData();
+            }}
+            onUpdatePackageLocation={async (pack, location) => {
+              if (!pack.id)
+                throw new Error("Identificativo pacco non disponibile");
+              await updatePackageManualLocation(pack.id, location);
+              await refreshScanningData();
+            }}
             packages={packages}
             singles={singles}
+            trailerLocationByLoadId={trailerLocationByLoadId}
           />
         ) : page === "settings" ? (
           <Settings
@@ -559,6 +614,7 @@ export default function App() {
             }}
             carriers={settings.trasportatori}
             commesse={commesse}
+            transports={transports}
             onBack={() => {
               setResumeLoad(null);
               setPage("dashboard");

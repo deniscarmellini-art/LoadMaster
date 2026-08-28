@@ -17,7 +17,7 @@ export function runDashboardPrimaryAction(row: Camion, handlers: DashboardPrimar
 }
 
 export function dashboardPrimaryLabel(row: Camion) {
-  if (row.stato === "Da completare") return "Scansione finito";
+  if (row.stato === "Da completare") return "Scansione pannelli";
   if (row.stato === "Da caricare") return "Carico camion";
   if (row.stato === "In carico") return "Continua carico";
   if (row.stato === "Attesa spedizione") return "Conferma partenza";

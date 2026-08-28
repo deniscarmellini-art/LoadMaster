@@ -82,6 +82,7 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       peso REAL NOT NULL DEFAULT 0,
       stato TEXT NOT NULL DEFAULT 'MANCANTE',
       packageId TEXT NULL,
+      manualLocation TEXT NULL,
       scannedAt TEXT NULL,
       scannedByOperatorId TEXT NULL,
       createdAt TEXT NOT NULL,
@@ -97,6 +98,7 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       numeroPannelli INTEGER NOT NULL DEFAULT 0,
       pesoTotale REAL NOT NULL DEFAULT 0, volumeTotale REAL NOT NULL DEFAULT 0,
       lunghezzaPacco REAL NULL, larghezzaPacco REAL NULL, altezzaPacco REAL NULL,
+      manualLocation TEXT NULL,
       operatoreId TEXT NOT NULL, openedAt TEXT NOT NULL, closedAt TEXT NULL,
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
     );
@@ -148,6 +150,7 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
     CREATE INDEX IF NOT EXISTS idx_events_load ON OperationalEvents(loadId,timestamp);
   `);
   migratePanelScanningColumns(database);
+  migratePackageLocationColumn(database);
   const eventColumns=new Set((database.prepare("PRAGMA table_info(OperationalEvents)").all() as Array<{name:string}>).map(item=>item.name));
   if(!eventColumns.has("loadingSessionId"))database.exec("ALTER TABLE OperationalEvents ADD COLUMN loadingSessionId TEXT NULL");
   createOperationalDeleteTriggers(database);
@@ -190,9 +193,15 @@ const createOperationalDeleteTriggers=(database:DatabaseSync):void=>database.exe
 const migratePanelScanningColumns = (database: DatabaseSync): void => {
   const columns = new Set((database.prepare("PRAGMA table_info(Panels)").all() as Array<{name:string}>).map(item=>item.name));
   if(!columns.has("packageId")) database.exec("ALTER TABLE Panels ADD COLUMN packageId TEXT NULL");
+  if(!columns.has("manualLocation")) database.exec("ALTER TABLE Panels ADD COLUMN manualLocation TEXT NULL");
   if(!columns.has("scannedAt")) database.exec("ALTER TABLE Panels ADD COLUMN scannedAt TEXT NULL");
   if(!columns.has("scannedByOperatorId")) database.exec("ALTER TABLE Panels ADD COLUMN scannedByOperatorId TEXT NULL");
   database.exec("UPDATE Panels SET stato='MANCANTE' WHERE stato='DA_COMPLETARE'");
+};
+
+const migratePackageLocationColumn = (database: DatabaseSync): void => {
+  const columns = new Set((database.prepare("PRAGMA table_info(Packages)").all() as Array<{name:string}>).map(item=>item.name));
+  if(!columns.has("manualLocation")) database.exec("ALTER TABLE Packages ADD COLUMN manualLocation TEXT NULL");
 };
 
 const migrateLegacyUniqueConstraints = (database: DatabaseSync): void => {

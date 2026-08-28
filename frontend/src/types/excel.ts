@@ -2,6 +2,7 @@ export interface Pannello {
   backendId?: string;
   loadId?: string;
   packageId?: string;
+  manualLocation?: string;
   scannedAt?: string;
   scannedByOperatorId?: string;
   numeroPannello: string;

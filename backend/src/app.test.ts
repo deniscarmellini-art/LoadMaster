@@ -387,6 +387,28 @@ test("scansioni, singoli e pacchi persistono con associazioni e dimensioni",asyn
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
+test("l'ubicazione manuale persiste e viene mantenuta quando un pannello viene scaricato",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"panel-location-"));const persistentConfig={...config,databasePath:join(directory,"location.sqlite")};
+  try{
+    const first=await buildApp(persistentConfig);
+    const operator=(await first.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const trailer=(await first.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
+    const load=(await first.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("U1","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+    const panel=load.pannelli[0]!;
+    await first.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
+    const saved=await first.inject({method:"PATCH",url:`/api/panels/${panel.id}/location`,payload:{location:"Zona A"}});
+    assert.equal(saved.statusCode,200);assert.equal(saved.json<{manualLocation:string|null}>().manualLocation,"Zona A");
+    const session=(await first.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",trailerId:trailer.id}})).json<{id:string}>();
+    const loading=await first.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:panel.id,operatorId:operator.id}});
+    const unitId=loading.json<{units:Array<{id:string}>}>().units[0]!.id;
+    assert.equal((await first.inject({method:"PATCH",url:`/api/panels/${panel.id}/location`,payload:{location:"Zona B"}})).statusCode,409);
+    await first.inject({method:"DELETE",url:`/api/loading-sessions/${session.id}/units/${unitId}`,payload:{operatorId:operator.id}});
+    await first.close();
+    const restarted=await buildApp(persistentConfig);const restored=(await restarted.inject({method:"GET",url:"/api/loads"})).json<Array<{pannelli:Array<{stato:string;manualLocation:string|null}>}>>()[0]!.pannelli[0]!;
+    assert.equal(restored.stato,"DISPONIBILE");assert.equal(restored.manualLocation,"Zona A");await restarted.close();
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
 test("la sessione di carico persiste, si riapre e viene spedita",async()=>{
   const directory=mkdtempSync(join(tmpdir(),"loading-persistence-"));const persistentConfig={...config,databasePath:join(directory,"loading.sqlite")};
   try{

@@ -47,7 +47,7 @@ export default function DashboardMobileCards(props: Props) {
     </Paper>)}
     {!props.rows.length && <Typography color="text.secondary" sx={{ py: 4, textAlign: "center" }}>Nessun carico attivo</Typography>}
     <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeMenu}>
-      {menuRow?.stato === "Da completare" && <MenuItem onClick={() => secondary(props.onOpenScanning)}><QrCodeScannerOutlinedIcon sx={{ mr: 1.5 }} />Scansione finito</MenuItem>}
+      {menuRow?.stato === "Da completare" && <MenuItem onClick={() => secondary(props.onOpenScanning)}><QrCodeScannerOutlinedIcon sx={{ mr: 1.5 }} />Scansione pannelli</MenuItem>}
       {(menuRow?.stato === "Da caricare" || menuRow?.stato === "In carico") && <MenuItem onClick={() => secondary(menuRow.stato === "In carico" ? props.onContinueLoad : props.onStartLoad)}><LocalShippingOutlinedIcon sx={{ mr: 1.5 }} />Carico camion</MenuItem>}
       {menuRow && props.hasPackages(menuRow) && <MenuItem onClick={() => secondary(props.onPrintPackages)}><PrintOutlinedIcon sx={{ mr: 1.5 }} />Stampa etichette</MenuItem>}
     </Menu>

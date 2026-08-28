@@ -187,9 +187,7 @@ export default function DashboardHeader({
                 whiteSpace: "nowrap",
               }}
             >
-              {item.label === "Scansione pannelli"
-                ? "Scansione finito"
-                : item.label}
+              {item.label}
             </Button>
           ))}
         </Box>

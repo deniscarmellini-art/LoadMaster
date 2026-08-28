@@ -15,6 +15,7 @@ export interface UnitaSingola {
 
 export interface Pacco {
   id?: string;
+  loadId?: string;
   codice: string;
   stato: StatoPacco;
   commessa: string;
@@ -27,6 +28,7 @@ export interface Pacco {
   lunghezzaPacco?: number;
   larghezzaPacco?: number;
   altezzaPacco?: number;
+  manualLocation?: string;
   operatore: string;
   operatoreId?: string;
   chiusoIl: string;

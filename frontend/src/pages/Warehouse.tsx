@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import {
@@ -47,6 +48,9 @@ interface Props {
   onCancelSingle: (unit: UnitaSingola) => void;
   onCancelPackage: (pack: Pacco) => void;
   onRemoveDraftPanel: (key: string, panel: Pannello) => void;
+  onUpdatePanelLocation: (panel: Pannello, location: string) => Promise<void>;
+  onUpdatePackageLocation: (pack: Pacco, location: string) => Promise<void>;
+  trailerLocationByLoadId: ReadonlyMap<string, string>;
 }
 type Pending =
   | { kind: "single"; unit: UnitaSingola; blocked: boolean }
@@ -71,6 +75,7 @@ type SortKey =
   | "volume"
   | "dataScansione"
   | "operatore"
+  | "ubicazione"
   | "stato";
 type SortDirection = "asc" | "desc";
 const singleColumns: ReadonlyArray<{
@@ -88,6 +93,7 @@ const singleColumns: ReadonlyArray<{
   { label: "Volume", width: 80, sortKey: "volume" },
   { label: "Data scansione", width: 135, sortKey: "dataScansione" },
   { label: "Operatore", width: 120, sortKey: "operatore" },
+  { label: "Ubicazione", width: 155, sortKey: "ubicazione" },
   { label: "Stato", width: 90, sortKey: "stato" },
   { label: "Azioni", width: 50 },
 ];
@@ -105,6 +111,9 @@ export default function Warehouse({
   onCancelSingle,
   onCancelPackage,
   onRemoveDraftPanel,
+  onUpdatePanelLocation,
+  onUpdatePackageLocation,
+  trailerLocationByLoadId,
 }: Props) {
   const [search, setSearch] = useState(""),
     [order, setOrder] = useState(""),
@@ -115,6 +124,12 @@ export default function Warehouse({
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [pending, setPending] = useState<Pending | null>(null),
     [printPack, setPrintPack] = useState<Pacco | null>(null),
+    [locationPanel, setLocationPanel] = useState<Pannello | null>(null),
+    [locationValue, setLocationValue] = useState(""),
+    [savingLocation, setSavingLocation] = useState(false),
+    [packageLocation, setPackageLocation] = useState<Pacco | null>(null),
+    [packageLocationValue, setPackageLocationValue] = useState(""),
+    [savingPackageLocation, setSavingPackageLocation] = useState(false),
     [notice, setNotice] = useState<{
       message: string;
       severity: "success" | "error";
@@ -139,6 +154,54 @@ export default function Warehouse({
             numeroPannello: panel.numeroPannello,
           }),
       );
+  const locationFor = (panel: Pannello) =>
+    panel.caricato
+      ? trailerLocationByLoadId.get(panel.loadId ?? "") ?? "Da assegnare"
+      : panel.manualLocation?.trim() || "—";
+  const openLocationEditor = (panel: Pannello) => {
+    setLocationPanel(panel);
+    setLocationValue(panel.manualLocation ?? "");
+  };
+  const saveLocation = async () => {
+    if (!locationPanel) return;
+    setSavingLocation(true);
+    try {
+      await onUpdatePanelLocation(locationPanel, locationValue);
+      setLocationPanel(null);
+      setNotice({ message: "Ubicazione aggiornata", severity: "success" });
+    } catch {
+      setNotice({
+        message: "Non è stato possibile aggiornare l'ubicazione.",
+        severity: "error",
+      });
+    } finally {
+      setSavingLocation(false);
+    }
+  };
+  const packageLocationFor = (pack: Pacco) =>
+    pack.stato === "CARICATO" || pack.stato === "SPEDITO"
+      ? trailerLocationByLoadId.get(pack.loadId ?? "") ?? "Da assegnare"
+      : pack.manualLocation?.trim() || "—";
+  const openPackageLocationEditor = (pack: Pacco) => {
+    setPackageLocation(pack);
+    setPackageLocationValue(pack.manualLocation ?? "");
+  };
+  const savePackageLocation = async () => {
+    if (!packageLocation) return;
+    setSavingPackageLocation(true);
+    try {
+      await onUpdatePackageLocation(packageLocation, packageLocationValue);
+      setPackageLocation(null);
+      setNotice({ message: "Ubicazione pacco aggiornata", severity: "success" });
+    } catch {
+      setNotice({
+        message: "Non è stato possibile aggiornare l'ubicazione del pacco.",
+        severity: "error",
+      });
+    } finally {
+      setSavingPackageLocation(false);
+    }
+  };
   const match = (values: string[], kind: "single" | "package") => {
     const text = values.join(" ").toLowerCase();
     return (
@@ -191,6 +254,8 @@ export default function Warehouse({
               }
               case "operatore":
                 return unit.operatore;
+              case "ubicazione":
+                return locationFor(panel);
               case "stato":
                 return panel.caricato ? "CARICATO" : "DISPONIBILE";
             }
@@ -341,7 +406,7 @@ export default function Warehouse({
           <TableContainer sx={{ display: { xs: "none", sm: "block" } }}>
             <Table
               size="small"
-              sx={{ tableLayout: "fixed", minWidth: { xs: 1140, lg: "100%" } }}
+              sx={{ tableLayout: "fixed", minWidth: { xs: 1295, lg: "100%" } }}
             >
               <TableHead>
                 <TableRow>
@@ -396,6 +461,24 @@ export default function Warehouse({
                         {new Date(unit.chiusaIl).toLocaleString("it-IT")}
                       </TableCell>
                       <TableCell sx={nowrap}>{unit.operatore}</TableCell>
+                      <TableCell sx={nowrap}>
+                        <Stack direction="row" sx={{ alignItems: "center", gap: 0.5 }}>
+                          <Typography variant="body2" sx={nowrap}>
+                            {locationFor(panel)}
+                          </Typography>
+                          {!panel.caricato && (
+                            <Tooltip title="Modifica ubicazione">
+                              <IconButton
+                                size="small"
+                                aria-label={`Modifica ubicazione pannello ${panel.numeroPannello}`}
+                                onClick={() => openLocationEditor(panel)}
+                              >
+                                <EditOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                        </Stack>
+                      </TableCell>
                       <TableCell>
                         <Chip
                           size="small"
@@ -463,6 +546,7 @@ export default function Warehouse({
                       ["Volume", `${panel.volume.toFixed(3)} m³`],
                       ["Data scansione", new Date(unit.chiusaIl).toLocaleString("it-IT")],
                       ["Operatore", unit.operatore],
+                      ["Ubicazione", locationFor(panel)],
                     ].map(([label, value]) => (
                       <Box key={label} sx={{ minWidth: 0, gridColumn: label === "Data scansione" ? "1 / -1" : undefined }}>
                         <Typography variant="caption" color="text.secondary">{label}</Typography>
@@ -470,7 +554,17 @@ export default function Warehouse({
                       </Box>
                     ))}
                   </Box>
-                  <Stack direction="row" sx={{ justifyContent: "flex-end", mt: 1 }}>
+                  <Stack direction="row" sx={{ justifyContent: "space-between", mt: 1 }}>
+                    {!loaded && (
+                      <Button
+                        size="small"
+                        startIcon={<EditOutlinedIcon />}
+                        onClick={() => openLocationEditor(panel)}
+                        sx={{ minHeight: 44 }}
+                      >
+                        Modifica ubicazione
+                      </Button>
+                    )}
                     <Tooltip title="Elimina">
                       <IconButton
                         color="error"
@@ -507,6 +601,12 @@ export default function Warehouse({
                   })
                 }
                 onPrint={() => setPrintPack(pack)}
+                location={packageLocationFor(pack)}
+                onEditLocation={
+                  pack.stato === "DISPONIBILE"
+                    ? () => openPackageLocationEditor(pack)
+                    : undefined
+                }
               />
             ))}
             {Array.from(drafts.entries())
@@ -596,6 +696,35 @@ export default function Warehouse({
               Conferma
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        fullWidth
+        maxWidth="sm"
+        open={locationPanel !== null}
+        onClose={() => !savingLocation && setLocationPanel(null)}
+      >
+        <DialogTitle>Ubicazione pannello {locationPanel?.numeroPannello}</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Inserisci la posizione fisica del pannello disponibile. Lascia il campo vuoto per rimuoverla.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Posizione"
+            value={locationValue}
+            slotProps={{ htmlInput: { maxLength: 120 } }}
+            onChange={(event) => setLocationValue(event.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={savingLocation} onClick={() => setLocationPanel(null)}>
+            Annulla
+          </Button>
+          <Button disabled={savingLocation} variant="contained" onClick={() => void saveLocation()}>
+            Salva
+          </Button>
         </DialogActions>
       </Dialog>
       <Dialog

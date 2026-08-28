@@ -7,6 +7,8 @@ export class ScanningController{
  createPackage=async(r:FastifyRequest<{Body:{loadId:string;operatorId:string}}>,reply:FastifyReply)=>reply.status(201).send(this.service.createPackage(r.body));
  scan=async(r:FastifyRequest<{Params:Id;Body:{operatorId:string}}>)=>this.service.scan(r.params.id,r.body);
  closeSingle=async(r:FastifyRequest<{Params:Id;Body:{operatorId:string}}>)=>this.service.closeSingle(r.params.id,r.body);
+ updateManualLocation=async(r:FastifyRequest<{Params:Id;Body:{location:string}}>)=>this.service.updateManualLocation(r.params.id,r.body);
+ updatePackageManualLocation=async(r:FastifyRequest<{Params:Id;Body:{location:string}}>)=>this.service.updatePackageManualLocation(r.params.id,r.body);
  addPanel=async(r:FastifyRequest<{Params:Id;Body:{panelId:string;operatorId:string}}>)=>this.service.addPanel(r.params.id,r.body);
  removePanel=async(r:FastifyRequest<{Params:PackagePanel;Body:{operatorId:string}}>)=>this.service.removePanel(r.params.id,r.params.panelId,r.body);
  closePackage=async(r:FastifyRequest<{Params:Id;Body:{codicePacco:string;operatoreId:string;lunghezzaPacco:number;larghezzaPacco:number;altezzaPacco:number}}>)=>this.service.closePackage(r.params.id,r.body);
