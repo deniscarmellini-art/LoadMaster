@@ -53,6 +53,16 @@ export class ShipmentService {
         "VALIDATION_ERROR",
         "Tipo trasporto obbligatorio",
       );
+    if (
+      plan.transportType === "BILICO_ESSEPI" &&
+      !input.carrierId &&
+      !plan.carrierId
+    )
+      throw new ApiError(
+        400,
+        "VALIDATION_ERROR",
+        "Trasportatore obbligatorio per la partenza del Bilico Essepi",
+      );
     const now = new Date().toISOString();
     if (plan.loadId) {
       const session = this.loading

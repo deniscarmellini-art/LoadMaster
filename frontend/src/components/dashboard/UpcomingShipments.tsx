@@ -10,7 +10,7 @@ import {
 } from "@mui/material";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import type { ShipmentItem, ShipmentStatus } from "../../services/shipmentsApi";
-import type { Rimorchio } from "../../models/Settings";
+import type { Rimorchio, Trasportatore } from "../../models/Settings";
 import { dashboardColors } from "../../theme/theme";
 import { getNextBusinessDays } from "../../utils/businessDays";
 import PlannedDepartureDate from "../shipments/PlannedDepartureDate";
@@ -19,6 +19,7 @@ import { operationalStatusPresentation } from "../../services/dashboardService";
 interface Props {
   shipments: ShipmentItem[];
   trailers: Rimorchio[];
+  carriers: Trasportatore[];
   onOpenShipments: () => void;
 }
 
@@ -35,16 +36,36 @@ const statusColors: Partial<
   IN_VIAGGIO: "info",
 };
 
-const transportLabel = (shipment: ShipmentItem, trailers: Rimorchio[]) =>
-  shipment.transportType === "BILICO_ESSEPI"
-    ? `Bilico Essepi — ${shipment.trailerId ? (trailers.find((trailer) => trailer.id === shipment.trailerId)?.targa ?? "Assegnato") : "Da assegnare"}`
-    : shipment.transportType === "TRASPORTATORE_ESTERNO"
-      ? "Ritira Cliente"
-      : "—";
+const statusChipSx = {
+  height: 24,
+  fontSize: "0.78rem",
+  "& .MuiChip-label": { px: 1.25 },
+};
+
+const transportLabel = (
+  shipment: ShipmentItem,
+  trailers: Rimorchio[],
+  carriers: Trasportatore[],
+) => {
+  if (shipment.transportType === "TRASPORTATORE_ESTERNO") return "Ritira Cliente";
+  if (shipment.transportType !== "BILICO_ESSEPI") return "—";
+
+  const trailer = shipment.trailerId
+    ? trailers.find((item) => item.id === shipment.trailerId)?.targa ?? "Rimorchio assegnato"
+    : null;
+  if (!trailer) return "Bilico Essepi — Da assegnare";
+  if (!shipment.actualDepartureDate) return `Bilico Essepi — ${trailer}`;
+
+  const carrier = shipment.carrierId
+    ? carriers.find((item) => item.id === shipment.carrierId)?.nome ?? "Trasportatore non disponibile"
+    : "Trasportatore non disponibile";
+  return `${trailer} — ${carrier}`;
+};
 
 export default function UpcomingShipments({
   shipments,
   trailers,
+  carriers,
   onOpenShipments,
 }: Props) {
   const theme = useTheme();
@@ -157,8 +178,7 @@ export default function UpcomingShipments({
                             label={statusLabels[shipment.shipmentStatus]}
                             color={statusColors[shipment.shipmentStatus]}
                             sx={{
-                              height: 20,
-                              fontSize: "0.65rem",
+                              ...statusChipSx,
                               flexShrink: 0,
                             }}
                           />
@@ -176,7 +196,7 @@ export default function UpcomingShipments({
                         color="text.secondary"
                         sx={{ display: "block" }}
                       >
-                        {transportLabel(shipment, trailers)}
+                        {transportLabel(shipment, trailers, carriers)}
                       </Typography>
                       {shipment.operationalStatus && (
                         <Chip
@@ -192,7 +212,7 @@ export default function UpcomingShipments({
                               shipment.operationalStatus,
                             ).label
                           }
-                          sx={{ mt: 0.5, height: 20, fontSize: "0.65rem" }}
+                          sx={{ ...statusChipSx, mt: 0.5 }}
                         />
                       )}
                       <Box sx={{ mt: 0.25 }}>

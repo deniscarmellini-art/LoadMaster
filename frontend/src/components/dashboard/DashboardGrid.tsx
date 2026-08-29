@@ -32,32 +32,41 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
   const closeMenu = () => { setAnchorEl(null); setMenuRow(null); };
   const runAction = (action: () => void) => { closeMenu(); action(); };
   const primaryHandlers = { onConfirmDeparture, onContinueLoad, onOpenHistory, onOpenScanning, onStartLoad };
+  const fixedColumn = { disableReorder: true } as const;
   const columns: GridColDef<Camion>[] = [
-    { field: "commessa", headerName: "Commessa", minWidth: 120 },
-    { field: "cliente", headerName: "Cliente", flex: 1, minWidth: 180 },
-    { field: "camion", headerName: "Camion", minWidth: 100 },
-    { field: "previsti", headerName: "Previsti", minWidth: 90, type: "number" },
-    { field: "pronti", headerName: "Pronti", minWidth: 90, type: "number" },
-    { field: "caricati", headerName: "Caricati", minWidth: 95, type: "number" },
+    { ...fixedColumn, field: "commessa", headerName: "Commessa", width: 130, align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "cliente", headerName: "Cliente", width: 240, align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "camion", headerName: "Camion", width: 100, align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "previsti", headerName: "Previsti", width: 90, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "pronti", headerName: "Pronti", width: 90, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "caricati", headerName: "Caricati", width: 90, type: "number", align: "center", headerAlign: "center" },
     {
+      ...fixedColumn,
       field: "peso",
       headerName: "Peso",
-      minWidth: 110,
+      width: 120,
       type: "number",
+      align: "right",
+      headerAlign: "right",
       valueFormatter: (value) => `${Number(value).toLocaleString("it-IT", { maximumFractionDigits: 1 })} kg`,
     },
     {
+      ...fixedColumn,
       field: "volume",
       headerName: "Volume",
-      minWidth: 110,
+      width: 110,
       type: "number",
+      align: "right",
+      headerAlign: "right",
       valueFormatter: (value) => `${Number(value).toLocaleString("it-IT", { maximumFractionDigits: 2 })} m³`,
     },
     {
+      ...fixedColumn,
       field: "stato",
       headerName: "Stato",
-      flex: 1,
-      minWidth: 170,
+      width: 190,
+      align: "center",
+      headerAlign: "center",
       renderCell: (params) => {
         const stato = params.value;
         const color = stato === "In carico"
@@ -79,11 +88,15 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       },
     },
     {
+      ...fixedColumn,
       field: "operazione",
       headerName: "Operazioni",
-      minWidth: 110,
+      width: 80,
       sortable: false,
       filterable: false,
+      align: "center",
+      headerAlign: "center",
+      headerClassName: "dashboard-grid__operations-header",
       renderCell: (params) => {
         return <IconButton aria-label={`Operazioni commessa ${params.row.commessa}`} onClick={(event) => { event.stopPropagation(); setAnchorEl(event.currentTarget); setMenuRow(params.row); }} size="small" sx={{ borderRadius: 1.5, height: 32, width: 32, "&:hover": { bgcolor: "rgba(255,255,255,0.08)" } }}><MoreVertIcon fontSize="small" /></IconButton>;
       },
@@ -96,6 +109,8 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       columns={columns}
       disableColumnFilter
       disableColumnMenu
+      disableColumnReorder
+      disableColumnResize
       disableColumnSelector
       onRowDoubleClick={(params) => runDashboardPrimaryAction(params.row, primaryHandlers)}
       initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
@@ -109,6 +124,8 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
         borderRadius: 2,
         "& .MuiDataGrid-columnHeaders": { backgroundColor: dashboardColors.header, borderBottom: "1px solid rgba(255,255,255,0.16)" },
         "& .MuiDataGrid-columnHeader": { px: 2, transition: "background-color 180ms ease, color 180ms ease" },
+        "& .MuiDataGrid-columnSeparator": { display: "none" },
+        "& .dashboard-grid__operations-header": { px: 1 },
         "& .MuiDataGrid-columnHeaderTitle": { fontWeight: 800, letterSpacing: 0.2 },
         "& .MuiDataGrid-cell": { borderColor: "rgba(255,255,255,0.07)", px: 2, transition: "background-color 180ms ease, color 180ms ease" },
         "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within": { outline: "none" },

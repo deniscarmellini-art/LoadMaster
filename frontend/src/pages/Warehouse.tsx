@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
@@ -64,16 +64,20 @@ const nowrap = {
 } as const;
 const dimensions = (panel: Pannello) =>
   `${Math.round(panel.spessore)} × ${Math.round(panel.lunghezza)} × ${Math.round(panel.altezza)}`;
+const operatorCode = (operator: string) => operator.split("—")[0]?.trim() || operator || "—";
 type SortKey =
   | "commessa"
   | "cliente"
   | "camion"
   | "pannello"
+  | "codicePacco"
+  | "numeroPannelli"
   | "masterPanel"
   | "dimensioni"
   | "peso"
   | "volume"
   | "dataScansione"
+  | "chiusura"
   | "operatore"
   | "ubicazione"
   | "stato";
@@ -93,10 +97,30 @@ const singleColumns: ReadonlyArray<{
   { label: "Peso", width: 75, sortKey: "peso" },
   { label: "Volume", width: 80, sortKey: "volume" },
   { label: "Data scansione", width: 135, sortKey: "dataScansione" },
-  { label: "Operatore", width: 120, sortKey: "operatore" },
-  { label: "Ubicazione", width: 155, sortKey: "ubicazione" },
+  { label: "Oper.", width: 75, sortKey: "operatore" },
+  { label: "Ubicazione", width: 105, sortKey: "ubicazione" },
   { label: "Stato", width: 90, sortKey: "stato" },
-  { label: "Azioni", width: 50 },
+  { label: "Azioni", width: 82 },
+];
+const packageColumns: ReadonlyArray<{
+  label: string;
+  width: number;
+  sortKey?: SortKey;
+}> = [
+  { label: "Commessa", width: 105, sortKey: "commessa" },
+  { label: "Cliente", width: 130, sortKey: "cliente" },
+  { label: "Camion", width: 85, sortKey: "camion" },
+  { label: "Codice pacco", width: 165, sortKey: "codicePacco" },
+  { label: "N. pannelli", width: 85, sortKey: "numeroPannelli" },
+  { label: "Dimensioni", width: 205, sortKey: "dimensioni" },
+  { label: "Peso", width: 105, sortKey: "peso" },
+  { label: "Volume", width: 105, sortKey: "volume" },
+  { label: "Chiusura", width: 145, sortKey: "chiusura" },
+  { label: "Oper.", width: 75, sortKey: "operatore" },
+  { label: "Ubicazione", width: 105, sortKey: "ubicazione" },
+  { label: "Dettaglio", width: 95 },
+  { label: "Stato", width: 130, sortKey: "stato" },
+  { label: "Azioni", width: 90 },
 ];
 const collator = new Intl.Collator("it-IT", {
   numeric: true,
@@ -132,6 +156,7 @@ export default function Warehouse({
     [packageLocation, setPackageLocation] = useState<Pacco | null>(null),
     [packageLocationValue, setPackageLocationValue] = useState(""),
     [savingPackageLocation, setSavingPackageLocation] = useState(false),
+    [expandedPackageId, setExpandedPackageId] = useState<string | null>(null),
     [notice, setNotice] = useState<{
       message: string;
       severity: "success" | "error";
@@ -268,6 +293,8 @@ export default function Warehouse({
                 return locationFor(panel);
               case "stato":
                 return panel.caricato ? "CARICATO" : "DISPONIBILE";
+              default:
+                return null;
             }
           };
           const a = value(left.unit);
@@ -302,6 +329,60 @@ export default function Warehouse({
       matchesStatus(pack.stato) &&
       match([pack.codice, pack.commessa, pack.cliente, pack.camion], "package"),
   );
+  const sortedPackages = sortKey
+    ? visiblePackages
+        .map((pack, index) => ({ pack, index }))
+        .sort((left, right) => {
+          const value = (pack: Pacco): string | number | null => {
+            switch (sortKey) {
+              case "commessa":
+                return pack.commessa;
+              case "cliente":
+                return pack.cliente;
+              case "camion":
+                return pack.camion;
+              case "codicePacco":
+                return pack.codice;
+              case "numeroPannelli":
+                return pack.numeroPezzi;
+              case "dimensioni":
+                return formatPackageDimensions(pack);
+              case "peso":
+                return pack.pesoTotale;
+              case "volume":
+                return pack.volumeTotale;
+              case "chiusura": {
+                const timestamp = Date.parse(pack.chiusoIl);
+                return Number.isNaN(timestamp) ? null : timestamp;
+              }
+              case "operatore":
+                return pack.operatore;
+              case "ubicazione":
+                return packageLocationFor(pack);
+              case "stato":
+                return pack.stato;
+              default:
+                return null;
+            }
+          };
+          const a = value(left.pack);
+          const b = value(right.pack);
+          const aEmpty = a === null || a === "";
+          const bEmpty = b === null || b === "";
+          if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
+          if (aEmpty && bEmpty) return left.index - right.index;
+          const comparison =
+            typeof a === "number" && typeof b === "number"
+              ? a - b
+              : collator.compare(String(a), String(b));
+          return comparison === 0
+            ? left.index - right.index
+            : sortDirection === "asc"
+              ? comparison
+              : -comparison;
+        })
+        .map(({ pack }) => pack)
+    : visiblePackages;
   const confirm = () => {
     if (!pending) return;
     if (pending.kind === "single") {
@@ -434,7 +515,7 @@ export default function Warehouse({
           <TableContainer sx={{ display: { xs: "none", sm: "block" } }}>
             <Table
               size="small"
-              sx={{ tableLayout: "fixed", minWidth: { xs: 1295, lg: "100%" } }}
+              sx={{ tableLayout: "fixed", minWidth: { xs: 1232, lg: "100%" } }}
             >
               <TableHead>
                 <TableRow>
@@ -442,7 +523,13 @@ export default function Warehouse({
                     ({ label, width, sortKey: columnSortKey }) => (
                       <TableCell
                         key={label}
-                        align={label === "Azioni" ? "center" : "left"}
+                        align={
+                          label === "Camion" || label === "Pannello" || label === "Master panel" || label === "Stato" || label === "Azioni"
+                            ? "center"
+                            : label === "Peso" || label === "Volume"
+                              ? "right"
+                              : "left"
+                        }
                         sx={{ width, ...nowrap }}
                       >
                         {columnSortKey ? (
@@ -473,22 +560,22 @@ export default function Warehouse({
                     >
                       <TableCell sx={nowrap}>{unit.commessa}</TableCell>
                       <TableCell sx={nowrap}>{clientFor(unit)}</TableCell>
-                      <TableCell sx={nowrap}>{unit.camion}</TableCell>
-                      <TableCell sx={nowrap}>{panel.numeroPannello}</TableCell>
-                      <TableCell sx={nowrap}>
+                      <TableCell align="center" sx={nowrap}>{unit.camion}</TableCell>
+                      <TableCell align="center" sx={nowrap}>{panel.numeroPannello}</TableCell>
+                      <TableCell align="center" sx={nowrap}>
                         {panel.numeroMasterPanel}
                       </TableCell>
                       <TableCell sx={nowrap}>{dimensions(panel)}</TableCell>
-                      <TableCell sx={nowrap}>
+                      <TableCell align="right" sx={nowrap}>
                         {panel.peso.toFixed(1)} kg
                       </TableCell>
-                      <TableCell sx={nowrap}>
+                      <TableCell align="right" sx={nowrap}>
                         {panel.volume.toFixed(3)} m³
                       </TableCell>
                       <TableCell sx={nowrap}>
                         {new Date(unit.chiusaIl).toLocaleString("it-IT")}
                       </TableCell>
-                      <TableCell sx={nowrap}>{unit.operatore}</TableCell>
+                      <TableCell sx={nowrap}>{operatorCode(unit.operatore)}</TableCell>
                       <TableCell sx={nowrap}>
                         <Stack direction="row" sx={{ alignItems: "center", gap: 0.5 }}>
                           <Typography variant="body2" sx={nowrap}>
@@ -507,7 +594,7 @@ export default function Warehouse({
                           )}
                         </Stack>
                       </TableCell>
-                      <TableCell>
+                      <TableCell align="center">
                         <Chip
                           size="small"
                           color={panel.caricato ? "warning" : "success"}
@@ -615,10 +702,141 @@ export default function Warehouse({
           <Typography variant="h6" sx={{ mb: 1.5 }}>
             Pacchi
           </Typography>
-          <Stack sx={{ gap: 1.25 }}>
-            {visiblePackages.map((pack) => (
+          <TableContainer sx={{ display: { xs: "none", sm: "block" } }}>
+            <Table size="small" sx={{ tableLayout: "fixed", minWidth: 1625 }}>
+              <TableHead>
+                <TableRow>
+                  {packageColumns.map(({ label, width, sortKey: columnSortKey }) => (
+                    <TableCell
+                      key={label}
+                      align={
+                        label === "Camion" || label === "N. pannelli" || label === "Dettaglio" || label === "Stato" || label === "Azioni"
+                          ? "center"
+                          : label === "Peso" || label === "Volume"
+                            ? "right"
+                            : "left"
+                      }
+                      sx={{
+                        width,
+                        ...nowrap,
+                        ...(label === "Azioni"
+                          ? {
+                              position: "sticky",
+                              right: 0,
+                              zIndex: 2,
+                              bgcolor: "background.paper",
+                              boxShadow: "-4px 0 8px rgba(0, 0, 0, 0.12)",
+                            }
+                          : {}),
+                      }}
+                    >
+                      {columnSortKey ? (
+                        <TableSortLabel
+                          active={sortKey === columnSortKey}
+                          direction={sortKey === columnSortKey ? sortDirection : "asc"}
+                          onClick={() => requestSort(columnSortKey)}
+                        >
+                          {label}
+                        </TableSortLabel>
+                      ) : (
+                        label
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {sortedPackages.map((pack) => {
+                  const packageId = pack.id ?? pack.codice;
+                  const expanded = expandedPackageId === packageId;
+                  const editableLocation = pack.stato === "DISPONIBILE";
+                  return (
+                    <Fragment key={packageId}>
+                      <TableRow hover>
+                        <TableCell sx={nowrap}>{pack.commessa}</TableCell>
+                        <TableCell sx={nowrap}>{pack.cliente}</TableCell>
+                        <TableCell align="center" sx={nowrap}>{pack.camion}</TableCell>
+                        <TableCell sx={{ color: "primary.main", fontWeight: 800, ...nowrap }}>{pack.codice}</TableCell>
+                        <TableCell align="center" sx={nowrap}>{pack.numeroPezzi}</TableCell>
+                        <TableCell sx={nowrap}>{formatPackageDimensions(pack)}</TableCell>
+                        <TableCell align="right" sx={nowrap}>{pack.pesoTotale.toFixed(1)} kg</TableCell>
+                        <TableCell align="right" sx={nowrap}>{pack.volumeTotale.toFixed(3)} m³</TableCell>
+                        <TableCell sx={nowrap}>{pack.chiusoIl ? new Date(pack.chiusoIl).toLocaleString("it-IT") : "—"}</TableCell>
+                        <TableCell sx={nowrap}>{operatorCode(pack.operatore)}</TableCell>
+                        <TableCell sx={nowrap}>
+                          <Stack direction="row" sx={{ alignItems: "center", gap: 0.5 }}>
+                            <Typography variant="body2" sx={nowrap}>
+                              {packageLocationFor(pack)}
+                            </Typography>
+                            {editableLocation && (
+                              <Tooltip title="Modifica ubicazione">
+                                <IconButton size="small" onClick={() => openPackageLocationEditor(pack)}>
+                                  <EditOutlinedIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Stack>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Tooltip title={expanded ? "Nascondi dettaglio" : "Espandi dettaglio"}>
+                            <IconButton size="small" onClick={() => setExpandedPackageId(expanded ? null : packageId)}>
+                              <ExpandMoreIcon fontSize="small" sx={{ transform: expanded ? "rotate(180deg)" : "none" }} />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip
+                            size="small"
+                            color={pack.stato === "CARICATO" ? "warning" : "info"}
+                            variant="outlined"
+                            label={pack.stato}
+                          />
+                        </TableCell>
+                        <TableCell
+                          align="center"
+                          sx={{
+                            position: "sticky",
+                            right: 0,
+                            zIndex: 1,
+                            bgcolor: "background.paper",
+                            boxShadow: "-4px 0 8px rgba(0, 0, 0, 0.12)",
+                          }}
+                        >
+                          <Stack direction="row" sx={{ alignItems: "center", justifyContent: "center", gap: 0.25 }}>
+                            <Tooltip title="Stampa etichetta pacco">
+                              <IconButton size="small" onClick={() => setPrintPack(pack)}>
+                                <PrintOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Elimina">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => setPending({ kind: "package", pack, blocked: pack.stato === "CARICATO" || pack.stato === "SPEDITO" })}
+                              >
+                                <DeleteOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                      {expanded && (
+                        <TableRow>
+                          <TableCell colSpan={packageColumns.length} sx={{ p: 0 }}>
+                            <PackageContents pack={pack} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Stack sx={{ display: { xs: "flex", sm: "none" }, gap: 1.25 }}>
+            {sortedPackages.map((pack) => (
               <PackageCard
-                key={pack.codice}
+                key={pack.id ?? pack.codice}
                 pack={pack}
                 onDelete={() =>
                   setPending({
@@ -637,6 +855,8 @@ export default function Warehouse({
                 }
               />
             ))}
+          </Stack>
+          <Stack sx={{ gap: 1.25, mt: 1.25 }}>
             {Array.from(drafts.entries())
               .filter(([key, items]) => {
                 if (!items.length || !matchesStatus("APERTO")) return false;
@@ -1039,78 +1259,83 @@ function PackageCard({
           py: 2,
         }}
       >
-        <Box
-          sx={{
-            borderLeft: 3,
-            borderColor: "primary.dark",
-            pl: { xs: 1, md: 2 },
-          }}
-        >
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Pannelli contenuti nel pacco {pack.codice}
-          </Typography>
-          <TableContainer sx={{ display: { xs: "none", sm: "block" } }}>
-            <Table size="small" sx={{ minWidth: 620 }}>
-              <TableHead>
-                <TableRow>
-                  {[
-                    ["Pannello", 120],
-                    ["Master panel", 140],
-                    ["Dimensioni", 200],
-                    ["Peso", 100],
-                    ["Volume", 100],
-                  ].map(([label, width]) => (
-                    <TableCell key={label} sx={{ width, ...nowrap }}>
-                      {label}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {pack.pannelli.map((panel) => (
-                  <TableRow key={panel.numeroPannello}>
-                    <TableCell sx={nowrap}>{panel.numeroPannello}</TableCell>
-                    <TableCell sx={nowrap}>{panel.numeroMasterPanel}</TableCell>
-                    <TableCell sx={nowrap}>{dimensions(panel)}</TableCell>
-                    <TableCell sx={nowrap}>
-                      {panel.peso.toFixed(1)} kg
-                    </TableCell>
-                    <TableCell sx={nowrap}>
-                      {panel.volume.toFixed(3)} m³
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <Stack sx={{ display: { xs: "flex", sm: "none" }, gap: 1 }}>
-            {pack.pannelli.map((panel) => (
-              <Paper key={panel.numeroPannello} variant="outlined" sx={{ p: 1.25 }}>
-                <Typography sx={{ fontWeight: 900 }}>
-                  Pannello {panel.numeroPannello}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  Master Panel {panel.numeroMasterPanel}
-                </Typography>
-                <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 0.75 }}>
-                  {[
-                    ["Commessa", pack.commessa],
-                    ["Camion", pack.camion],
-                    ["Dimensioni", `${dimensions(panel)} mm`],
-                    ["Peso", `${panel.peso.toFixed(1)} kg`],
-                    ["Volume", `${panel.volume.toFixed(3)} m³`],
-                  ].map(([label, value]) => (
-                    <Box key={label} sx={{ minWidth: 0, gridColumn: label === "Dimensioni" ? "1 / -1" : undefined }}>
-                      <Typography variant="caption" color="text.secondary">{label}</Typography>
-                      <Typography variant="body2">{value}</Typography>
-                    </Box>
-                  ))}
-                </Box>
-              </Paper>
-            ))}
-          </Stack>
-        </Box>
+        <PackageContents pack={pack} />
       </AccordionDetails>
     </Accordion>
+  );
+}
+
+function PackageContents({ pack }: { pack: Pacco }) {
+  return (
+    <Box
+      sx={{
+        borderLeft: 3,
+        borderColor: "primary.dark",
+        pl: { xs: 1, md: 2 },
+        py: 2,
+        px: { xs: 1, md: 2 },
+        bgcolor: "rgba(0,0,0,.12)",
+      }}
+    >
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>
+        Pannelli contenuti nel pacco {pack.codice}
+      </Typography>
+      <TableContainer sx={{ display: { xs: "none", sm: "block" } }}>
+        <Table size="small" sx={{ minWidth: 620 }}>
+          <TableHead>
+            <TableRow>
+              {[
+                ["Pannello", 120],
+                ["Master panel", 140],
+                ["Dimensioni", 200],
+                ["Peso", 100],
+                ["Volume", 100],
+              ].map(([label, width]) => (
+                <TableCell key={label} sx={{ width, ...nowrap }}>
+                  {label}
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {pack.pannelli.map((panel) => (
+              <TableRow key={panel.numeroPannello}>
+                <TableCell sx={nowrap}>{panel.numeroPannello}</TableCell>
+                <TableCell sx={nowrap}>{panel.numeroMasterPanel}</TableCell>
+                <TableCell sx={nowrap}>{dimensions(panel)}</TableCell>
+                <TableCell sx={nowrap}>{panel.peso.toFixed(1)} kg</TableCell>
+                <TableCell sx={nowrap}>{panel.volume.toFixed(3)} m³</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      <Stack sx={{ display: { xs: "flex", sm: "none" }, gap: 1 }}>
+        {pack.pannelli.map((panel) => (
+          <Paper key={panel.numeroPannello} variant="outlined" sx={{ p: 1.25 }}>
+            <Typography sx={{ fontWeight: 900 }}>
+              Pannello {panel.numeroPannello}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Master Panel {panel.numeroMasterPanel}
+            </Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 0.75 }}>
+              {[
+                ["Commessa", pack.commessa],
+                ["Camion", pack.camion],
+                ["Dimensioni", `${dimensions(panel)} mm`],
+                ["Peso", `${panel.peso.toFixed(1)} kg`],
+                ["Volume", `${panel.volume.toFixed(3)} m³`],
+              ].map(([label, value]) => (
+                <Box key={label} sx={{ minWidth: 0, gridColumn: label === "Dimensioni" ? "1 / -1" : undefined }}>
+                  <Typography variant="caption" color="text.secondary">{label}</Typography>
+                  <Typography variant="body2">{value}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Paper>
+        ))}
+      </Stack>
+    </Box>
   );
 }

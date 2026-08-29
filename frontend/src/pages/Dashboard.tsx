@@ -208,6 +208,7 @@ function Dashboard({
         onChange={handleFileChange}
       />
       <UpcomingShipments
+        carriers={carriers}
         shipments={shipments}
         trailers={trailers}
         onOpenShipments={onOpenShipments}

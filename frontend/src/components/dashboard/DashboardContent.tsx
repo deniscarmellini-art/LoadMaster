@@ -28,6 +28,10 @@ export default function DashboardContent({ rows, onDelete, onOpenScanning, onSta
   const narrowPhone = useMediaQuery(theme.breakpoints.down("sm"));
   const landscapePhone = useMediaQuery("(max-width:950px) and (max-height:500px)");
   const mobile = narrowPhone || landscapePhone;
+  const activeRowCount = useMemo(
+    () => rows.filter((row) => row.stato !== "Partita").length,
+    [rows],
+  );
 
   const visibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase("it-IT");
@@ -46,8 +50,8 @@ export default function DashboardContent({ rows, onDelete, onOpenScanning, onSta
     <Paper elevation={0} sx={{ bgcolor: dashboardColors.surface, border: 1, borderColor: "divider", p: 1.5 }}>
       <Stack direction="row" sx={{ alignItems: "center", gap: 1, mb: 1.5 }}>
         <LocalShippingOutlinedIcon color="primary" sx={{ fontSize: 21 }} />
-        <Typography component="h2" sx={{ fontSize: "1.08rem", fontWeight: 700, letterSpacing: 0.3 }}>
-          Carichi attivi
+        <Typography component="h2" noWrap sx={{ minWidth: 0, fontSize: "1.08rem", fontWeight: 700, letterSpacing: 0.3 }}>
+          Carichi attivi ({activeRowCount})
         </Typography>
       </Stack>
       <TextField

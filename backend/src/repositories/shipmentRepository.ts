@@ -63,7 +63,10 @@ export class ShipmentRepository {
                 AND UPPER(REPLACE(REPLACE(TRIM(COALESCE(a.manualCarico,'')),' ',''),'-',''))=
                     UPPER(REPLACE(REPLACE(TRIM(COALESCE(p.manualCarico,'')),' ',''),'-','')))
             ) ORDER BY a.assignedAt DESC LIMIT 1
-          ),p.trailerId) resolvedTrailerId,
+          ),p.trailerId,(
+            SELECT s.trailerId FROM LoadingSessions s
+            WHERE s.loadId=p.loadId
+          )) resolvedTrailerId,
           (SELECT a.stato FROM TransportAssignments a
             WHERE a.releasedAt IS NULL AND (
               (p.loadId IS NOT NULL AND a.loadId=p.loadId) OR

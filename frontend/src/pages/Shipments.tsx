@@ -144,6 +144,7 @@ const OperationalStatusChip = ({
 export default function Shipments({
   items,
   trailers,
+  carriers,
   onBack,
   onRefresh,
 }: Props) {
@@ -158,6 +159,8 @@ export default function Shipments({
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [editing, setEditing] = useState<ShipmentItem | null | "new">(null),
     [form, setForm] = useState<ShipmentInput>(empty),
+    [departureItem, setDepartureItem] = useState<ShipmentItem | null>(null),
+    [departureCarrierId, setDepartureCarrierId] = useState(""),
     [notice, setNotice] = useState<{
       severity: "success" | "error";
       text: string;
@@ -257,10 +260,12 @@ export default function Shipments({
       });
     }
   };
-  const depart = async (item: ShipmentItem) => {
+  const activeCarriers = carriers.filter((carrier) => carrier.attivo);
+  const depart = async (item: ShipmentItem, carrierId?: string) => {
     try {
-      await departShipment(item.id);
+      await departShipment(item.id, carrierId);
       await onRefresh();
+      setDepartureItem(null);
       setNotice({ severity: "success", text: "Partenza confermata." });
     } catch {
       setNotice({
@@ -327,7 +332,14 @@ export default function Shipments({
       <Button
         variant="contained"
         size="small"
-        onClick={() => void depart(item)}
+        onClick={() => {
+          if (item.transportType === "BILICO_ESSEPI") {
+            setDepartureItem(item);
+            setDepartureCarrierId(item.carrierId ?? "");
+            return;
+          }
+          void depart(item);
+        }}
       >
         Conferma partenza
       </Button>
@@ -351,14 +363,18 @@ export default function Shipments({
           )}
       </Stack>
     );
-  const vehicle = (item: ShipmentItem) =>
-    item.transportType === "BILICO_ESSEPI"
-      ? item.trailerId
-        ? (trailers.find((x) => x.id === item.trailerId)?.targa ?? "—")
-        : "Bilico Essepi — Da assegnare"
-      : item.transportType === "TRASPORTATORE_ESTERNO"
-        ? "Ritira Cliente"
-        : "—";
+  const vehicle = (item: ShipmentItem) => {
+    if (item.transportType === "TRASPORTATORE_ESTERNO") return "Ritira Cliente";
+    if (item.transportType !== "BILICO_ESSEPI") return "—";
+    const trailer = item.trailerId
+      ? trailers.find((entry) => entry.id === item.trailerId)?.targa ?? "Rimorchio assegnato"
+      : null;
+    if (!trailer) return "Bilico Essepi — Da assegnare";
+    const carrier = item.carrierId
+      ? carriers.find((entry) => entry.id === item.carrierId)?.nome ?? "Trasportatore non disponibile"
+      : null;
+    return carrier ? `${trailer} — ${carrier}` : `${trailer} — Trasportatore da definire`;
+  };
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
     const value = (item: ShipmentItem): string | number | null => {
@@ -405,7 +421,7 @@ export default function Shipments({
             : -comparison;
       })
       .map(({ item }) => item);
-  }, [filtered, sortKey, sortDirection, trailers]);
+  }, [filtered, sortKey, sortDirection, trailers, carriers]);
   const requestSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
@@ -584,7 +600,7 @@ export default function Shipments({
                           : "—"}
                     </Typography>
                     <Typography variant="body2">
-                      Mezzo: {vehicle(item)}
+                      Mezzo / Trasportatore: {vehicle(item)}
                     </Typography>
                     <Typography variant="body2">
                       Partenza effettiva: {actualDepartureLabel(item.actualDepartureDate)}
@@ -785,6 +801,54 @@ export default function Shipments({
               onClick={() => void save()}
             >
               Salva
+            </Button>
+          </DialogActions>
+        </Dialog>
+        <Dialog
+          open={departureItem !== null}
+          onClose={() => setDepartureItem(null)}
+          fullWidth
+          maxWidth="xs"
+        >
+          <DialogTitle>Conferma partenza</DialogTitle>
+          <DialogContent>
+            <Typography sx={{ mb: 2 }}>
+              {departureItem?.commessa}
+              {departureItem?.camion ? ` / ${departureItem.camion}` : ""} — {departureItem?.cliente}
+            </Typography>
+            <TextField
+              select
+              required
+              fullWidth
+              label="Trasportatore effettivo"
+              value={departureCarrierId}
+              onChange={(event) => setDepartureCarrierId(event.target.value)}
+            >
+              <MenuItem value="" disabled>
+                Seleziona trasportatore
+              </MenuItem>
+              {activeCarriers.map((carrier) => (
+                <MenuItem key={carrier.id} value={carrier.id}>
+                  {carrier.nome}
+                </MenuItem>
+              ))}
+            </TextField>
+            {!activeCarriers.length && (
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                Nessun trasportatore attivo disponibile. Configurarlo nelle Impostazioni.
+              </Alert>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDepartureItem(null)}>Annulla</Button>
+            <Button
+              variant="contained"
+              disabled={!departureCarrierId || !activeCarriers.length}
+              onClick={() => {
+                if (departureItem) void depart(departureItem, departureCarrierId);
+              }}
+            >
+              Conferma partenza
             </Button>
           </DialogActions>
         </Dialog>
