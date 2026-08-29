@@ -1,5 +1,49 @@
 import type { Commessa } from "../types/excel";
 import type { Camion } from "../models/Camion";
+import type { CaricoCamion } from "../models/Loading";
+
+export type OperationalLoadStatus =
+  | "DA_COMPLETARE"
+  | "DA_CARICARE"
+  | "IN_CARICO"
+  | "ATTESA_SPEDIZIONE"
+  | "SPEDITO";
+
+export type OperationalStatusColor =
+  | "error"
+  | "info"
+  | "warning"
+  | "success"
+  | "default";
+
+export const toOperationalLoadStatus = (
+  status: Camion["stato"],
+): OperationalLoadStatus =>
+  status === "Da completare"
+    ? "DA_COMPLETARE"
+    : status === "Da caricare"
+      ? "DA_CARICARE"
+      : status === "In carico"
+        ? "IN_CARICO"
+        : status === "Attesa spedizione"
+          ? "ATTESA_SPEDIZIONE"
+          : "SPEDITO";
+
+const operationalStatusPresentations: Record<
+  OperationalLoadStatus,
+  { label: string; color: OperationalStatusColor }
+> = {
+  DA_COMPLETARE: { label: "DA COMPLETARE", color: "error" },
+  DA_CARICARE: { label: "DA CARICARE", color: "info" },
+  IN_CARICO: { label: "IN CARICO", color: "warning" },
+  ATTESA_SPEDIZIONE: { label: "ATTESA SPEDIZIONE", color: "success" },
+  SPEDITO: { label: "SPEDITO", color: "default" },
+};
+
+export const operationalStatusPresentation = (
+  status: OperationalLoadStatus,
+): { label: string; color: OperationalStatusColor } =>
+  operationalStatusPresentations[status];
 
 export function creaDashboard(commesse: Commessa[]): Camion[] {
 
@@ -101,3 +145,18 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
     return dashboard;
 
 }
+
+export const creaDashboardOperativa = (
+  commesse: Commessa[],
+  truckLoads: CaricoCamion[],
+): Camion[] =>
+  creaDashboard(commesse).map((row) =>
+    truckLoads.some(
+      (load) =>
+        load.commessa === row.commessa &&
+        load.camion === row.camion &&
+        load.stato === "IN_CARICO",
+    )
+      ? { ...row, stato: "In carico" as const }
+      : row,
+  );

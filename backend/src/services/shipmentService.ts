@@ -41,7 +41,7 @@ export class ShipmentService {
       return this.conflict(e);
     }
   }
-  depart(id: string) {
+  depart(id: string, input: { carrierId?: string } = {}) {
     const plan = this.repo.find(id);
     if (!plan)
       throw new ApiError(404, "RESOURCE_NOT_FOUND", "Spedizione non trovata");
@@ -66,10 +66,14 @@ export class ShipmentService {
         );
       this.loading.ship(
         session.id,
-        plan.carrierId ? { carrierId: plan.carrierId } : {},
+        input.carrierId
+          ? { carrierId: input.carrierId }
+          : plan.carrierId
+            ? { carrierId: plan.carrierId }
+            : {},
       );
     }
-    return this.repo.depart(id, now)!;
+    return this.repo.depart(id, now, input.carrierId)!;
   }
   delete(id: string) {
     const current = this.repo.find(id);

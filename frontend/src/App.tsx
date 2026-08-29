@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -26,7 +26,11 @@ import Transports from "./pages/Transports";
 import Shipments from "./pages/Shipments";
 import MobileDashboardReturn from "./components/navigation/MobileDashboardReturn";
 import theme from "./theme/theme";
-import { creaDashboard } from "./services/dashboardService";
+import {
+  creaDashboard,
+  creaDashboardOperativa,
+  toOperationalLoadStatus,
+} from "./services/dashboardService";
 import type { Camion } from "./models/Camion";
 import type { Pacco, UnitaSingola } from "./models/Scanning";
 import { loadSettings } from "./services/settingsStore";
@@ -58,7 +62,7 @@ import {
   shipLoadingApi,
 } from "./services/loadingApi";
 import { listTransports, type TransportItem } from "./services/transportsApi";
-import { listShipments, type ShipmentItem } from "./services/shipmentsApi";
+import { departShipment, listShipments, type ShipmentItem } from "./services/shipmentsApi";
 import useAutoRefresh from "./hooks/useAutoRefresh";
 
 const panelKey = (panel: Pannello) =>
@@ -166,9 +170,6 @@ export default function App() {
         scanningRefreshRef.current = null;
     }
   }, []);
-  const refreshShipments = useCallback(async () => {
-    setShipments(await listShipments());
-  }, []);
   useEffect(() => {
     let active = true;
     void refreshScanningData()
@@ -245,6 +246,27 @@ export default function App() {
           : "Da assegnare";
         return [load.backendLoadId!, location] as const;
       }),
+  );
+  const operationalStatusByLoadId = useMemo(
+    () =>
+      new Map(
+        creaDashboardOperativa(commesse, truckLoads).map((row) => [
+          row.id,
+          toOperationalLoadStatus(row.stato),
+        ]),
+      ),
+    [commesse, truckLoads],
+  );
+  const shipmentsWithOperationalStatus = useMemo(
+    () =>
+      shipments.map((shipment) => ({
+        ...shipment,
+        operationalStatus: shipment.loadId
+          ? operationalStatusByLoadId.get(shipment.loadId) ??
+            shipment.operationalStatus
+          : shipment.operationalStatus,
+      })),
+    [shipments, operationalStatusByLoadId],
   );
 
   const handleImported = useCallback(
@@ -399,7 +421,7 @@ export default function App() {
             }}
             onOpenTransports={() => setPage("transports")}
             onOpenShipments={() => setPage("shipments")}
-            shipments={shipments}
+            shipments={shipmentsWithOperationalStatus}
             onOpenHistory={(row) => {
               setHistoryLoadId(
                 row
@@ -474,10 +496,16 @@ export default function App() {
                   item.camion === row.camion &&
                   item.stato === "ATTESA_SPEDIZIONE",
               );
-              if (load)
-                void shipLoadingApi(load.loadId, carrierId).then(
-                  refreshScanningData,
-                );
+              if (!load) return;
+              const shipment = shipments.find(
+                (item) =>
+                  item.persisted &&
+                  item.loadId === load.backendLoadId,
+              );
+              void (shipment
+                ? departShipment(shipment.id, carrierId)
+                : shipLoadingApi(load.loadId, carrierId)
+              ).then(refreshScanningData);
             }}
           />
         ) : page === "labels" ? (
@@ -566,12 +594,12 @@ export default function App() {
           />
         ) : page === "shipments" ? (
           <Shipments
-            items={shipments}
+            items={shipmentsWithOperationalStatus}
             trailers={settings.rimorchi}
             carriers={settings.trasportatori}
             transports={transports}
             onBack={() => setPage("dashboard")}
-            onRefresh={refreshShipments}
+            onRefresh={refreshScanningData}
           />
         ) : page === "history" ? (
           <History

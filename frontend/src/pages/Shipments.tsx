@@ -45,6 +45,7 @@ import {
 } from "../services/shipmentsApi";
 import type { TransportItem } from "../services/transportsApi";
 import PlannedDepartureDate from "../components/shipments/PlannedDepartureDate";
+import { operationalStatusPresentation } from "../services/dashboardService";
 interface Props {
   items: ShipmentItem[];
   trailers: Rimorchio[];
@@ -81,6 +82,21 @@ const statusColor = (s: ShipmentStatus) =>
         : s === "CONCLUSA"
           ? "default"
           : "error";
+const actualDepartureLabel = (value: string | null) =>
+  value ? new Date(value).toLocaleDateString("it-IT") : "—";
+const remainsInOperationalView = (item: ShipmentItem) => {
+  if (!item.actualDepartureDate) return true;
+  const departure = new Date(item.actualDepartureDate);
+  if (Number.isNaN(departure.getTime())) return true;
+  const expiry = new Date(
+    departure.getFullYear(),
+    departure.getMonth(),
+    departure.getDate() + 7,
+  );
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today <= expiry;
+};
 type SortKey =
   | "commessa"
   | "cliente"
@@ -109,6 +125,22 @@ const collator = new Intl.Collator("it-IT", {
   numeric: true,
   sensitivity: "base",
 });
+const OperationalStatusChip = ({
+  status,
+}: {
+  status: ShipmentItem["operationalStatus"];
+}) => {
+  if (!status) return <>—</>;
+  const presentation = operationalStatusPresentation(status);
+  return (
+    <Chip
+      size="small"
+      color={presentation.color}
+      variant="outlined"
+      label={presentation.label}
+    />
+  );
+};
 export default function Shipments({
   items,
   trailers,
@@ -130,9 +162,23 @@ export default function Shipments({
       severity: "success" | "error";
       text: string;
     } | null>(null);
+  const operationalItems = useMemo(
+    () => items.filter(remainsInOperationalView),
+    [items],
+  );
+  const legacyCount = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          !item.actualDepartureDate &&
+          (item.shipmentStatus === "CONCLUSA" ||
+            item.operationalStatus === "SPEDITO"),
+      ).length,
+    [items],
+  );
   const filtered = useMemo(
     () =>
-      items.filter((x) => {
+      operationalItems.filter((x) => {
         const q = search.trim().toLocaleUpperCase("it-IT");
         return (
           (!q ||
@@ -149,7 +195,7 @@ export default function Shipments({
             Boolean(x.plannedDepartureDate && x.plannedDepartureDate <= to))
         );
       }),
-    [items, search, status, type, from, to],
+    [operationalItems, search, status, type, from, to],
   );
   const open = (item?: ShipmentItem) => {
     setEditing(item ?? "new");
@@ -377,7 +423,7 @@ export default function Shipments({
     ] as ShipmentStatus[]
   ).map((s) => ({
     label: labels[s],
-    value: items.filter((x) => x.shipmentStatus === s).length,
+    value: operationalItems.filter((x) => x.shipmentStatus === s).length,
   }));
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="it">
@@ -442,6 +488,13 @@ export default function Shipments({
             </Card>
           ))}
         </Box>
+        {legacyCount > 0 && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {legacyCount} spedizion{legacyCount === 1 ? "e" : "i"} conclus
+            {legacyCount === 1 ? "a" : "e"} senza data di partenza effettiva:
+            restano visibili perché non è possibile calcolare il limite di 7 giorni.
+          </Alert>
+        )}
         <Paper sx={{ p: { xs: 1, md: 2 } }}>
           <Box
             sx={{
@@ -533,6 +586,13 @@ export default function Shipments({
                     <Typography variant="body2">
                       Mezzo: {vehicle(item)}
                     </Typography>
+                    <Typography variant="body2">
+                      Partenza effettiva: {actualDepartureLabel(item.actualDepartureDate)}
+                    </Typography>
+                    <Stack direction="row" sx={{ alignItems: "center", gap: 1, mt: 1 }}>
+                      <Typography variant="body2">Stato operativo:</Typography>
+                      <OperationalStatusChip status={item.operationalStatus} />
+                    </Stack>
                     <Box sx={{ mt: 1 }}>{action(item)}</Box>
                   </CardContent>
                 </Card>
@@ -610,7 +670,9 @@ export default function Shipments({
                       <TableCell>
                         <PlannedDepartureDate shipment={item} />
                       </TableCell>
-                      <TableCell>{item.operationalStatus ?? "—"}</TableCell>
+                      <TableCell>
+                        <OperationalStatusChip status={item.operationalStatus} />
+                      </TableCell>
                       <TableCell>
                         {item.transportType === "BILICO_ESSEPI"
                           ? "Bilico Essepi"
@@ -620,11 +682,7 @@ export default function Shipments({
                       </TableCell>
                       <TableCell>{vehicle(item)}</TableCell>
                       <TableCell>
-                        {item.actualDepartureDate
-                          ? new Date(item.actualDepartureDate).toLocaleString(
-                              "it-IT",
-                            )
-                          : "—"}
+                        {actualDepartureLabel(item.actualDepartureDate)}
                       </TableCell>
                       <TableCell>{item.notes ?? "—"}</TableCell>
                     </TableRow>

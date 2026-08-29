@@ -17,9 +17,8 @@ import {
 
 import DashboardContent from "../components/dashboard/DashboardContent";
 import DashboardHeader from "../components/dashboard/DashboardHeader";
-import DashboardKpi from "../components/dashboard/DashboardKpi";
 import UpcomingShipments from "../components/dashboard/UpcomingShipments";
-import { creaDashboard } from "../services/dashboardService";
+import { creaDashboardOperativa } from "../services/dashboardService";
 import { importaExcel } from "../services/excelImport";
 
 import type { Commessa } from "../types/excel";
@@ -102,17 +101,7 @@ function Dashboard({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dashboard = useMemo(
-    () =>
-      creaDashboard(commesse).map((row) =>
-        truckLoads.find(
-          (load) =>
-            load.commessa === row.commessa &&
-            load.camion === row.camion &&
-            load.stato === "IN_CARICO",
-        )
-          ? { ...row, stato: "In carico" as const }
-          : row,
-      ),
+    () => creaDashboardOperativa(commesse, truckLoads),
     [commesse, truckLoads],
   );
 
@@ -218,7 +207,6 @@ function Dashboard({
         hidden
         onChange={handleFileChange}
       />
-      <DashboardKpi rows={activeRows} />
       <UpcomingShipments
         shipments={shipments}
         trailers={trailers}

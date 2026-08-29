@@ -200,14 +200,14 @@ export class ShipmentRepository {
     });
     return this.find(id);
   }
-  depart(id: string, at: string): ShipmentRecord | null {
+  depart(id: string, at: string, carrierId?: string): ShipmentRecord | null {
     const current = this.find(id);
     if (!current || !current.persisted) return null;
     this.db
       .prepare(
-        "UPDATE ShipmentPlans SET actualDepartureDate=?,updatedAt=? WHERE id=?",
+        "UPDATE ShipmentPlans SET actualDepartureDate=?,carrierId=COALESCE(?,carrierId),updatedAt=? WHERE id=?",
       )
-      .run(at, at, id);
+      .run(at, carrierId ?? null, at, id);
     return this.find(id);
   }
   delete(id: string): boolean {

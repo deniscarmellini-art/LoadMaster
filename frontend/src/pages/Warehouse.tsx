@@ -78,6 +78,7 @@ type SortKey =
   | "ubicazione"
   | "stato";
 type SortDirection = "asc" | "desc";
+type WarehouseStatus = "all" | "DISPONIBILE" | "CARICATO" | "APERTO";
 const singleColumns: ReadonlyArray<{
   label: string;
   width: number;
@@ -120,6 +121,7 @@ export default function Warehouse({
     [client, setClient] = useState(""),
     [truck, setTruck] = useState(""),
     [type, setType] = useState("all"),
+    [status, setStatus] = useState<WarehouseStatus>("all"),
     [sortKey, setSortKey] = useState<SortKey | null>(null),
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [pending, setPending] = useState<Pending | null>(null),
@@ -212,13 +214,21 @@ export default function Warehouse({
       (type === "all" || type === kind)
     );
   };
+  const matchesStatus = (value: Exclude<WarehouseStatus, "all">) =>
+    status === "all" || status === value;
   const visibleSingles = singles.filter(
-    (unit) =>
-      panelFor(unit) &&
-      match(
-        [unit.commessa, clientFor(unit), unit.camion, unit.numeroPannello],
-        "single",
-      ),
+    (unit) => {
+      const panel = panelFor(unit);
+      return (
+        panel !== undefined &&
+        !panel.spedito &&
+        matchesStatus(panel.caricato ? "CARICATO" : "DISPONIBILE") &&
+        match(
+          [unit.commessa, clientFor(unit), unit.camion, unit.numeroPannello],
+          "single",
+        )
+      );
+    },
   );
   const sortedSingles = sortKey
     ? visibleSingles
@@ -286,8 +296,11 @@ export default function Warehouse({
     setSortKey(key);
     setSortDirection("asc");
   };
-  const visiblePackages = packages.filter((pack) =>
-    match([pack.codice, pack.commessa, pack.cliente, pack.camion], "package"),
+  const visiblePackages = packages.filter(
+    (pack) =>
+      pack.stato !== "SPEDITO" &&
+      matchesStatus(pack.stato) &&
+      match([pack.codice, pack.commessa, pack.cliente, pack.camion], "package"),
   );
   const confirm = () => {
     if (!pending) return;
@@ -333,7 +346,8 @@ export default function Warehouse({
             display: "grid",
             gridTemplateColumns: {
               xs: "1fr",
-              md: "2fr repeat(4,minmax(130px,1fr))",
+              md: "repeat(3,minmax(0,1fr))",
+              xl: "2fr repeat(5,minmax(130px,1fr))",
             },
             gap: 1,
           }}
@@ -342,6 +356,7 @@ export default function Warehouse({
             label="Cerca pannello, pacco, commessa o cliente"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            sx={{ gridColumn: { md: "span 3", xl: "auto" } }}
           />
           <TextField
             select
@@ -395,6 +410,19 @@ export default function Warehouse({
             <MenuItem value="all">Tutti</MenuItem>
             <MenuItem value="single">Singoli</MenuItem>
             <MenuItem value="package">Pacchi</MenuItem>
+          </TextField>
+          <TextField
+            select
+            label="Stato"
+            value={status}
+            onChange={(event) =>
+              setStatus(event.target.value as WarehouseStatus)
+            }
+          >
+            <MenuItem value="all">Tutti</MenuItem>
+            <MenuItem value="DISPONIBILE">Disponibile</MenuItem>
+            <MenuItem value="CARICATO">Caricato</MenuItem>
+            <MenuItem value="APERTO">Aperto</MenuItem>
           </TextField>
         </Box>
       </Paper>
@@ -610,7 +638,14 @@ export default function Warehouse({
               />
             ))}
             {Array.from(drafts.entries())
-              .filter(([, items]) => items.length)
+              .filter(([key, items]) => {
+                if (!items.length || !matchesStatus("APERTO")) return false;
+                const [draftOrder, draftTruck] = draftParts(key);
+                const draftCliente = commesse.find(
+                  (commessa) => commessa.ordine === draftOrder,
+                )?.cliente;
+                return match([draftOrder, draftCliente ?? "", draftTruck], "package");
+              })
               .map(([key, items]) => {
                 const [draftOrder, draftTruck] = draftParts(key);
                 const draftCommessa = commesse.find(
@@ -743,6 +778,35 @@ export default function Warehouse({
           <Button onClick={() => setPrintPack(null)}>Chiudi</Button>
         </DialogActions>
       </Dialog>
+      <Dialog
+        fullWidth
+        maxWidth="sm"
+        open={packageLocation !== null}
+        onClose={() => !savingPackageLocation && setPackageLocation(null)}
+      >
+        <DialogTitle>Ubicazione pacco {packageLocation?.codice}</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Inserisci la posizione fisica del pacco disponibile. Lascia il campo vuoto per rimuoverla.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Posizione"
+            value={packageLocationValue}
+            slotProps={{ htmlInput: { maxLength: 120 } }}
+            onChange={(event) => setPackageLocationValue(event.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={savingPackageLocation} onClick={() => setPackageLocation(null)}>
+            Annulla
+          </Button>
+          <Button disabled={savingPackageLocation} variant="contained" onClick={() => void savePackageLocation()}>
+            Salva
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Snackbar
         open={notice !== null}
         autoHideDuration={3500}
@@ -763,25 +827,28 @@ function PackageCard({
   pack,
   onPrint,
   onDelete,
+  location,
+  onEditLocation,
 }: {
   pack: Pacco;
   onPrint: () => void;
   onDelete: () => void;
+  location: string;
+  onEditLocation?: () => void;
 }) {
   const fields = [
-    ["Commessa", pack.commessa],
-    ["Cliente", pack.cliente],
+    ["Commessa / Cliente", `${pack.commessa} · ${pack.cliente}`],
     ["Camion", pack.camion],
-    ["Codice pacco", pack.codice],
-    ["Numero pannelli", pack.numeroPezzi],
+    ["Pacco / Pannelli", `${pack.codice} · ${pack.numeroPezzi} pannelli`],
     ["Dimensioni", formatPackageDimensions(pack)],
     ["Peso", `${pack.pesoTotale.toFixed(1)} kg`],
-    ["Volume pannelli", `${pack.volumeTotale.toFixed(3)} m³`],
+    ["Volume", `${pack.volumeTotale.toFixed(3)} m³`],
     [
-      "Data chiusura",
+      "Chiusura",
       pack.chiusoIl ? new Date(pack.chiusoIl).toLocaleString("it-IT") : "—",
     ],
     ["Operatore", pack.operatore || "—"],
+    ["Ubicazione", location],
   ] as const;
   return (
     <Accordion
@@ -807,7 +874,7 @@ function PackageCard({
             display: "grid",
             gridTemplateColumns: {
               xs: "1fr auto",
-              lg: "90px 120px 65px 105px 90px minmax(140px,1fr) 75px 95px 135px 120px 90px 50px",
+              lg: "minmax(150px,1.25fr) 65px minmax(170px,1.4fr) minmax(140px,1fr) 80px 85px 135px minmax(140px,1fr) minmax(150px,1.2fr) 90px 110px",
             },
             alignItems: "center",
             gap: { xs: 1, lg: 1 },
@@ -827,9 +894,9 @@ function PackageCard({
                 </Typography>
                 <Typography
                   variant="body2"
-                  color={label === "Codice pacco" ? "primary.main" : undefined}
+                  color={label === "Pacco / Pannelli" ? "primary.main" : undefined}
                   sx={{
-                    fontWeight: label === "Codice pacco" ? 800 : 400,
+                    fontWeight: label === "Pacco / Pannelli" ? 800 : 400,
                     ...nowrap,
                   }}
                 >
@@ -875,6 +942,19 @@ function PackageCard({
                 <PrintOutlinedIcon fontSize="small" />
               </IconButton>
             </Tooltip>
+            {onEditLocation && (
+              <Tooltip title="Modifica ubicazione">
+                <IconButton
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onEditLocation();
+                  }}
+                >
+                  <EditOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title="Elimina">
               <IconButton
                 size="small"
@@ -903,9 +983,9 @@ function PackageCard({
                 </Typography>
                 <Typography
                   variant="body2"
-                  color={label === "Codice pacco" ? "primary.main" : undefined}
+                  color={label === "Pacco / Pannelli" ? "primary.main" : undefined}
                   sx={{
-                    fontWeight: label === "Codice pacco" ? 800 : 400,
+                    fontWeight: label === "Pacco / Pannelli" ? 800 : 400,
                     ...nowrap,
                   }}
                 >
@@ -932,6 +1012,21 @@ function PackageCard({
                 />
               </Box>
             </Box>
+            {onEditLocation && (
+              <Box sx={{ gridColumn: "1 / -1" }}>
+                <Button
+                  size="small"
+                  startIcon={<EditOutlinedIcon />}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onEditLocation();
+                  }}
+                  sx={{ minHeight: 44 }}
+                >
+                  Modifica ubicazione
+                </Button>
+              </Box>
+            )}
           </Box>
         </Box>
       </AccordionSummary>

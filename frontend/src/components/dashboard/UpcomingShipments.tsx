@@ -14,6 +14,7 @@ import type { Rimorchio } from "../../models/Settings";
 import { dashboardColors } from "../../theme/theme";
 import { getNextBusinessDays } from "../../utils/businessDays";
 import PlannedDepartureDate from "../shipments/PlannedDepartureDate";
+import { operationalStatusPresentation } from "../../services/dashboardService";
 
 interface Props {
   shipments: ShipmentItem[];
@@ -177,6 +178,23 @@ export default function UpcomingShipments({
                       >
                         {transportLabel(shipment, trailers)}
                       </Typography>
+                      {shipment.operationalStatus && (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          color={
+                            operationalStatusPresentation(
+                              shipment.operationalStatus,
+                            ).color
+                          }
+                          label={
+                            operationalStatusPresentation(
+                              shipment.operationalStatus,
+                            ).label
+                          }
+                          sx={{ mt: 0.5, height: 20, fontSize: "0.65rem" }}
+                        />
+                      )}
                       <Box sx={{ mt: 0.25 }}>
                         <PlannedDepartureDate shipment={shipment} />
                       </Box>
