@@ -12,6 +12,7 @@ export interface TransportItem {
   status: TransportStatus;
   source: AssignmentSource | null;
   assignmentId: string | null;
+  loadId: string | null;
   commessa: string | null;
   cliente: string | null;
   camion: string | null;

@@ -4,13 +4,16 @@ import EditDocumentIcon from "@mui/icons-material/EditDocument";
 import LaunchOutlinedIcon from "@mui/icons-material/LaunchOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
-import { Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from "@mui/material";
+import { Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import type { GridColDef } from "@mui/x-data-grid";
 
 import type { Camion } from "../../models/Camion";
+import type { ShipmentItem } from "../../services/shipmentsApi";
 import { dashboardColors } from "../../theme/theme";
+import PlannedDepartureDate from "../shipments/PlannedDepartureDate";
 import { runDashboardPrimaryAction } from "./dashboardPrimaryAction";
+import type { DashboardTransportPresentation } from "./dashboardTransport";
 
 interface Props {
   rows: Camion[];
@@ -24,9 +27,11 @@ interface Props {
   onContinueLoad: (row: Camion) => void;
   onConfirmDeparture: (row: Camion) => void;
   onOpenHistory: (row: Camion) => void;
+  shipmentFor: (row: Camion) => ShipmentItem | undefined;
+  transportFor: (row: Camion) => DashboardTransportPresentation;
 }
 
-export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory }: Props) {
+export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory, shipmentFor, transportFor }: Props) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [menuRow, setMenuRow] = useState<Camion | null>(null);
   const closeMenu = () => { setAnchorEl(null); setMenuRow(null); };
@@ -34,12 +39,12 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
   const primaryHandlers = { onConfirmDeparture, onContinueLoad, onOpenHistory, onOpenScanning, onStartLoad };
   const fixedColumn = { disableReorder: true } as const;
   const columns: GridColDef<Camion>[] = [
-    { ...fixedColumn, field: "commessa", headerName: "Commessa", width: 130, align: "left", headerAlign: "left" },
-    { ...fixedColumn, field: "cliente", headerName: "Cliente", width: 240, align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "commessa", headerName: "Commessa", width: 140, align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "cliente", headerName: "Cliente", width: 200, align: "left", headerAlign: "left" },
     { ...fixedColumn, field: "camion", headerName: "Camion", width: 100, align: "center", headerAlign: "center" },
-    { ...fixedColumn, field: "previsti", headerName: "Previsti", width: 90, type: "number", align: "center", headerAlign: "center" },
-    { ...fixedColumn, field: "pronti", headerName: "Pronti", width: 90, type: "number", align: "center", headerAlign: "center" },
-    { ...fixedColumn, field: "caricati", headerName: "Caricati", width: 90, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "previsti", headerName: "Previsti", width: 100, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "pronti", headerName: "Pronti", width: 100, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "caricati", headerName: "Caricati", width: 105, type: "number", align: "center", headerAlign: "center" },
     {
       ...fixedColumn,
       field: "peso",
@@ -54,7 +59,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       ...fixedColumn,
       field: "volume",
       headerName: "Volume",
-      width: 110,
+      width: 120,
       type: "number",
       align: "right",
       headerAlign: "right",
@@ -64,7 +69,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       ...fixedColumn,
       field: "stato",
       headerName: "Stato",
-      width: 190,
+      width: 250,
       align: "center",
       headerAlign: "center",
       renderCell: (params) => {
@@ -89,9 +94,40 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
     },
     {
       ...fixedColumn,
+      field: "plannedDepartureDate",
+      headerName: "Partenza prevista",
+      width: 170,
+      type: "date",
+      align: "center",
+      headerAlign: "center",
+      valueGetter: (_value, row) => {
+        const value = shipmentFor(row)?.plannedDepartureDate;
+        return value ? new Date(`${value}T00:00:00`) : null;
+      },
+      renderCell: (params) => {
+        const shipment = shipmentFor(params.row);
+        return shipment ? <PlannedDepartureDate shipment={shipment} /> : "—";
+      },
+    },
+    {
+      ...fixedColumn,
+      field: "transport",
+      headerName: "Trasporto",
+      width: 230,
+      align: "center",
+      headerAlign: "center",
+      valueGetter: (_value, row) => transportFor(row).label,
+      renderCell: (params) => (
+        <Typography noWrap variant="body2" title={transportFor(params.row).label}>
+          {transportFor(params.row).label}
+        </Typography>
+      ),
+    },
+    {
+      ...fixedColumn,
       field: "operazione",
       headerName: "Operazioni",
-      width: 80,
+      width: 95,
       sortable: false,
       filterable: false,
       align: "center",
@@ -109,7 +145,6 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       columns={columns}
       disableColumnFilter
       disableColumnMenu
-      disableColumnReorder
       disableColumnResize
       disableColumnSelector
       onRowDoubleClick={(params) => runDashboardPrimaryAction(params.row, primaryHandlers)}

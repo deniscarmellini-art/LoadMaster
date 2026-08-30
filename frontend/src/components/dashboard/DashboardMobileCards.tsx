@@ -6,12 +6,17 @@ import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined
 import { Box, Button, Chip, IconButton, Menu, MenuItem, Paper, Stack, Typography } from "@mui/material";
 
 import type { Camion } from "../../models/Camion";
+import type { ShipmentItem } from "../../services/shipmentsApi";
+import PlannedDepartureDate from "../shipments/PlannedDepartureDate";
 import { dashboardPrimaryLabel, runDashboardPrimaryAction, type DashboardPrimaryHandlers } from "./dashboardPrimaryAction";
+import type { DashboardTransportPresentation } from "./dashboardTransport";
 
 interface Props extends DashboardPrimaryHandlers {
   hasPackages: (row: Camion) => boolean;
   onPrintPackages: (row: Camion) => void;
   rows: Camion[];
+  shipmentFor: (row: Camion) => ShipmentItem | undefined;
+  transportFor: (row: Camion) => DashboardTransportPresentation;
 }
 
 const statusColor = (status: Camion["stato"]) => status === "In carico" ? "warning" : status === "Attesa spedizione" || status === "Partita" ? "success" : status === "Da caricare" ? "info" : "error";
@@ -24,7 +29,10 @@ export default function DashboardMobileCards(props: Props) {
   const secondary = (action: (row: Camion) => void) => { if (menuRow) action(menuRow); closeMenu(); };
 
   return <Stack sx={{ gap: 1 }}>
-    {props.rows.map((row) => <Paper key={row.id} variant="outlined" onClick={() => runDashboardPrimaryAction(row, handlers)} sx={{ p: 1.5, cursor: "pointer", overflow: "hidden", "&:active": { bgcolor: "action.selected" } }}>
+    {props.rows.map((row) => {
+      const shipment = props.shipmentFor(row);
+      const transport = props.transportFor(row);
+      return <Paper key={row.id} variant="outlined" onClick={() => runDashboardPrimaryAction(row, handlers)} sx={{ p: 1.5, cursor: "pointer", overflow: "hidden", "&:active": { bgcolor: "action.selected" } }}>
       <Stack direction="row" sx={{ alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ fontSize: "1.02rem", fontWeight: 900 }}>Commessa {row.commessa}</Typography>
@@ -40,11 +48,24 @@ export default function DashboardMobileCards(props: Props) {
         <Typography variant="body2">Peso <b>{row.peso.toLocaleString("it-IT", { maximumFractionDigits: 1 })} kg</b></Typography>
         <Typography variant="body2">Volume <b>{row.volume.toLocaleString("it-IT", { maximumFractionDigits: 2 })} m³</b></Typography>
       </Stack>
-      <Stack direction="row" sx={{ gap: 1 }}>
+      <Typography variant="body2" sx={{ mb: 1.25 }}>
+        Partenza prevista: {shipment ? <PlannedDepartureDate shipment={shipment} /> : "—"}
+      </Typography>
+      <Typography variant="body2">
+        Trasporto: {transport.transport}
+      </Typography>
+      {transport.trailer && (
+        <Typography variant="body2">Rimorchio: {transport.trailer}</Typography>
+      )}
+      {transport.carrier && (
+        <Typography variant="body2">Trasportatore: {transport.carrier}</Typography>
+      )}
+      <Stack direction="row" sx={{ gap: 1, mt: 1.25 }}>
         <Button fullWidth size="large" variant="contained" onClick={(event) => { event.stopPropagation(); runDashboardPrimaryAction(row, handlers); }}>{dashboardPrimaryLabel(row)}</Button>
         <IconButton aria-label={`Altre azioni commessa ${row.commessa}`} onClick={(event) => { event.stopPropagation(); setMenuAnchor(event.currentTarget); setMenuRow(row); }} sx={{ border: 1, borderColor: "divider", borderRadius: 1.5, minHeight: 44, minWidth: 44 }}><MoreVertIcon /></IconButton>
       </Stack>
-    </Paper>)}
+    </Paper>;
+    })}
     {!props.rows.length && <Typography color="text.secondary" sx={{ py: 4, textAlign: "center" }}>Nessun carico attivo</Typography>}
     <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeMenu}>
       {menuRow?.stato === "Da completare" && <MenuItem onClick={() => secondary(props.onOpenScanning)}><QrCodeScannerOutlinedIcon sx={{ mr: 1.5 }} />Scansione pannelli</MenuItem>}

@@ -17,6 +17,7 @@ export interface TransportRecord {
   status: TransportStatus;
   source: AssignmentSource | null;
   assignmentId: string | null;
+  loadId: string | null;
   commessa: string | null;
   cliente: string | null;
   camion: string | null;
@@ -59,7 +60,7 @@ export class TransportRepository {
     this.refreshExpired();
     return this.db
       .prepare(
-        `SELECT t.*,a.id assignmentId,a.source,a.stato assignmentStatus,
+        `SELECT t.*,a.id assignmentId,a.source,COALESCE(a.loadId,manualLoad.id) loadId,a.stato assignmentStatus,
           (SELECT p.plannedDepartureDate FROM ShipmentPlans p WHERE
             (a.loadId IS NOT NULL AND (p.loadId=a.loadId OR
               (p.loadId IS NULL
@@ -78,6 +79,10 @@ export class TransportRepository {
         FROM Trailers t
         LEFT JOIN TransportAssignments a ON a.trailerId=t.id AND a.releasedAt IS NULL
         LEFT JOIN Loads l ON l.id=a.loadId
+        LEFT JOIN Loads manualLoad ON a.loadId IS NULL AND a.source='MANUAL'
+          AND UPPER(TRIM(manualLoad.commessa))=UPPER(TRIM(a.manualCommessa))
+          AND UPPER(REPLACE(REPLACE(TRIM(manualLoad.camion),' ',''),'-',''))=
+              UPPER(REPLACE(REPLACE(TRIM(a.manualCarico),' ',''),'-',''))
         ORDER BY t.sortOrder,t.plate`,
       )
       .all()
@@ -339,6 +344,7 @@ export class TransportRepository {
       status,
       source,
       assignmentId: nullable(row.assignmentId),
+      loadId: nullable(row.loadId),
       commessa: nullable(row.commessa),
       cliente: nullable(row.cliente),
       camion: nullable(row.camion),

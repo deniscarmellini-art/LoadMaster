@@ -27,6 +27,7 @@ import type { CaricoCamion } from "../models/Loading";
 import type { Pacco } from "../models/Scanning";
 import type { Operatore, Rimorchio, Trasportatore } from "../models/Settings";
 import type { ShipmentItem } from "../services/shipmentsApi";
+import type { TransportItem } from "../services/transportsApi";
 import { operatorLabel } from "../models/Settings";
 import PackagePrintPreview from "../components/scanning/PackagePrintPreview";
 import { ApiClientError } from "../services/apiClient";
@@ -49,6 +50,7 @@ interface DashboardProps {
   operators: Operatore[];
   trailers: Rimorchio[];
   carriers: Trasportatore[];
+  transports: TransportItem[];
   shipments: ShipmentItem[];
   onReopenLoad: (row: Camion, operator: Operatore, reason: string) => void;
   onContinueLoad: (loadId: string) => void;
@@ -78,6 +80,7 @@ function Dashboard({
   operators,
   trailers,
   carriers,
+  transports,
   shipments,
   onReopenLoad,
   onContinueLoad,
@@ -246,6 +249,9 @@ function Dashboard({
         onOpenHistory={onOpenHistory}
         onUpdate={openFilePicker}
         rows={activeRows}
+        shipments={shipments}
+        carriers={carriers}
+        transports={transports}
       />
       <DashboardHeader
         section="menu"

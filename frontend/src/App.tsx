@@ -438,6 +438,7 @@ export default function App() {
             operators={settings.operatori.filter((item) => item.attivo)}
             carriers={settings.trasportatori}
             trailers={settings.rimorchi}
+            transports={transports}
             truckLoads={truckLoads}
             packages={packages}
             onReopenLoad={(row, operator: Operatore, reason) => {
