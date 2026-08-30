@@ -173,23 +173,25 @@ export default function DashboardHeader({
           >
             {isImporting ? "Importazione…" : "Importa distinta"}
           </Button>
-          {navigation.map((item) => (
-            <Button
-              key={item.label}
-              onClick={actionFor(item)}
-              startIcon={item.icon}
-              variant="outlined"
-              sx={{
-                justifyContent: "flex-start",
-                minHeight: 44,
-                minWidth: 0,
-                overflow: "hidden",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {item.label}
-            </Button>
-          ))}
+          {navigation
+            .filter((item) => item.page !== "settings")
+            .map((item) => (
+              <Button
+                key={item.label}
+                onClick={actionFor(item)}
+                startIcon={item.icon}
+                variant="outlined"
+                sx={{
+                  justifyContent: "flex-start",
+                  minHeight: 44,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.label}
+              </Button>
+            ))}
         </Box>
       </Paper>
     );

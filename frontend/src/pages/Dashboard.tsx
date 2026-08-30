@@ -13,6 +13,8 @@ import {
   MenuItem,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 
 import DashboardContent from "../components/dashboard/DashboardContent";
@@ -87,6 +89,12 @@ function Dashboard({
   onStartLoad,
   onConfirmDeparture,
 }: DashboardProps) {
+  const theme = useTheme();
+  const narrowPhone = useMediaQuery(theme.breakpoints.down("sm"));
+  const landscapePhone = useMediaQuery(
+    "(max-width:950px) and (max-height:500px)",
+  );
+  const mobile = narrowPhone || landscapePhone;
   const [deleteOrder, setDeleteOrder] = useState<string | null>(null);
   const [deletePlanningWarning, setDeletePlanningWarning] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -210,62 +218,70 @@ function Dashboard({
         hidden
         onChange={handleFileChange}
       />
-      <UpcomingShipments
-        carriers={carriers}
-        shipments={shipments}
-        trailers={trailers}
-        onOpenShipments={onOpenShipments}
-      />
-      <DashboardContent
-        onDelete={(row) => {setDeleteOrder(row.commessa);setDeletePlanningWarning(false);setDeleteError(null);}}
-        onContinueLoad={(row) => {
-          const load = truckLoads.find(
-            (item) =>
-              item.commessa === row.commessa &&
-              item.camion === row.camion &&
-              item.stato === "IN_CARICO",
-          );
-          if (load) onContinueLoad(load.loadId);
-        }}
-        onOpenScanning={onOpenScanning}
-        onStartLoad={onStartLoad}
-        onPrintPackages={openPackagePrint}
-        hasPackages={(row) =>
-          packages.some(
-            (pack) =>
-              pack.commessa === row.commessa && pack.camion === row.camion,
-          )
-        }
-        onReopen={(row) => {
-          setReopenRow(row);
-          setReopenOperatorId("");
-          setReopenReason("");
-        }}
-        onConfirmDeparture={(row) => {
-          setDepartureRow(row);
-          setDepartureCarrierId("");
-          setDepartureAt(new Date().toISOString());
-        }}
-        onOpenHistory={onOpenHistory}
-        onUpdate={openFilePicker}
-        rows={activeRows}
-        shipments={shipments}
-        carriers={carriers}
-        transports={transports}
-      />
-      <DashboardHeader
-        section="menu"
-        isImporting={isImporting}
-        onImportClick={openFilePicker}
-        onOpenHistory={() => onOpenHistory()}
-        onOpenLabels={onOpenLabels}
-        onOpenLoading={onOpenLoading}
-        onOpenTransports={onOpenTransports}
-        onOpenShipments={onOpenShipments}
-        onOpenScanning={onOpenScanningList}
-        onOpenSettings={onOpenSettings}
-        onOpenWarehouse={onOpenWarehouse}
-      />
+      <Box sx={{ display: "flex", flexDirection: "column" }}>
+        <Box sx={{ order: mobile ? 3 : 1 }}>
+          <UpcomingShipments
+            carriers={carriers}
+            shipments={shipments}
+            transports={transports}
+            onOpenShipments={onOpenShipments}
+          />
+        </Box>
+        <Box sx={{ order: mobile ? 2 : 2 }}>
+          <DashboardContent
+            onDelete={(row) => {setDeleteOrder(row.commessa);setDeletePlanningWarning(false);setDeleteError(null);}}
+            onContinueLoad={(row) => {
+              const load = truckLoads.find(
+                (item) =>
+                  item.commessa === row.commessa &&
+                  item.camion === row.camion &&
+                  item.stato === "IN_CARICO",
+              );
+              if (load) onContinueLoad(load.loadId);
+            }}
+            onOpenScanning={onOpenScanning}
+            onStartLoad={onStartLoad}
+            onPrintPackages={openPackagePrint}
+            hasPackages={(row) =>
+              packages.some(
+                (pack) =>
+                  pack.commessa === row.commessa && pack.camion === row.camion,
+              )
+            }
+            onReopen={(row) => {
+              setReopenRow(row);
+              setReopenOperatorId("");
+              setReopenReason("");
+            }}
+            onConfirmDeparture={(row) => {
+              setDepartureRow(row);
+              setDepartureCarrierId("");
+              setDepartureAt(new Date().toISOString());
+            }}
+            onOpenHistory={onOpenHistory}
+            onUpdate={openFilePicker}
+            rows={activeRows}
+            shipments={shipments}
+            carriers={carriers}
+            transports={transports}
+          />
+        </Box>
+        <Box sx={{ order: mobile ? 1 : 3 }}>
+          <DashboardHeader
+            section="menu"
+            isImporting={isImporting}
+            onImportClick={openFilePicker}
+            onOpenHistory={() => onOpenHistory()}
+            onOpenLabels={onOpenLabels}
+            onOpenLoading={onOpenLoading}
+            onOpenTransports={onOpenTransports}
+            onOpenShipments={onOpenShipments}
+            onOpenScanning={onOpenScanningList}
+            onOpenSettings={onOpenSettings}
+            onOpenWarehouse={onOpenWarehouse}
+          />
+        </Box>
+      </Box>
       <Dialog open={deleteOrder !== null} onClose={closeDeleteDialog}>
         <DialogTitle>
           {deletePlanningWarning

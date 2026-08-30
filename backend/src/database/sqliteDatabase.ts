@@ -236,6 +236,15 @@ const seedSettings = (database: DatabaseSync): void => {
     const row = database.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get() as { total: number };
     return Number(row.total);
   };
+  const countOperationalSettings = (): number => {
+    const row = database.prepare("SELECT COUNT(*) AS total FROM OperationalSettings").get() as { total: number };
+    return Number(row.total);
+  };
+  const seedDemoCarriers =
+    count("Operators") === 0 &&
+    count("Trailers") === 0 &&
+    count("Carriers") === 0 &&
+    countOperationalSettings() === 0;
 
   if (count("Operators") === 0) {
     const insert = database.prepare("INSERT INTO Operators (id, code, name, active, sortOrder, createdAt, updatedAt) VALUES (?, ?, ?, 1, ?, ?, ?)");
@@ -248,7 +257,7 @@ const seedSettings = (database: DatabaseSync): void => {
     const insert = database.prepare("INSERT INTO Trailers (id, plate, description, active, sortOrder, createdAt, updatedAt) VALUES (?, ?, '', 1, ?, ?, ?)");
     ["Rimorchio 1", "Rimorchio 2"].forEach((plate, index) => insert.run(crypto.randomUUID(), plate, index + 1, now, now));
   }
-  if (count("Carriers") === 0) {
+  if (seedDemoCarriers) {
     const insert = database.prepare("INSERT INTO Carriers (id, name, active, sortOrder, createdAt, updatedAt) VALUES (?, ?, 1, ?, ?, ?)");
     ["Cristelli", "BRT", "Fercam", "Arcese"].forEach((name, index) => insert.run(crypto.randomUUID(), name, index + 1, now, now));
   }

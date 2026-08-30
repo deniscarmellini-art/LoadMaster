@@ -10,16 +10,18 @@ import {
 } from "@mui/material";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import type { ShipmentItem, ShipmentStatus } from "../../services/shipmentsApi";
-import type { Rimorchio, Trasportatore } from "../../models/Settings";
+import type { Trasportatore } from "../../models/Settings";
+import type { TransportItem } from "../../services/transportsApi";
 import { dashboardColors } from "../../theme/theme";
 import { getNextBusinessDays } from "../../utils/businessDays";
 import PlannedDepartureDate from "../shipments/PlannedDepartureDate";
 import { operationalStatusPresentation } from "../../services/dashboardService";
+import { dashboardTransportPresentation } from "./dashboardTransport";
 
 interface Props {
   shipments: ShipmentItem[];
-  trailers: Rimorchio[];
   carriers: Trasportatore[];
+  transports: TransportItem[];
   onOpenShipments: () => void;
 }
 
@@ -42,30 +44,10 @@ const statusChipSx = {
   "& .MuiChip-label": { px: 1.25 },
 };
 
-const transportLabel = (
-  shipment: ShipmentItem,
-  trailers: Rimorchio[],
-  carriers: Trasportatore[],
-) => {
-  if (shipment.transportType === "TRASPORTATORE_ESTERNO") return "Ritira Cliente";
-  if (shipment.transportType !== "BILICO_ESSEPI") return "—";
-
-  const trailer = shipment.trailerId
-    ? trailers.find((item) => item.id === shipment.trailerId)?.targa ?? "Rimorchio assegnato"
-    : null;
-  if (!trailer) return "Bilico Essepi — Da assegnare";
-  if (!shipment.actualDepartureDate) return `Bilico Essepi — ${trailer}`;
-
-  const carrier = shipment.carrierId
-    ? carriers.find((item) => item.id === shipment.carrierId)?.nome ?? "Trasportatore non disponibile"
-    : "Trasportatore non disponibile";
-  return `${trailer} — ${carrier}`;
-};
-
 export default function UpcomingShipments({
   shipments,
-  trailers,
   carriers,
+  transports,
   onOpenShipments,
 }: Props) {
   const theme = useTheme();
@@ -196,7 +178,13 @@ export default function UpcomingShipments({
                         color="text.secondary"
                         sx={{ display: "block" }}
                       >
-                        {transportLabel(shipment, trailers, carriers)}
+                        {
+                          dashboardTransportPresentation(
+                            shipment,
+                            transports,
+                            carriers,
+                          ).label
+                        }
                       </Typography>
                       {shipment.operationalStatus && (
                         <Chip
