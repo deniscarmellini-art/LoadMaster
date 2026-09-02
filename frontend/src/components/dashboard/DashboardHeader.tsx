@@ -169,7 +169,17 @@ export default function DashboardHeader({
               )
             }
             variant="outlined"
-            sx={{ justifyContent: "flex-start", minHeight: 44, minWidth: 0 }}
+            sx={{
+              justifyContent: "flex-start",
+              lineHeight: 1.2,
+              minHeight: 52,
+              minWidth: 0,
+              overflowWrap: "anywhere",
+              px: 1,
+              textAlign: "left",
+              whiteSpace: "normal",
+              "& .MuiButton-startIcon": { flexShrink: 0, mr: 0.75 },
+            }}
           >
             {isImporting ? "Importazione…" : "Importa distinta"}
           </Button>
@@ -183,10 +193,14 @@ export default function DashboardHeader({
                 variant="outlined"
                 sx={{
                   justifyContent: "flex-start",
-                  minHeight: 44,
+                  lineHeight: 1.2,
+                  minHeight: 52,
                   minWidth: 0,
-                  overflow: "hidden",
-                  whiteSpace: "nowrap",
+                  overflowWrap: "anywhere",
+                  px: 1,
+                  textAlign: "left",
+                  whiteSpace: "normal",
+                  "& .MuiButton-startIcon": { flexShrink: 0, mr: 0.75 },
                 }}
               >
                 {item.label}

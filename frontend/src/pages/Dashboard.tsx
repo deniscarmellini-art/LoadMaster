@@ -98,6 +98,7 @@ function Dashboard({
   const [deleteOrder, setDeleteOrder] = useState<string | null>(null);
   const [deletePlanningWarning, setDeletePlanningWarning] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [reopenRow, setReopenRow] = useState<Camion | null>(null);
   const [reopenOperatorId, setReopenOperatorId] = useState("");
@@ -166,7 +167,9 @@ function Dashboard({
   };
   const closeDeleteDialog=()=>{setDeleteOrder(null);setDeletePlanningWarning(false);setDeleteError(null);};
   const confirmDelete = async (confirmPlanning=false) => {
-    if (!deleteOrder) return;
+    if (!deleteOrder || isDeleting) return;
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
       await onDeleteCommessa(deleteOrder,confirmPlanning);
       closeDeleteDialog();
@@ -175,6 +178,8 @@ function Dashboard({
         setDeletePlanningWarning(true);setDeleteError(null);return;
       }
       setDeleteError(error instanceof Error?error.message:"Errore durante l'eliminazione della commessa.");
+    } finally {
+      setIsDeleting(false);
     }
   };
   const openFilePicker = () => {
@@ -297,11 +302,11 @@ function Dashboard({
           {deleteError&&<Alert severity="error" sx={{mt:2}}>{deleteError}</Alert>}
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDeleteDialog}>
+          <Button onClick={closeDeleteDialog} disabled={isDeleting}>
             Annulla
           </Button>
-          <Button color="error" variant="contained" onClick={()=>void confirmDelete(deletePlanningWarning)}>
-            {deletePlanningWarning?"Elimina commessa e pianificazione":"Elimina"}
+          <Button color="error" variant="contained" disabled={isDeleting} onClick={()=>void confirmDelete(deletePlanningWarning)}>
+            {isDeleting?"Eliminazione...":deletePlanningWarning?"Elimina commessa e pianificazione":"Elimina"}
           </Button>
         </DialogActions>
       </Dialog>

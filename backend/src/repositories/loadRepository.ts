@@ -27,10 +27,19 @@ export class LoadRepository{
   let blockingReason:string|null=null;
   if(loads.some(load=>load.stato!=="DA_COMPLETARE"))blockingReason="La commessa contiene carichi già iniziati, completati o spediti.";
   else if(loads.some(load=>load.pannelli.some(panel=>panel.stato!=="MANCANTE"||panel.scannedAt!==null||panel.scannedByOperatorId!==null||panel.packageId!==null)))blockingReason="La commessa contiene pannelli già scansionati o preparati.";
-  else if(has(`SELECT 1 FROM Packages WHERE loadId IN (${placeholders}) LIMIT 1`))blockingReason="La commessa contiene uno o più pacchi.";
-  else if(has(`SELECT 1 FROM LoadingSessions WHERE loadId IN (${placeholders}) LIMIT 1`))blockingReason="La commessa contiene una sessione di carico.";
-  else if(has(`SELECT 1 FROM LoadingUnits u JOIN LoadingSessions s ON s.id=u.loadingSessionId WHERE s.loadId IN (${placeholders}) LIMIT 1`))blockingReason="La commessa contiene unità di carico operative o storiche.";
-  else if(has(`SELECT 1 FROM OperationalEvents WHERE loadId IN (${placeholders}) LIMIT 1`))blockingReason="La commessa contiene eventi operativi o storici.";
+  const packages=this.database.prepare(`SELECT id,codicePacco,stato,numeroPannelli FROM Packages WHERE loadId IN (${placeholders})`).all(...ids) as Array<{id:string;codicePacco:string;stato:string;numeroPannelli:number}>;
+  const emptyDraftPackageIds=new Set(packages.filter(pack=>pack.stato==="APERTO"&&pack.numeroPannelli===0&&pack.codicePacco.startsWith("DRAFT-")).map(pack=>pack.id));
+  if(!blockingReason&&packages.some(pack=>!emptyDraftPackageIds.has(pack.id)))blockingReason="La commessa contiene uno o più pacchi con pannelli o già chiusi.";
+  if(!blockingReason&&emptyDraftPackageIds.size){
+   const packageIds=[...emptyDraftPackageIds],packagePlaceholders=packageIds.map(()=>"?").join(",");
+   if(this.database.prepare(`SELECT 1 FROM LoadingUnits WHERE packageId IN (${packagePlaceholders}) LIMIT 1`).get(...packageIds))blockingReason="La commessa contiene un pacco già utilizzato in una sessione di carico.";
+  }
+  if(!blockingReason&&has(`SELECT 1 FROM LoadingSessions WHERE loadId IN (${placeholders}) LIMIT 1`))blockingReason="La commessa contiene una sessione di carico.";
+  if(!blockingReason&&has(`SELECT 1 FROM LoadingUnits u JOIN LoadingSessions s ON s.id=u.loadingSessionId WHERE s.loadId IN (${placeholders}) LIMIT 1`))blockingReason="La commessa contiene unità di carico operative o storiche.";
+  if(!blockingReason){
+   const events=this.database.prepare(`SELECT type,packageId FROM OperationalEvents WHERE loadId IN (${placeholders})`).all(...ids) as Array<{type:string;packageId:string|null}>;
+   if(events.some(event=>event.type!=="PACKAGE_OPENED"||event.packageId===null||!emptyDraftPackageIds.has(event.packageId)))blockingReason="La commessa contiene eventi operativi o storici.";
+  }
   const plans=(this.database.prepare("SELECT id,loadId,manualCommessa,manualCarico,actualDepartureDate FROM ShipmentPlans").all() as unknown as RelatedShipmentPlan[]).filter(plan=>(plan.loadId!==null&&loadIds.has(plan.loadId))||(plan.loadId===null&&plan.manualCommessa!==null&&normalizedOrder(plan.manualCommessa)===normalizedOrder(commessa)&&trucks.has(normalizedTruck(plan.manualCarico??""))));
   if(!blockingReason&&plans.some(plan=>plan.actualDepartureDate!==null))blockingReason="La commessa contiene una spedizione partita o storicizzata.";
   const assignments=(this.database.prepare("SELECT id,loadId,loadingSessionId,source,manualCommessa,manualCarico,stato,departedAt,availableFrom FROM TransportAssignments").all() as unknown as RelatedTransportAssignment[]).filter(assignment=>(assignment.loadId!==null&&loadIds.has(assignment.loadId))||(assignment.source==="MANUAL"&&assignment.manualCommessa!==null&&normalizedOrder(assignment.manualCommessa)===normalizedOrder(commessa)&&trucks.has(normalizedTruck(assignment.manualCarico??""))));

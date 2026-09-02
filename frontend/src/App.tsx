@@ -408,7 +408,8 @@ export default function App() {
             commesse={commesse}
             onImported={handleImported}
             onDeleteCommessa={async (ordine, confirmPlanning) => {
-              setCommesse(await deleteCommessaFromApi(ordine, confirmPlanning));
+              await deleteCommessaFromApi(ordine, confirmPlanning);
+              await refreshScanningData();
             }}
             onOpenLabels={() => setPage("labels")}
             onOpenScanning={openScanning}

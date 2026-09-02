@@ -9,6 +9,8 @@ export interface AppConfig {
   databasePath: string;
   frontendOrigin: string;
   frontendDistPath: string | null;
+  httpsKeyPath: string | null;
+  httpsCertPath: string | null;
 }
 
 const parsePort = (value: string | undefined): number => {
@@ -52,8 +54,18 @@ const parseDatabasePath=(value:string|undefined,nodeEnvironment:NodeEnvironment)
   return path;
 };
 
+const parseHttpsPaths=(keyValue:string|undefined,certValue:string|undefined,nodeEnvironment:NodeEnvironment):{keyPath:string|null;certPath:string|null}=>{
+  const keyPath=keyValue?.trim();
+  const certPath=certValue?.trim();
+  if(!keyPath&&!certPath)return{keyPath:null,certPath:null};
+  if(!keyPath||!certPath)throw new Error("Per abilitare HTTPS configurare sia HTTPS_KEY_PATH sia HTTPS_CERT_PATH");
+  if(nodeEnvironment==="production"&&(!isAbsolute(keyPath)||!isAbsolute(certPath)))throw new Error("HTTPS_KEY_PATH e HTTPS_CERT_PATH devono essere percorsi assoluti in produzione");
+  return{keyPath:resolve(keyPath),certPath:resolve(certPath)};
+};
+
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppConfig => {
   const nodeEnvironment=parseEnvironment(environment.NODE_ENV);
+  const https=parseHttpsPaths(environment.HTTPS_KEY_PATH,environment.HTTPS_CERT_PATH,nodeEnvironment);
   return{
     port:parsePort(environment.PORT),
     host:environment.HOST?.trim()||"127.0.0.1",
@@ -61,5 +73,7 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     databasePath:parseDatabasePath(environment.DATABASE_URL,nodeEnvironment),
     frontendOrigin:parseOrigin(environment.FRONTEND_ORIGIN),
     frontendDistPath:parseFrontendDistPath(environment.FRONTEND_DIST_PATH,nodeEnvironment),
+    httpsKeyPath:https.keyPath,
+    httpsCertPath:https.certPath,
   };
 };

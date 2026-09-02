@@ -31,6 +31,18 @@ foreach ($requiredName in @("PORT", "HOST", "NODE_ENV", "DATABASE_URL", "FRONTEN
         throw "Variabile obbligatoria mancante in backend/.env: $requiredName"
     }
 }
+if ($configuration.ContainsKey("HTTPS_KEY_PATH") -xor $configuration.ContainsKey("HTTPS_CERT_PATH")) {
+    throw "Per abilitare HTTPS configurare sia HTTPS_KEY_PATH sia HTTPS_CERT_PATH in backend/.env"
+}
+$httpsEnabled = $configuration.ContainsKey("HTTPS_KEY_PATH") -and $configuration.ContainsKey("HTTPS_CERT_PATH") -and
+    -not [string]::IsNullOrWhiteSpace($configuration["HTTPS_KEY_PATH"]) -and -not [string]::IsNullOrWhiteSpace($configuration["HTTPS_CERT_PATH"])
+if ($httpsEnabled) {
+    foreach ($certificatePathName in @("HTTPS_KEY_PATH", "HTTPS_CERT_PATH")) {
+        if (-not (Test-Path -LiteralPath $configuration[$certificatePathName] -PathType Leaf)) {
+            throw "$certificatePathName non esiste: $($configuration[$certificatePathName])"
+        }
+    }
+}
 if ($configuration["NODE_ENV"] -ne "production") {
     throw "NODE_ENV deve essere production in backend/.env"
 }
@@ -62,10 +74,13 @@ if ($portInUse) {
 }
 
 $serverName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { "NOME-SERVER" }
+$scheme = if ($httpsEnabled) { "https" } else { "http" }
 
 Write-Host "Avvio SisLog in modalita produzione..." -ForegroundColor Green
-Write-Host "URL operatori: http://${serverName}:$port"
-Write-Host "API health:    http://${serverName}:$port/api/health"
+Write-Host "Protocollo:    $($scheme.ToUpper())"
+Write-Host "URL operatori: ${scheme}://${serverName}:$port"
+Write-Host "URL LAN:       ${scheme}://192.167.4.99:$port"
+Write-Host "API health:    ${scheme}://${serverName}:$port/api/health"
 Write-Host "Ingresso:      $backendEntry"
 
 Push-Location $backendPath

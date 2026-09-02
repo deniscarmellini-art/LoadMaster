@@ -12,6 +12,6 @@ export class LoadController{
  import=async(request:FastifyRequest<{Body:LoadImport}>,reply:FastifyReply):Promise<unknown>=>reply.status(201).send(this.service.import(request.body));
  updateImport=async(request:FastifyRequest<{Params:IdParams;Body:LoadImport}>):Promise<unknown>=>this.service.updateImport(request.params.id,request.body);
  delete=async(request:FastifyRequest<{Params:IdParams}>,reply:FastifyReply):Promise<void>=>{this.service.delete(request.params.id);await reply.status(204).send();};
- deleteOrder=async(request:FastifyRequest<{Params:OrderParams;Querystring:DeleteOrderQuery}>,reply:FastifyReply):Promise<void>=>{this.service.deleteOrder(request.params.orderNumber,request.query.confirmPlanning===true);await reply.status(204).send();};
+ deleteOrder=async(request:FastifyRequest<{Params:OrderParams;Querystring:DeleteOrderQuery}>,reply:FastifyReply):Promise<void>=>{const orderNumber=request.params.orderNumber,confirmPlanning=request.query.confirmPlanning===true;request.log.info({orderNumber,confirmPlanning},"Richiesta eliminazione commessa");try{this.service.deleteOrder(orderNumber,confirmPlanning);request.log.info({orderNumber},"Commessa eliminata");await reply.status(204).send();}catch(error:unknown){request.log.warn({err:error,orderNumber},"Eliminazione commessa rifiutata o non riuscita");throw error;}};
  updateOrderImport=async(request:FastifyRequest<{Params:OrderParams;Body:LoadImport}>):Promise<unknown>=>this.service.updateOrderImport(request.params.orderNumber,request.body);
 }

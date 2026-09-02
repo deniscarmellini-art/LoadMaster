@@ -16,6 +16,8 @@ const config: AppConfig = {
   databasePath: ":memory:",
   frontendOrigin: "http://localhost:5173",
   frontendDistPath: null,
+  httpsKeyPath: null,
+  httpsCertPath: null,
 };
 
 test("la configurazione di produzione richiede percorsi assoluti per frontend e database",()=>{
@@ -25,6 +27,12 @@ test("la configurazione di produzione richiede percorsi assoluti per frontend e 
   assert.throws(()=>loadConfig({...base,DATABASE_URL:"./data/app.sqlite",FRONTEND_DIST_PATH:"D:/SisLog/frontend/dist"}),/DATABASE_URL deve essere un percorso assoluto/);
   const loaded=loadConfig({...base,DATABASE_URL:"D:/SisLog/data/app.sqlite",FRONTEND_DIST_PATH:"D:/SisLog/frontend/dist"});
   assert.equal(loaded.host,"0.0.0.0");assert.equal(loaded.port,3001);assert.equal(loaded.databasePath,"D:/SisLog/data/app.sqlite");
+});
+
+test("la configurazione HTTPS richiede chiave e certificato insieme",()=>{
+  assert.throws(()=>loadConfig({NODE_ENV:"development",HTTPS_KEY_PATH:"key.pem"}),/sia HTTPS_KEY_PATH sia HTTPS_CERT_PATH/);
+  const loaded=loadConfig({NODE_ENV:"development",HTTPS_KEY_PATH:"key.pem",HTTPS_CERT_PATH:"cert.pem"});
+  assert.match(loaded.httpsKeyPath??"",/key\.pem$/);assert.match(loaded.httpsCertPath??"",/cert\.pem$/);
 });
 
 test("in produzione pubblica la SPA senza intercettare gli errori API",async()=>{
@@ -336,6 +344,18 @@ test("elimina atomicamente la commessa 265588 dopo conferma della pianificazione
   assert.equal((await app.inject({method:"GET",url:`/api/loads/${load.id}`})).statusCode,404);
   assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{commessa:string}>>().some(item=>item.commessa==="265588"),false);
   assert.equal((await app.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string}>>().find(item=>item.id===trailer.id)?.status,"DISPONIBILE");
+  await app.close();
+});
+
+test("elimina una commessa con il solo pacco bozza vuoto",async()=>{
+  const app=await buildApp(config);
+  const payload={...importedLoad([importedPanel("101","C3"),importedPanel("104","C4")]),commessa:"EMPTY-DRAFT"};
+  const loads=(await app.inject({method:"POST",url:"/api/loads/import",payload})).json<Array<{id:string}>>();
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  assert.equal((await app.inject({method:"POST",url:"/api/packages",payload:{loadId:loads[0]!.id,operatorId:operator.id}})).statusCode,201);
+  const removed=await app.inject({method:"DELETE",url:"/api/orders/EMPTY-DRAFT"});
+  assert.equal(removed.statusCode,204);
+  assert.equal((await app.inject({method:"GET",url:"/api/loads"})).json<Array<{commessa:string}>>().some(load=>load.commessa==="EMPTY-DRAFT"),false);
   await app.close();
 });
 

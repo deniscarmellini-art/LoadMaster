@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import type { AppConfig } from "./config/environment.js";
@@ -44,9 +44,12 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
     const indexPath=join(config.frontendDistPath,"index.html");
     if(!existsSync(indexPath)||!statSync(indexPath).isFile())throw new Error(`Il frontend compilato non contiene index.html: ${indexPath}`);
   }
-  const app = Fastify({
-    logger: config.environment !== "test",
-  });
+  if(config.httpsKeyPath&&!existsSync(config.httpsKeyPath))throw new Error(`HTTPS_KEY_PATH non esiste: ${config.httpsKeyPath}`);
+  if(config.httpsCertPath&&!existsSync(config.httpsCertPath))throw new Error(`HTTPS_CERT_PATH non esiste: ${config.httpsCertPath}`);
+  const logger=config.environment!=="test";
+  const app = (config.httpsKeyPath&&config.httpsCertPath
+    ? Fastify({logger,https:{key:readFileSync(config.httpsKeyPath),cert:readFileSync(config.httpsCertPath)}})
+    : Fastify({logger})) as unknown as FastifyInstance;
   const connection = openSqliteDatabase(config.databasePath);
   app.addHook("onClose", async () => connection.close());
   const operatorService = new OperatorService(new OperatorRepository(connection.database));

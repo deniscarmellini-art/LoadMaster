@@ -3,6 +3,9 @@ frontend/.env.local
 frontend/certs/
 frontend/*.pem
 frontend/*.key
+backend/certs/
+backend/*.pem
+backend/*.key
 backend/.env
 backend/data/*.db
 backend/data/*.db-*
