@@ -37,7 +37,7 @@ import { ApiClientError } from "../services/apiClient";
 interface DashboardProps {
   commesse: Commessa[];
   onImported: (commessa: Commessa) => Promise<void>;
-  onDeleteCommessa: (ordine: string, confirmPlanning?: boolean) => Promise<void>;
+  onDeleteLoad: (row: Camion, confirmPlanning?: boolean) => Promise<void>;
   onOpenLabels: () => void;
   onOpenScanning: (row: Camion) => void;
   onOpenScanningList: () => void;
@@ -67,7 +67,7 @@ interface DashboardProps {
 function Dashboard({
   commesse,
   onImported,
-  onDeleteCommessa,
+  onDeleteLoad,
   onOpenLabels,
   onOpenScanning,
   onOpenScanningList,
@@ -95,7 +95,7 @@ function Dashboard({
     "(max-width:950px) and (max-height:500px)",
   );
   const mobile = narrowPhone || landscapePhone;
-  const [deleteOrder, setDeleteOrder] = useState<string | null>(null);
+  const [deleteRow, setDeleteRow] = useState<Camion | null>(null);
   const [deletePlanningWarning, setDeletePlanningWarning] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -165,19 +165,19 @@ function Dashboard({
     setSelectedPackageCodes(new Set(codes));
     setPackagePrintRow(row);
   };
-  const closeDeleteDialog=()=>{setDeleteOrder(null);setDeletePlanningWarning(false);setDeleteError(null);};
+  const closeDeleteDialog=()=>{setDeleteRow(null);setDeletePlanningWarning(false);setDeleteError(null);};
   const confirmDelete = async (confirmPlanning=false) => {
-    if (!deleteOrder || isDeleting) return;
+    if (!deleteRow || isDeleting) return;
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      await onDeleteCommessa(deleteOrder,confirmPlanning);
+      await onDeleteLoad(deleteRow,confirmPlanning);
       closeDeleteDialog();
     } catch(error:unknown) {
       if(error instanceof ApiClientError&&error.code==="PREVENTIVE_PLAN_CONFIRMATION_REQUIRED"){
         setDeletePlanningWarning(true);setDeleteError(null);return;
       }
-      setDeleteError(error instanceof Error?error.message:"Errore durante l'eliminazione della commessa.");
+      setDeleteError(error instanceof Error?error.message:"Errore durante l'eliminazione del carico.");
     } finally {
       setIsDeleting(false);
     }
@@ -234,7 +234,7 @@ function Dashboard({
         </Box>
         <Box sx={{ order: mobile ? 2 : 2 }}>
           <DashboardContent
-            onDelete={(row) => {setDeleteOrder(row.commessa);setDeletePlanningWarning(false);setDeleteError(null);}}
+            onDelete={(row) => {setDeleteRow(row);setDeletePlanningWarning(false);setDeleteError(null);}}
             onContinueLoad={(row) => {
               const load = truckLoads.find(
                 (item) =>
@@ -287,17 +287,17 @@ function Dashboard({
           />
         </Box>
       </Box>
-      <Dialog open={deleteOrder !== null} onClose={closeDeleteDialog}>
+      <Dialog open={deleteRow !== null} onClose={closeDeleteDialog}>
         <DialogTitle>
           {deletePlanningWarning
-            ? "Elimina commessa e pianificazione"
-            : "Elimina commessa"}
+            ? "Elimina carico e pianificazione"
+            : "Elimina carico"}
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
             {deletePlanningWarning
-              ? "La commessa ha una pianificazione spedizione collegata. Eliminando la commessa verrà eliminata anche la pianificazione. Vuoi continuare?"
-              : `Vuoi eliminare definitivamente la commessa ${deleteOrder} e tutti i pannelli associati?`}
+              ? `Il carico ${deleteRow?.camion} della commessa ${deleteRow?.commessa} ha una pianificazione spedizione collegata. Eliminando il carico verrà eliminata anche la pianificazione. Vuoi continuare?`
+              : `Vuoi eliminare definitivamente il carico ${deleteRow?.camion} della commessa ${deleteRow?.commessa} e tutti gli elementi associati?`}
           </DialogContentText>
           {deleteError&&<Alert severity="error" sx={{mt:2}}>{deleteError}</Alert>}
         </DialogContent>
@@ -306,7 +306,7 @@ function Dashboard({
             Annulla
           </Button>
           <Button color="error" variant="contained" disabled={isDeleting} onClick={()=>void confirmDelete(deletePlanningWarning)}>
-            {isDeleting?"Eliminazione...":deletePlanningWarning?"Elimina commessa e pianificazione":"Elimina"}
+            {isDeleting?"Eliminazione...":deletePlanningWarning?"Elimina carico e pianificazione":"Elimina"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -495,7 +495,7 @@ function Dashboard({
                     }
                   />
                 }
-                label={`${pack.codice} (${pack.numeroPezzi} pannelli)`}
+                label={`${pack.codice} (${pack.numeroPezzi} elementi)`}
               />
             ))}
           </Box>

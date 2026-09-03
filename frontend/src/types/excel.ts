@@ -1,6 +1,7 @@
 export interface Pannello {
   backendId?: string;
   loadId?: string;
+  loadStatus?: "DA_COMPLETARE" | "DA_CARICARE" | "IN_CARICO" | "ATTESA_SPEDIZIONE" | "SPEDITO";
   packageId?: string;
   manualLocation?: string;
   scannedAt?: string;

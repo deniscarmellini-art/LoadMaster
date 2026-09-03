@@ -22,7 +22,7 @@ export default function ScannerInput({ disabled=false, mobileEmphasis=false, val
   return <>
     <Stack direction={{xs:"column",sm:"row"}} sx={{gap:1.5,alignItems:"stretch"}}>
       {!smartphone && (
-        <TextField autoFocus disabled={disabled} fullWidth inputRef={inputRef} label="Scanner QR pannello" placeholder="Scansiona il QR e premi Invio" value={value} onChange={e=>onValueChange(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();submit();}}} slotProps={{input:{startAdornment:<InputAdornment position="start"><QrCodeScannerIcon sx={{fontSize:34}}/></InputAdornment>}}} sx={{order:{xs:mobileEmphasis?2:1,sm:1},"& .MuiOutlinedInput-root":{fontSize:"1.15rem",minHeight:{xs:mobileEmphasis?56:72,sm:72}},"& input":{fontFamily:"monospace"}}}/>
+        <TextField autoFocus disabled={disabled} fullWidth inputRef={inputRef} label="Scanner QR elemento" placeholder="Scansiona il QR e premi Invio" value={value} onChange={e=>onValueChange(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();submit();}}} slotProps={{input:{startAdornment:<InputAdornment position="start"><QrCodeScannerIcon sx={{fontSize:34}}/></InputAdornment>}}} sx={{order:{xs:mobileEmphasis?2:1,sm:1},"& .MuiOutlinedInput-root":{fontSize:"1.15rem",minHeight:{xs:mobileEmphasis?56:72,sm:72}},"& input":{fontFamily:"monospace"}}}/>
       )}
       <Button fullWidth={smartphone} disabled={disabled||cameraOpen} variant={smartphone||mobileEmphasis?"contained":"outlined"} size="large" startIcon={<PhotoCameraOutlinedIcon/>} onClick={()=>setCameraOpen(true)} sx={{order:{xs:mobileEmphasis?1:2,sm:2},minWidth:{sm:230},minHeight:{xs:64,sm:72},fontSize:{xs:"1rem"},whiteSpace:"nowrap"}}>Scansiona con fotocamera</Button>
     </Stack>

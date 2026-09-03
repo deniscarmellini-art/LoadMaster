@@ -13,7 +13,7 @@ export default function LabelPreview({ panel, fields, index }:Props) {
   return <Box className={`print-label${fields.rotate ? " print-label--rotated" : ""}`}>
     <Box className="label-brand"><img className="label-logo" src="/essepi-logo-print.png" alt="ESSEPI finestre & xlam" /></Box>
     <Box className="label-heading">
-      <Box className="heading-panel"><small>Pannello</small><strong className="heading-value">{panel.numeroPannello}</strong><span>Master panel <b>{panel.numeroMasterPanel}</b></span></Box>
+      <Box className="heading-panel"><small>Elemento</small><strong className="heading-value">{panel.numeroPannello}</strong><span>Master panel <b>{panel.numeroMasterPanel}</b></span></Box>
       <Box className="heading-order"><small>Commessa</small><strong className="heading-value">{fields.commessa}</strong></Box>
       <Box className="heading-truck"><small>Camion</small><strong className="heading-value">{show(panel.numeroCamion)}</strong></Box>
       <Box className="heading-ce"><img className="heading-ce-mark" src="/ce-mark-official.png" alt="Marcatura CE" /><Box className="heading-certification"><small>C. TRAF. AUT_MIN</small><b>{fields.autMin}</b></Box><Box className="heading-certification"><small>CODICE ETA</small><b>{fields.codiceEta}</b></Box><Box className="heading-certification"><small>CODICE CPR</small><b>{fields.cpr}</b></Box></Box>
@@ -26,6 +26,6 @@ export default function LabelPreview({ panel, fields, index }:Props) {
     <Box className="label-codes"><QRCodeSVG value={qr} size={128} level="M" marginSize={1} />
       <Box><small>DTP</small><b>{show(fields.dtp)}</b></Box><Box><small>Operatore</small><b>{show(fields.operatore)}</b></Box><Box><small>Data / Ora</small><b>{show(fields.dataOra)}</b></Box>
     </Box>
-    <Box className="preview-caption">Pannello {panel.numeroPannello} · {serial}</Box>
+    <Box className="preview-caption">Elemento {panel.numeroPannello} · {serial}</Box>
   </Box>;
 }

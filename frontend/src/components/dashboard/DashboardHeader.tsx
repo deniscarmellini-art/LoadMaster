@@ -38,7 +38,7 @@ interface DashboardHeaderProps {
 const navigation = [
   { label: "Stampa etichette", icon: <PrintOutlinedIcon />, page: "labels" },
   {
-    label: "Scansione pannelli",
+    label: "Scansione elementi",
     icon: <QrCodeScannerOutlinedIcon />,
     page: "scanning",
   },
@@ -128,7 +128,7 @@ export default function DashboardHeader({
               color="text.secondary"
               sx={{ fontSize: ".7rem", mt: 0.25 }}
             >
-              Pannelli, pacchi e spedizioni
+              Elementi, pacchi e spedizioni
             </Typography>
           </Box>
           <Avatar sx={{ bgcolor: "primary.main", height: 38, width: 38 }}>
@@ -267,7 +267,7 @@ export default function DashboardHeader({
               mt: "5px",
             }}
           >
-            Gestione pannelli, pacchi e spedizioni
+            Gestione elementi, pacchi e spedizioni
           </Typography>
         </Box>
         <Stack

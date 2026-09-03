@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { LoadImport,LoadRecord,LoadStatus,PanelImport,PanelRecord,PanelStatus } from "../models/operational.js";
 import { requiredNumber,requiredString } from "./repositoryUtils.js";
+import { reconcileAllOperationalLoadStatuses,reconcileOperationalLoadStatus } from "./operationalLoadStatus.js";
 
 const nullableString=(row:Record<string,unknown>,key:string)=>typeof row[key]==="string"?row[key] as string:null;
 const panelFromRow=(value:unknown):PanelRecord=>{const row=value as Record<string,unknown>;return{id:requiredString(row,"id"),loadId:requiredString(row,"loadId"),numeroPannello:requiredString(row,"numeroPannello"),numeroCliente:requiredString(row,"numeroCliente"),numeroMasterPanel:requiredString(row,"numeroMasterPanel"),camion:requiredString(row,"camion"),lato1:requiredString(row,"lato1"),lato2:requiredString(row,"lato2"),tipoPannello:requiredString(row,"tipoPannello"),quantita:requiredNumber(row,"quantita"),spessore:requiredNumber(row,"spessore"),lunghezza:requiredNumber(row,"lunghezza"),altezza:requiredNumber(row,"altezza"),superficie:requiredNumber(row,"superficie"),volume:requiredNumber(row,"volume"),peso:requiredNumber(row,"peso"),stato:requiredString(row,"stato") as PanelStatus,packageId:nullableString(row,"packageId"),manualLocation:nullableString(row,"manualLocation"),scannedAt:nullableString(row,"scannedAt"),scannedByOperatorId:nullableString(row,"scannedByOperatorId"),createdAt:requiredString(row,"createdAt"),updatedAt:requiredString(row,"updatedAt")};};
@@ -12,8 +13,8 @@ interface RelatedTransportAssignment{id:string;loadId:string|null;loadingSession
 export interface OrderDeletionAssessment{loads:LoadRecord[];shipmentPlanIds:string[];preventiveTransportAssignmentIds:string[];blockingReason:string|null}
 export class LoadRepository{
  constructor(private readonly database:DatabaseSync){}
- list():LoadRecord[]{return this.database.prepare("SELECT * FROM Loads ORDER BY commessa,camion").all().map(row=>this.withPanels(loadBase(row)));}
- find(id:string):LoadRecord|null{const row=this.database.prepare("SELECT * FROM Loads WHERE id=?").get(id);return row?this.withPanels(loadBase(row)):null;}
+ list():LoadRecord[]{reconcileAllOperationalLoadStatuses(this.database);return this.database.prepare("SELECT * FROM Loads ORDER BY commessa,camion").all().map(row=>this.withPanels(loadBase(row)));}
+ find(id:string):LoadRecord|null{if(this.database.prepare("SELECT 1 FROM Loads WHERE id=?").get(id))reconcileOperationalLoadStatus(this.database,id);const row=this.database.prepare("SELECT * FROM Loads WHERE id=?").get(id);return row?this.withPanels(loadBase(row)):null;}
  findByOrderTruck(commessa:string,camion:string):LoadRecord|null{const row=this.database.prepare("SELECT * FROM Loads WHERE UPPER(TRIM(commessa))=UPPER(TRIM(?)) AND UPPER(REPLACE(REPLACE(TRIM(camion),' ',''),'-',''))=UPPER(REPLACE(REPLACE(TRIM(?),' ',''),'-','')) ORDER BY CASE WHEN stato='SPEDITO' THEN 0 ELSE 1 END LIMIT 1").get(commessa,camion);return row?this.withPanels(loadBase(row)):null;}
  findByOrder(commessa:string):LoadRecord[]{return this.database.prepare("SELECT * FROM Loads WHERE UPPER(TRIM(commessa))=UPPER(TRIM(?)) ORDER BY camion").all(commessa).map(row=>this.withPanels(loadBase(row)));}
  assessOrderDeletion(commessa:string):OrderDeletionAssessment{
@@ -26,10 +27,10 @@ export class LoadRepository{
   const has=(sql:string):boolean=>Boolean(this.database.prepare(sql).get(...ids));
   let blockingReason:string|null=null;
   if(loads.some(load=>load.stato!=="DA_COMPLETARE"))blockingReason="La commessa contiene carichi già iniziati, completati o spediti.";
-  else if(loads.some(load=>load.pannelli.some(panel=>panel.stato!=="MANCANTE"||panel.scannedAt!==null||panel.scannedByOperatorId!==null||panel.packageId!==null)))blockingReason="La commessa contiene pannelli già scansionati o preparati.";
+  else if(loads.some(load=>load.pannelli.some(panel=>panel.stato!=="MANCANTE"||panel.scannedAt!==null||panel.scannedByOperatorId!==null||panel.packageId!==null)))blockingReason="La commessa contiene elementi già scansionati o preparati.";
   const packages=this.database.prepare(`SELECT id,codicePacco,stato,numeroPannelli FROM Packages WHERE loadId IN (${placeholders})`).all(...ids) as Array<{id:string;codicePacco:string;stato:string;numeroPannelli:number}>;
   const emptyDraftPackageIds=new Set(packages.filter(pack=>pack.stato==="APERTO"&&pack.numeroPannelli===0&&pack.codicePacco.startsWith("DRAFT-")).map(pack=>pack.id));
-  if(!blockingReason&&packages.some(pack=>!emptyDraftPackageIds.has(pack.id)))blockingReason="La commessa contiene uno o più pacchi con pannelli o già chiusi.";
+  if(!blockingReason&&packages.some(pack=>!emptyDraftPackageIds.has(pack.id)))blockingReason="La commessa contiene uno o più pacchi con elementi o già chiusi.";
   if(!blockingReason&&emptyDraftPackageIds.size){
    const packageIds=[...emptyDraftPackageIds],packagePlaceholders=packageIds.map(()=>"?").join(",");
    if(this.database.prepare(`SELECT 1 FROM LoadingUnits WHERE packageId IN (${packagePlaceholders}) LIMIT 1`).get(...packageIds))blockingReason="La commessa contiene un pacco già utilizzato in una sessione di carico.";

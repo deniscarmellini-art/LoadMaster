@@ -91,7 +91,7 @@ const singleColumns: ReadonlyArray<{
   { label: "Commessa", width: 90, sortKey: "commessa" },
   { label: "Cliente", width: 120, sortKey: "cliente" },
   { label: "Camion", width: 65, sortKey: "camion" },
-  { label: "Pannello", width: 75, sortKey: "pannello" },
+  { label: "Elemento", width: 75, sortKey: "pannello" },
   { label: "Master panel", width: 90, sortKey: "masterPanel" },
   { label: "Dimensioni", width: 150, sortKey: "dimensioni" },
   { label: "Peso", width: 75, sortKey: "peso" },
@@ -111,7 +111,7 @@ const packageColumns: ReadonlyArray<{
   { label: "Cliente", width: 130, sortKey: "cliente" },
   { label: "Camion", width: 85, sortKey: "camion" },
   { label: "Codice pacco", width: 165, sortKey: "codicePacco" },
-  { label: "N. pannelli", width: 85, sortKey: "numeroPannelli" },
+  { label: "N. elementi", width: 85, sortKey: "numeroPannelli" },
   { label: "Dimensioni", width: 205, sortKey: "dimensioni" },
   { label: "Peso", width: 105, sortKey: "peso" },
   { label: "Volume", width: 105, sortKey: "volume" },
@@ -388,19 +388,19 @@ export default function Warehouse({
     if (pending.kind === "single") {
       onCancelSingle(pending.unit);
       setNotice({
-        message: "Scansione del pannello annullata",
+        message: "Scansione dell'elemento annullata",
         severity: "success",
       });
     } else if (pending.kind === "package") {
       onCancelPackage(pending.pack);
       setNotice({
-        message: "Pacco annullato e pannelli riportati a MANCANTE",
+        message: "Pacco annullato ed elementi riportati a MANCANTE",
         severity: "success",
       });
     } else {
       onRemoveDraftPanel(pending.key, pending.panel);
       setNotice({
-        message: "Pannello rimosso dal pacco aperto",
+        message: "Elemento rimosso dal pacco aperto",
         severity: "success",
       });
     }
@@ -434,7 +434,7 @@ export default function Warehouse({
           }}
         >
           <TextField
-            label="Cerca pannello, pacco, commessa o cliente"
+            label="Cerca elemento, pacco, commessa o cliente"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             sx={{ gridColumn: { md: "span 3", xl: "auto" } }}
@@ -510,7 +510,7 @@ export default function Warehouse({
       {(type === "all" || type === "single") && (
         <Paper sx={{ p: 2, mb: 2 }}>
           <Typography variant="h6" sx={{ mb: 1 }}>
-            Pannelli singoli disponibili
+            Elementi singoli disponibili
           </Typography>
           <TableContainer sx={{ display: { xs: "none", sm: "block" } }}>
             <Table
@@ -524,7 +524,7 @@ export default function Warehouse({
                       <TableCell
                         key={label}
                         align={
-                          label === "Camion" || label === "Pannello" || label === "Master panel" || label === "Stato" || label === "Azioni"
+                          label === "Camion" || label === "Elemento" || label === "Master panel" || label === "Stato" || label === "Azioni"
                             ? "center"
                             : label === "Peso" || label === "Volume"
                               ? "right"
@@ -585,7 +585,7 @@ export default function Warehouse({
                             <Tooltip title="Modifica ubicazione">
                               <IconButton
                                 size="small"
-                                aria-label={`Modifica ubicazione pannello ${panel.numeroPannello}`}
+                                aria-label={`Modifica ubicazione elemento ${panel.numeroPannello}`}
                                 onClick={() => openLocationEditor(panel)}
                               >
                                 <EditOutlinedIcon fontSize="small" />
@@ -638,7 +638,7 @@ export default function Warehouse({
                   <Stack direction="row" sx={{ alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
                     <Box sx={{ minWidth: 0 }}>
                       <Typography sx={{ fontSize: "1.1rem", fontWeight: 900 }}>
-                        Pannello {panel.numeroPannello}
+                        Elemento {panel.numeroPannello}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         Master Panel {panel.numeroMasterPanel}
@@ -683,7 +683,7 @@ export default function Warehouse({
                     <Tooltip title="Elimina">
                       <IconButton
                         color="error"
-                        aria-label={`Elimina pannello ${panel.numeroPannello}`}
+                        aria-label={`Elimina elemento ${panel.numeroPannello}`}
                         onClick={() => setPending({ kind: "single", unit, blocked: loaded })}
                         sx={{ minHeight: 48, minWidth: 48 }}
                       >
@@ -710,7 +710,7 @@ export default function Warehouse({
                     <TableCell
                       key={label}
                       align={
-                        label === "Camion" || label === "N. pannelli" || label === "Dettaglio" || label === "Stato" || label === "Azioni"
+                        label === "Camion" || label === "N. elementi" || label === "Dettaglio" || label === "Stato" || label === "Azioni"
                           ? "center"
                           : label === "Peso" || label === "Volume"
                             ? "right"
@@ -884,7 +884,7 @@ export default function Warehouse({
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                       <b>
                         Pacco aperto — {draftOrder} / {draftTruck} (
-                        {items.length} pannelli)
+                        {items.length} elementi)
                       </b>
                     </AccordionSummary>
                     <AccordionDetails>
@@ -899,7 +899,7 @@ export default function Warehouse({
                           }}
                         >
                           <span>
-                            ↳ Pannello {panel.numeroPannello} · MP{" "}
+                            ↳ Elemento {panel.numeroPannello} · MP{" "}
                             {panel.numeroMasterPanel} · {panel.peso.toFixed(1)}{" "}
                             kg · {draftCommessa?.cliente}
                           </span>
@@ -931,13 +931,13 @@ export default function Warehouse({
           <DialogContentText>
             {pending?.kind === "single"
               ? pending.blocked
-                ? "Il pannello è CARICATO o SPEDITO e non può essere eliminato."
-                : "Annullare la scansione del pannello e riportarlo a MANCANTE?"
+                ? "L'elemento è CARICATO o SPEDITO e non può essere eliminato."
+                : "Annullare la scansione dell'elemento e riportarlo a MANCANTE?"
               : pending?.kind === "package"
                 ? pending.blocked
                   ? "Il pacco è CARICATO o SPEDITO e non può essere annullato."
-                  : `Annullare il pacco ${pending.pack.codice} e riportare tutti i pannelli a MANCANTE?`
-                : "Rimuovere il pannello dal pacco aperto?"}
+                  : `Annullare il pacco ${pending.pack.codice} e riportare tutti gli elementi a MANCANTE?`
+                : "Rimuovere l'elemento dal pacco aperto?"}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
@@ -959,10 +959,10 @@ export default function Warehouse({
         open={locationPanel !== null}
         onClose={() => !savingLocation && setLocationPanel(null)}
       >
-        <DialogTitle>Ubicazione pannello {locationPanel?.numeroPannello}</DialogTitle>
+        <DialogTitle>Ubicazione elemento {locationPanel?.numeroPannello}</DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
-            Inserisci la posizione fisica del pannello disponibile. Lascia il campo vuoto per rimuoverla.
+            Inserisci la posizione fisica dell'elemento disponibile. Lascia il campo vuoto per rimuoverla.
           </DialogContentText>
           <TextField
             autoFocus
@@ -1059,7 +1059,7 @@ function PackageCard({
   const fields = [
     ["Commessa / Cliente", `${pack.commessa} · ${pack.cliente}`],
     ["Camion", pack.camion],
-    ["Pacco / Pannelli", `${pack.codice} · ${pack.numeroPezzi} pannelli`],
+    ["Pacco / Elementi", `${pack.codice} · ${pack.numeroPezzi} elementi`],
     ["Dimensioni", formatPackageDimensions(pack)],
     ["Peso", `${pack.pesoTotale.toFixed(1)} kg`],
     ["Volume", `${pack.volumeTotale.toFixed(3)} m³`],
@@ -1114,9 +1114,9 @@ function PackageCard({
                 </Typography>
                 <Typography
                   variant="body2"
-                  color={label === "Pacco / Pannelli" ? "primary.main" : undefined}
+                  color={label === "Pacco / Elementi" ? "primary.main" : undefined}
                   sx={{
-                    fontWeight: label === "Pacco / Pannelli" ? 800 : 400,
+                    fontWeight: label === "Pacco / Elementi" ? 800 : 400,
                     ...nowrap,
                   }}
                 >
@@ -1203,9 +1203,9 @@ function PackageCard({
                 </Typography>
                 <Typography
                   variant="body2"
-                  color={label === "Pacco / Pannelli" ? "primary.main" : undefined}
+                  color={label === "Pacco / Elementi" ? "primary.main" : undefined}
                   sx={{
-                    fontWeight: label === "Pacco / Pannelli" ? 800 : 400,
+                    fontWeight: label === "Pacco / Elementi" ? 800 : 400,
                     ...nowrap,
                   }}
                 >
@@ -1278,14 +1278,14 @@ function PackageContents({ pack }: { pack: Pacco }) {
       }}
     >
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
-        Pannelli contenuti nel pacco {pack.codice}
+        Elementi contenuti nel pacco {pack.codice}
       </Typography>
       <TableContainer sx={{ display: { xs: "none", sm: "block" } }}>
         <Table size="small" sx={{ minWidth: 620 }}>
           <TableHead>
             <TableRow>
               {[
-                ["Pannello", 120],
+                ["Elemento", 120],
                 ["Master panel", 140],
                 ["Dimensioni", 200],
                 ["Peso", 100],
@@ -1314,7 +1314,7 @@ function PackageContents({ pack }: { pack: Pacco }) {
         {pack.pannelli.map((panel) => (
           <Paper key={panel.numeroPannello} variant="outlined" sx={{ p: 1.25 }}>
             <Typography sx={{ fontWeight: 900 }}>
-              Pannello {panel.numeroPannello}
+              Elemento {panel.numeroPannello}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               Master Panel {panel.numeroMasterPanel}

@@ -69,11 +69,11 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
 
             const previsti = pannelli.length;
 
-            const pronti = pannelli.filter(p => p.preparato).length;
+            const pronti = pannelli.filter(p => p.preparato && !p.caricato).length;
 
             const caricati = pannelli.filter(p => p.caricato).length;
 
-            const mancanti = previsti - pronti;
+            const mancanti = Math.max(0, previsti - pronti - caricati);
 
             const peso = pannelli.reduce((t, p) => t + p.peso, 0);
 
@@ -81,7 +81,21 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
 
             let stato: Camion["stato"];
 
-            if (pannelli.every(p => p.spedito) && previsti > 0) {
+            const backendStatus = pannelli[0]?.loadStatus;
+
+            if (backendStatus) {
+
+                stato = backendStatus === "DA_COMPLETARE"
+                    ? "Da completare"
+                    : backendStatus === "DA_CARICARE"
+                        ? "Da caricare"
+                        : backendStatus === "IN_CARICO"
+                            ? "In carico"
+                            : backendStatus === "ATTESA_SPEDIZIONE"
+                                ? "Attesa spedizione"
+                                : "Partita";
+
+            } else if (pannelli.every(p => p.spedito) && previsti > 0) {
 
                 stato = "Partita";
 
@@ -148,15 +162,5 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
 
 export const creaDashboardOperativa = (
   commesse: Commessa[],
-  truckLoads: CaricoCamion[],
-): Camion[] =>
-  creaDashboard(commesse).map((row) =>
-    truckLoads.some(
-      (load) =>
-        load.commessa === row.commessa &&
-        load.camion === row.camion &&
-        load.stato === "IN_CARICO",
-    )
-      ? { ...row, stato: "In carico" as const }
-      : row,
-  );
+  _truckLoads: CaricoCamion[],
+): Camion[] => creaDashboard(commesse);

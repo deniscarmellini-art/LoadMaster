@@ -180,7 +180,7 @@ const migrateTransportAssignments=(database:DatabaseSync):void=>{const rows=data
 const createOperationalDeleteTriggers=(database:DatabaseSync):void=>database.exec(`
   CREATE TRIGGER IF NOT EXISTS trg_panels_unload_before_delete BEFORE DELETE ON Panels BEGIN
     INSERT INTO OperationalEvents(id,loadId,loadingSessionId,panelId,type,operatorId,timestamp,note)
-      SELECT lower(hex(randomblob(16))),OLD.loadId,loadingSessionId,OLD.id,'UNIT_UNLOADED',loadedByOperatorId,datetime('now'),'Pannello rimosso durante aggiornamento distinta' FROM LoadingUnits WHERE panelId=OLD.id;
+      SELECT lower(hex(randomblob(16))),OLD.loadId,loadingSessionId,OLD.id,'UNIT_UNLOADED',loadedByOperatorId,datetime('now'),'Elemento rimosso durante aggiornamento distinta' FROM LoadingUnits WHERE panelId=OLD.id;
     UPDATE LoadingSessions SET stato='IN_CARICO',completedAt=NULL,updatedAt=datetime('now') WHERE id IN(SELECT loadingSessionId FROM LoadingUnits WHERE panelId=OLD.id) AND stato<>'SPEDITO';
     UPDATE Loads SET stato='IN_CARICO',updatedAt=datetime('now') WHERE id=OLD.loadId AND EXISTS(SELECT 1 FROM LoadingUnits WHERE panelId=OLD.id);
     DELETE FROM LoadingUnits WHERE panelId=OLD.id;

@@ -79,7 +79,7 @@ export async function importaExcel(file: File): Promise<Commessa> {
   console.log("Commessa:", ordine);
   console.log("Cliente:", cliente);
   console.log("Riferimento:", riferimento);
-  console.log("Pannelli:", pannelli.length);
+  console.log("Elementi:", pannelli.length);
 
   return {
 

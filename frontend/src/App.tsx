@@ -43,7 +43,7 @@ import type { Commessa, Pannello } from "./types/excel";
 import { buildPanelKey } from "./utils/panelIdentity";
 import { normalizeOrder, normalizeTruck } from "./utils/loadIdentity";
 import {
-  deleteCommessaFromApi,
+  deleteLoadFromApi,
   importCommessaToApi,
   loadCommesseFromApi,
   updateCommessaInApi,
@@ -176,7 +176,7 @@ export default function App() {
       .catch(() => {
         if (active)
           setLoadsError(
-            "Backend non raggiungibile: impossibile caricare commesse e pannelli.",
+            "Backend non raggiungibile: impossibile caricare commesse ed elementi.",
           );
       })
       .finally(() => {
@@ -407,8 +407,8 @@ export default function App() {
           <Dashboard
             commesse={commesse}
             onImported={handleImported}
-            onDeleteCommessa={async (ordine, confirmPlanning) => {
-              await deleteCommessaFromApi(ordine, confirmPlanning);
+            onDeleteLoad={async (row, confirmPlanning) => {
+              await deleteLoadFromApi(row.id, confirmPlanning);
               await refreshScanningData();
             }}
             onOpenLabels={() => setPage("labels")}
@@ -559,7 +559,7 @@ export default function App() {
             }}
             onUpdatePanelLocation={async (panel, location) => {
               if (!panel.backendId)
-                throw new Error("Identificativo pannello non disponibile");
+                throw new Error("Identificativo elemento non disponibile");
               await updatePanelManualLocation(panel.backendId, location);
               await refreshScanningData();
             }}
@@ -707,7 +707,7 @@ export default function App() {
                 ),
               );
             }}
-            onScanUnit={(row, unit) => {
+            onScanUnit={(row, unit, status) => {
               const numbers = new Set(
                 unit.pannelli.map((panel) => panel.numeroPannello),
               );
@@ -720,8 +720,10 @@ export default function App() {
                         pannelli: item.pannelli.map((panel) =>
                           panel.numeroCamion === row.camion &&
                           numbers.has(panel.numeroPannello)
-                            ? { ...panel, caricato: true }
-                            : panel,
+                            ? { ...panel, caricato: true, loadStatus: status }
+                            : panel.numeroCamion === row.camion
+                              ? { ...panel, loadStatus: status }
+                              : panel,
                         ),
                       },
                 ),
@@ -735,7 +737,7 @@ export default function App() {
                   ),
                 );
             }}
-            onUndoUnit={(row, unit) => {
+            onUndoUnit={(row, unit, status) => {
               const numbers = new Set(
                 unit.pannelli.map((panel) => panel.numeroPannello),
               );
@@ -748,8 +750,10 @@ export default function App() {
                         pannelli: item.pannelli.map((panel) =>
                           panel.numeroCamion === row.camion &&
                           numbers.has(panel.numeroPannello)
-                            ? { ...panel, caricato: false }
-                            : panel,
+                            ? { ...panel, caricato: false, loadStatus: status }
+                            : panel.numeroCamion === row.camion
+                              ? { ...panel, loadStatus: status }
+                              : panel,
                         ),
                       },
                 ),
@@ -860,11 +864,11 @@ export default function App() {
         </DialogActions>
       </Dialog>
       <Dialog open={confirmRemoved} onClose={() => completeUpdate(false)}>
-        <DialogTitle>Pannelli rimossi dalla distinta</DialogTitle>
+        <DialogTitle>Elementi rimossi dalla distinta</DialogTitle>
         <DialogContent>
           <DialogContentText>
             La nuova distinta non contiene più {removedPanels.length}{" "}
-            {removedPanels.length === 1 ? "pannello" : "pannelli"}.{" "}
+            {removedPanels.length === 1 ? "elemento" : "elementi"}.{" "}
             {removedLoadedPanels.length > 0 && (
               <>
                 <br />
@@ -883,14 +887,14 @@ export default function App() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => completeUpdate(false)}>
-            Mantieni pannelli
+            Mantieni elementi
           </Button>
           <Button
             color="error"
             variant="contained"
             onClick={() => completeUpdate(true)}
           >
-            Elimina pannelli rimossi
+            Elimina elementi rimossi
           </Button>
         </DialogActions>
       </Dialog>

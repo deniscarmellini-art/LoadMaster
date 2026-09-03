@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { reconcileAllOperationalLoadStatuses } from "./operationalLoadStatus.js";
 
 export type ShipmentStatus =
   "DA_PIANIFICARE" | "PIANIFICATA" | "PRONTA" | "IN_VIAGGIO" | "CONCLUSA";
@@ -46,6 +47,7 @@ const norm = (v: string) =>
 export class ShipmentRepository {
   constructor(private readonly db: DatabaseSync) {}
   list(): ShipmentRecord[] {
+    reconcileAllOperationalLoadStatuses(this.db);
     const plans = this.db
       .prepare(
         `SELECT p.*,

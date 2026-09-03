@@ -359,6 +359,50 @@ test("elimina una commessa con il solo pacco bozza vuoto",async()=>{
   await app.close();
 });
 
+test("eliminando C6 conserva C5 della stessa commessa",async()=>{
+  const app=await buildApp(config);
+  const payload={...importedLoad([importedPanel("501-C5","C5"),importedPanel("501-C6","C6")]),commessa:"265501"};
+  const loads=(await app.inject({method:"POST",url:"/api/loads/import",payload})).json<Array<{id:string;camion:string}>>();
+  const c5=loads.find(load=>load.camion==="C5")!,c6=loads.find(load=>load.camion==="C6")!;
+  assert.equal((await app.inject({method:"DELETE",url:`/api/loads/${c6.id}`})).statusCode,204);
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${c5.id}`})).statusCode,200);
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${c6.id}`})).statusCode,404);
+  const remaining=(await app.inject({method:"GET",url:"/api/loads"})).json<Array<{commessa:string;camion:string}>>().filter(load=>load.commessa==="265501");
+  assert.deepEqual(remaining.map(load=>load.camion),["C5"]);
+  await app.close();
+});
+
+test("eliminando l'unico carico non lascia la commessa nelle viste attive",async()=>{
+  const app=await buildApp(config);
+  const payload={...importedLoad([importedPanel("ONLY-1","C1")]),commessa:"ONLY-LOAD"};
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload})).json<Array<{id:string}>>()[0]!;
+  assert.equal((await app.inject({method:"DELETE",url:`/api/loads/${load.id}`})).statusCode,204);
+  assert.equal((await app.inject({method:"GET",url:"/api/loads"})).json<Array<{commessa:string}>>().some(item=>item.commessa==="ONLY-LOAD"),false);
+  assert.equal((await app.inject({method:"GET",url:"/api/loading-sessions"})).json<Array<{commessa:string}>>().some(item=>item.commessa==="ONLY-LOAD"),false);
+  assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{commessa:string}>>().some(item=>item.commessa==="ONLY-LOAD"),false);
+  await app.close();
+});
+
+test("la cancellazione di un carico non tocca l'attività di un altro camion della stessa commessa",async()=>{
+  const app=await buildApp(config);
+  const payload={...importedLoad([importedPanel("SAFE-1","C5"),importedPanel("ACTIVE-1","C6")]),commessa:"MIXED-ACTIVITY"};
+  const loads=(await app.inject({method:"POST",url:"/api/loads/import",payload})).json<Array<{id:string;camion:string;pannelli:Array<{id:string}>}>>();
+  const c5=loads.find(load=>load.camion==="C5")!,c6=loads.find(load=>load.camion==="C6")!;
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  assert.equal((await app.inject({method:"PATCH",url:`/api/panels/${c6.pannelli[0]!.id}/scan`,payload:{operatorId:operator.id}})).statusCode,200);
+  assert.equal((await app.inject({method:"PATCH",url:`/api/panels/${c6.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}})).statusCode,200);
+  const blocked=await app.inject({method:"DELETE",url:`/api/loads/${c6.id}`});
+  assert.equal(blocked.statusCode,409);
+  assert.equal(blocked.json<{error:{code:string}}>().error.code,"RESOURCE_IN_USE");
+  assert.equal((await app.inject({method:"DELETE",url:`/api/loads/${c5.id}`})).statusCode,204);
+  const untouched=(await app.inject({method:"GET",url:`/api/loads/${c6.id}`})).json<{camion:string;pannelli:Array<{id:string;stato:string;scannedByOperatorId:string|null}>}>();
+  assert.equal(untouched.camion,"C6");
+  assert.equal(untouched.pannelli[0]?.id,c6.pannelli[0]?.id);
+  assert.equal(untouched.pannelli[0]?.stato,"DISPONIBILE");
+  assert.equal(untouched.pannelli[0]?.scannedByOperatorId,operator.id);
+  await app.close();
+});
+
 test("la cancellazione multi-camion non rimuove nulla se un camion contiene attività",async()=>{
   const app=await buildApp(config);
   const payload={...importedLoad([importedPanel("1","C1"),importedPanel("2","C2")]),commessa:"MULTI-DELETE"};
@@ -459,6 +503,46 @@ test("la sessione di carico persiste, si riapre e viene spedita",async()=>{
     assert.equal(travelling?.status,"IN_VIAGGIO");assert.ok(travelling?.departedAt);assert.equal(travelling?.availableFrom,addBusinessDays(travelling!.departedAt,2));
     await second.close();const database=new DatabaseSync(persistentConfig.databasePath);database.prepare("UPDATE TransportAssignments SET availableFrom=? WHERE trailerId=? AND releasedAt IS NULL").run("2020-01-01T00:00:00.000Z",trailer.id);database.close();const third=await buildApp(persistentConfig);const persisted=await third.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(persisted.json<{stato:string}>().stato,"SPEDITO");const available=(await third.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string}>>().find(item=>item.id===trailer.id);assert.equal(available?.status,"DISPONIBILE");await third.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+test("ricalcola lo stato quando tutte le unità caricate e i pannelli pronti vengono rimossi",async()=>{
+  const app=await buildApp(config);
+  const panels=Array.from({length:7},(_,index)=>importedPanel(String(index+1),"C1-"));
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad(panels),commessa:"STATUS-ROLLBACK"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+  for(const panel of load.pannelli)await app.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
+  const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
+  const loaded=await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});
+  const unitId=loaded.json<{units:Array<{id:string}>}>().units[0]!.id;
+  assert.equal(loaded.json<{stato:string}>().stato,"IN_CARICO");
+  assert.equal((await app.inject({method:"DELETE",url:`/api/loading-sessions/${session.id}/units/${unitId}`,payload:{operatorId:operator.id}})).json<{stato:string}>().stato,"DA_CARICARE");
+  for(const panel of load.pannelli)await app.inject({method:"DELETE",url:`/api/panels/${panel.id}`,payload:{operatorId:operator.id}});
+  const currentLoad=await app.inject({method:"GET",url:`/api/loads/${load.id}`});
+  assert.equal(currentLoad.json<{stato:string}>().stato,"DA_COMPLETARE");
+  const currentSession=(await app.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`})).json<{stato:string;units:unknown[]}>();
+  assert.equal(currentSession.stato,"DA_COMPLETARE");assert.equal(currentSession.units.length,0);
+  const shipment=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{loadId:string;operationalStatus:string}>>().find(item=>item.loadId===load.id);
+  assert.equal(shipment?.operationalStatus,"DA_COMPLETARE");
+  await app.close();
+});
+
+test("consente di iniziare un carico DA_COMPLETARE con un solo elemento disponibile",async()=>{
+  const app=await buildApp(config);
+  const panels=Array.from({length:7},(_,index)=>importedPanel(String(index+1),"C1-"));
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad(panels),commessa:"PARTIAL-LOADING"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+  await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${load.id}`})).json<{stato:string}>().stato,"DA_COMPLETARE");
+  const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string;stato:string}>();
+  assert.equal(session.stato,"DA_COMPLETARE");
+  const loaded=await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});
+  assert.equal(loaded.statusCode,200);assert.equal(loaded.json<{stato:string}>().stato,"IN_CARICO");
+  await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[1]!.id}/close-single`,payload:{operatorId:operator.id}});
+  const refreshed=(await app.inject({method:"GET",url:`/api/loads/${load.id}`})).json<{stato:string;pannelli:Array<{stato:string}>}>();
+  assert.equal(refreshed.stato,"IN_CARICO");assert.equal(refreshed.pannelli.filter(panel=>panel.stato==="DISPONIBILE").length,1);
+  await app.close();
 });
 
 test("il ritiro diretto salva la partenza effettiva e conclude la spedizione",async()=>{
