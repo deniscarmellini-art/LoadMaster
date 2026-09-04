@@ -1,22 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
 import { Button, InputAdornment, Stack, TextField, useMediaQuery, useTheme } from "@mui/material";
 import CameraQrScanner from "./CameraQrScanner";
 
-interface Props { disabled?:boolean; mobileEmphasis?:boolean; value:string; onValueChange:(value:string)=>void; onScan:(value:string)=>void; }
-export default function ScannerInput({ disabled=false, mobileEmphasis=false, value, onValueChange, onScan }:Props) {
+interface Props { disabled?:boolean; inputRef?:RefObject<HTMLInputElement|null>; mobileEmphasis?:boolean; value:string; onValueChange:(value:string)=>void; onScan:(value:string)=>void; }
+export default function ScannerInput({ disabled=false, inputRef:externalInputRef, mobileEmphasis=false, value, onValueChange, onScan }:Props) {
   const theme=useTheme();
   const narrowPhone=useMediaQuery(theme.breakpoints.down("sm"));
   const landscapePhone=useMediaQuery("(max-width:950px) and (max-height:500px)");
   const smartphone=narrowPhone||landscapePhone;
-  const inputRef=useRef<HTMLInputElement>(null);
+  const localInputRef=useRef<HTMLInputElement>(null);
+  const inputRef=externalInputRef??localInputRef;
   const onScanRef=useRef(onScan);
   const [cameraOpen,setCameraOpen]=useState(false);
   useEffect(()=>{onScanRef.current=onScan;},[onScan]);
-  useEffect(()=>{if(!disabled&&!smartphone) inputRef.current?.focus();},[disabled,smartphone]);
-  const submit=()=>{if(!value.trim())return;onScan(value);requestAnimationFrame(()=>inputRef.current?.focus());};
-  const restoreFocus=useCallback(()=>{if(!smartphone)requestAnimationFrame(()=>inputRef.current?.focus());},[smartphone]);
+  const restoreFocus=useCallback(()=>{if(disabled||smartphone||cameraOpen)return;requestAnimationFrame(()=>{if(!document.querySelector('[role="dialog"]'))inputRef.current?.focus();});},[cameraOpen,disabled,smartphone,inputRef]);
+  useEffect(()=>{if(!disabled&&!smartphone)requestAnimationFrame(()=>inputRef.current?.focus());},[disabled,smartphone,inputRef]);
+  const submit=()=>{if(!value.trim())return;onScan(value);};
   const closeCamera=useCallback(()=>{setCameraOpen(false);restoreFocus();},[restoreFocus]);
   const cameraDetected=useCallback((rawValue:string)=>{setCameraOpen(false);onScanRef.current(rawValue);restoreFocus();},[restoreFocus]);
   return <>

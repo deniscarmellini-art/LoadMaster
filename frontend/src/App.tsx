@@ -257,6 +257,7 @@ export default function App() {
       ),
     [commesse, truckLoads],
   );
+  const dashboardRows = useMemo(() => creaDashboard(commesse), [commesse]);
   const shipmentsWithOperationalStatus = useMemo(
     () =>
       shipments.map((shipment) => ({
@@ -522,18 +523,17 @@ export default function App() {
             onBack={() => setPage("dashboard")}
             onOpen={openScanning}
             packages={packages}
-            rows={creaDashboard(commesse)}
+            rows={dashboardRows}
           />
         ) : page === "warehouse" ? (
           <Warehouse
             commesse={commesse}
             drafts={packageDrafts}
             onBack={() => setPage("dashboard")}
-            onCancelPackage={(pack) => {
-              if (pack.id)
-                void cancelPackageApi(pack.id, pack.operatoreId).then(
-                  refreshScanningData,
-                );
+            onCancelPackage={async (pack) => {
+              if (!pack.id) throw new Error("Identificativo pacco non disponibile");
+              await cancelPackageApi(pack.id, pack.operatoreId);
+              await refreshScanningData();
             }}
             onCancelSingle={(unit) => {
               const panel = commesse
@@ -769,7 +769,7 @@ export default function App() {
             }}
             operators={settings.operatori}
             packages={packages}
-            rows={creaDashboard(commesse)}
+            rows={dashboardRows}
             singles={singles}
             trailers={settings.rimorchi}
           />

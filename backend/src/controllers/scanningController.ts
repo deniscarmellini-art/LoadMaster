@@ -13,5 +13,5 @@ export class ScanningController{
  removePanel=async(r:FastifyRequest<{Params:PackagePanel;Body:{operatorId:string}}>)=>this.service.removePanel(r.params.id,r.params.panelId,r.body);
  closePackage=async(r:FastifyRequest<{Params:Id;Body:{codicePacco:string;operatoreId:string;lunghezzaPacco:number;larghezzaPacco:number;altezzaPacco:number}}>)=>this.service.closePackage(r.params.id,r.body);
  cancelPanel=async(r:FastifyRequest<{Params:Id;Body:{operatorId?:string}}>)=>this.service.cancelPanel(r.params.id,r.body);
- cancelPackage=async(r:FastifyRequest<{Params:Id;Body:{operatorId?:string}}>)=>this.service.cancelPackage(r.params.id,r.body);
+ cancelPackage=async(r:FastifyRequest<{Params:Id;Body:{operatorId?:string}}>)=>{const packageId=r.params.id;r.log.info({packageId},"Richiesta eliminazione pacco");try{const result=this.service.cancelPackage(packageId,r.body);r.log.info({packageId},"Pacco eliminato e assenza verificata");return result;}catch(error:unknown){r.log.warn({err:error,packageId},"Eliminazione pacco rifiutata o non riuscita");throw error;}};
 }

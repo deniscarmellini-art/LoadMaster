@@ -46,7 +46,7 @@ interface Props {
   drafts: Map<string, Pannello[]>;
   onBack: () => void;
   onCancelSingle: (unit: UnitaSingola) => void;
-  onCancelPackage: (pack: Pacco) => void;
+  onCancelPackage: (pack: Pacco) => Promise<void>;
   onRemoveDraftPanel: (key: string, panel: Pannello) => void;
   onUpdatePanelLocation: (panel: Pannello, location: string) => Promise<void>;
   onUpdatePackageLocation: (pack: Pacco, location: string) => Promise<void>;
@@ -383,7 +383,7 @@ export default function Warehouse({
         })
         .map(({ pack }) => pack)
     : visiblePackages;
-  const confirm = () => {
+  const confirm = async () => {
     if (!pending) return;
     if (pending.kind === "single") {
       onCancelSingle(pending.unit);
@@ -392,11 +392,12 @@ export default function Warehouse({
         severity: "success",
       });
     } else if (pending.kind === "package") {
-      onCancelPackage(pending.pack);
-      setNotice({
-        message: "Pacco annullato ed elementi riportati a MANCANTE",
-        severity: "success",
-      });
+      try {
+        await onCancelPackage(pending.pack);
+        setNotice({message:"Pacco annullato ed elementi riportati a MANCANTE",severity:"success"});
+      } catch(error:unknown) {
+        setNotice({message:error instanceof Error?error.message:"Impossibile eliminare il pacco",severity:"error"});
+      }
     } else {
       onRemoveDraftPanel(pending.key, pending.panel);
       setNotice({

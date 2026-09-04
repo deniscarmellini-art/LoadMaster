@@ -451,6 +451,26 @@ test("scansioni, singoli e pacchi persistono con associazioni e dimensioni",asyn
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
+test("elimina un pacco mai movimentato ma blocca con errore chiaro un pacco presente nello storico di carico",async()=>{
+  const app=await buildApp(config);
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("P-CLEAN","C1"),importedPanel("P-HISTORY","C1")]),commessa:"PACKAGE-DELETE"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  const makePackage=async(panelId:string,code:string)=>{const pack=(await app.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();await app.inject({method:"POST",url:`/api/packages/${pack.id}/panels`,payload:{panelId,operatorId:operator.id}});await app.inject({method:"POST",url:`/api/packages/${pack.id}/close`,payload:{codicePacco:code,operatoreId:operator.id,lunghezzaPacco:1000,larghezzaPacco:500,altezzaPacco:300}});return pack;};
+  const clean=await makePackage(load.pannelli[0]!.id,"PK-CLEAN");
+  const historical=await makePackage(load.pannelli[1]!.id,"PK-HISTORY");
+  const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
+  const loaded=(await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PACKAGE",packageId:historical.id,operatorId:operator.id}})).json<{units:Array<{id:string}>}>();
+  await app.inject({method:"DELETE",url:`/api/loading-sessions/${session.id}/units/${loaded.units[0]!.id}`,payload:{operatorId:operator.id}});
+  const removed=await app.inject({method:"DELETE",url:`/api/packages/${clean.id}`,payload:{operatorId:operator.id}});
+  assert.equal(removed.statusCode,200);assert.equal(removed.json<{success:boolean}>().success,true);
+  assert.equal((await app.inject({method:"GET",url:`/api/packages/${clean.id}`})).statusCode,404);
+  const blocked=await app.inject({method:"DELETE",url:`/api/packages/${historical.id}`,payload:{operatorId:operator.id}});
+  assert.equal(blocked.statusCode,409);assert.equal(blocked.json<{error:{code:string;message:string}}>().error.code,"RESOURCE_IN_USE");assert.match(blocked.json<{error:{message:string}}>().error.message,/storico operativo/);
+  const remaining=await app.inject({method:"GET",url:`/api/packages/${historical.id}`});assert.equal(remaining.statusCode,200);assert.equal(remaining.json<{pannelli:unknown[]}>().pannelli.length,1);
+  await app.close();
+});
+
 test("l'ubicazione manuale persiste e viene mantenuta quando un pannello viene scaricato",async()=>{
   const directory=mkdtempSync(join(tmpdir(),"panel-location-"));const persistentConfig={...config,databasePath:join(directory,"location.sqlite")};
   try{
@@ -542,6 +562,39 @@ test("consente di iniziare un carico DA_COMPLETARE con un solo elemento disponib
   await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[1]!.id}/close-single`,payload:{operatorId:operator.id}});
   const refreshed=(await app.inject({method:"GET",url:`/api/loads/${load.id}`})).json<{stato:string;pannelli:Array<{stato:string}>}>();
   assert.equal(refreshed.stato,"IN_CARICO");assert.equal(refreshed.pannelli.filter(panel=>panel.stato==="DISPONIBILE").length,1);
+  await app.close();
+});
+
+test("rientra in una sessione parziale esistente e continua la stessa storia operativa",async()=>{
+  const app=await buildApp(config);
+  const panels=[importedPanel("REOPEN-1","C1-"),importedPanel("REOPEN-2","C1-"),importedPanel("REOPEN-3","C1-")];
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad(panels),commessa:"REOPEN-PARTIAL"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+  for(const panel of load.pannelli.slice(0,2))await app.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
+  const created=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string;startedAt:string}>();
+  const first=(await app.inject({method:"POST",url:`/api/loading-sessions/${created.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}})).json<{units:Array<{id:string}>;events:unknown[]}>();
+  assert.equal(first.units.length,1);
+  const reopened=await app.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});
+  assert.equal(reopened.statusCode,200);
+  assert.equal(reopened.json<{id:string;operatorId:string;carrierId:string;units:unknown[]}>().id,created.id);
+  assert.equal(reopened.json<{operatorId:string}>().operatorId,operator.id);
+  assert.equal(reopened.json<{carrierId:string}>().carrierId,carrier.id);
+  assert.equal(reopened.json<{units:unknown[]}>().units.length,1);
+  const unchanged=await app.inject({method:"PATCH",url:`/api/loading-sessions/${created.id}`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}});
+  assert.equal(unchanged.statusCode,200);
+  assert.equal(unchanged.json<{id:string;startedAt:string;units:unknown[]}>().id,created.id);
+  assert.equal(unchanged.json<{startedAt:string}>().startedAt,created.startedAt);
+  assert.equal(unchanged.json<{units:unknown[]}>().units.length,1);
+  await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[2]!.id}/close-single`,payload:{operatorId:operator.id}});
+  const continued=await app.inject({method:"POST",url:`/api/loading-sessions/${created.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[1]!.id,operatorId:operator.id}});
+  assert.equal(continued.statusCode,200);
+  const continuedData=continued.json<{id:string;stato:string;units:unknown[];events:Array<{type:string}>}>();
+  assert.equal(continuedData.id,created.id);
+  assert.equal(continuedData.stato,"IN_CARICO");
+  assert.equal(continuedData.units.length,2);
+  assert.equal(continuedData.events.filter(event=>event.type==="LOADING_STARTED").length,1);
+  assert.equal(continuedData.events.filter(event=>event.type==="UNIT_LOADED").length,2);
   await app.close();
 });
 
