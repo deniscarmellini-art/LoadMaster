@@ -412,6 +412,41 @@ test("eliminando l'unico carico non lascia la commessa nelle viste attive",async
   await app.close();
 });
 
+test("elimina un carico con sessione reversibile dopo avere rimosso tutte le unità",async()=>{
+  const app=await buildApp(config);
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("REVERSIBLE-1","C1-")]),commessa:"REVERSIBLE-DELETE"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  const panel=load.pannelli[0]!;
+  await app.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
+  const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
+  const loaded=(await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:panel.id,operatorId:operator.id}})).json<{units:Array<{id:string}>}>();
+  await app.inject({method:"DELETE",url:`/api/loading-sessions/${session.id}/units/${loaded.units[0]!.id}`,payload:{operatorId:operator.id}});
+  const beforeDelete=(await app.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`})).json<{shippedAt:string|null;units:unknown[]}>();
+  assert.equal(beforeDelete.shippedAt,null);assert.equal(beforeDelete.units.length,0);
+  assert.equal((await app.inject({method:"DELETE",url:`/api/loads/${load.id}`})).statusCode,204);
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${load.id}`})).statusCode,404);
+  assert.equal((await app.inject({method:"GET",url:"/api/loading-sessions"})).json<Array<{id:string}>>().some(item=>item.id===session.id),false);
+  await app.close();
+});
+
+test("non elimina un carico con sessione spedita e consolidata",async()=>{
+  const app=await buildApp(config);
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("CONSOLIDATED-1","C2")]),commessa:"CONSOLIDATED-DELETE"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  const panel=load.pannelli[0]!;
+  await app.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
+  const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
+  await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:panel.id,operatorId:operator.id}});
+  await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/complete`});
+  await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}});
+  const blocked=await app.inject({method:"DELETE",url:`/api/loads/${load.id}`});
+  assert.equal(blocked.statusCode,409);assert.equal(blocked.json<{error:{code:string}}>().error.code,"RESOURCE_IN_USE");
+  assert.equal((await app.inject({method:"GET",url:`/api/loads/${load.id}`})).statusCode,200);
+  await app.close();
+});
+
 test("la cancellazione di un carico non tocca l'attività di un altro camion della stessa commessa",async()=>{
   const app=await buildApp(config);
   const payload={...importedLoad([importedPanel("SAFE-1","C5"),importedPanel("ACTIVE-1","C6")]),commessa:"MIXED-ACTIVITY"};
