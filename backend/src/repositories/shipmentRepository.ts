@@ -217,7 +217,7 @@ export class ShipmentRepository {
   }
   delete(id: string): boolean {
     const old = this.find(id);
-    if (!old || !old.persisted || old.loadId) return false;
+    if (!old || !old.persisted) return false;
     return this.transaction(() => {
       return (
         this.db.prepare("DELETE FROM ShipmentPlans WHERE id=?").run(id)

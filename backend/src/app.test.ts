@@ -101,6 +101,35 @@ test("le spedizioni future manuali sono persistenti e non creano carichi operati
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
+test("elimina solo una pianificazione non partita e conserva carico ed elementi",async()=>{
+  const app=await buildApp(config);
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("PLAN-1","C1")]),commessa:"PLAN-DELETE"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"PLAN-DELETE",cliente:"Cliente Test",camion:"C1",plannedDepartureDate:"2026-09-20",transportType:"TRASPORTATORE_ESTERNO",trailerId:null,carrierId:null}})).json<{id:string}>();
+  const removed=await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`});
+  assert.equal(removed.statusCode,200);assert.equal(removed.json<{success:boolean}>().success,true);
+  const shipments=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;persisted:boolean;loadId:string}>>();
+  assert.equal(shipments.some(item=>item.id===plan.id),false);assert.equal(shipments.some(item=>item.loadId===load.id&&!item.persisted),true);
+  const untouched=(await app.inject({method:"GET",url:`/api/loads/${load.id}`})).json<{id:string;pannelli:Array<{id:string}>}>();
+  assert.equal(untouched.id,load.id);assert.deepEqual(untouched.pannelli.map(item=>item.id),load.pannelli.map(item=>item.id));
+  await app.close();
+});
+
+test("rifiuta la cancellazione di una pianificazione con partenza consolidata",async()=>{
+  const app=await buildApp(config);
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("PLAN-SHIPPED","C2")]),commessa:"PLAN-CONSOLIDATED"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});
+  const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"PLAN-CONSOLIDATED",cliente:"Cliente Test",camion:"C2",plannedDepartureDate:"2026-09-20",transportType:"TRASPORTATORE_ESTERNO",trailerId:null,carrierId:null}})).json<{id:string}>();
+  const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
+  await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});
+  await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}});
+  const blocked=await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`});
+  assert.equal(blocked.statusCode,409);assert.equal(blocked.json<{error:{code:string}}>().error.code,"SHIPMENT_CONSOLIDATED");
+  assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string}>>().some(item=>item.id===plan.id),true);
+  await app.close();
+});
+
 test("la prima partenza prevista resta originale e le modifiche sono persistenti",async()=>{
   const directory=mkdtempSync(join(tmpdir(),"shipment-departure-history-"));const persistentConfig={...config,databasePath:join(directory,"shipment-history.sqlite")};
   try{const first=await buildApp(persistentConfig);

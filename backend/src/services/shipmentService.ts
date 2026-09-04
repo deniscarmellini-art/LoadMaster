@@ -89,12 +89,10 @@ export class ShipmentService {
     const current = this.repo.find(id);
     if (!current)
       throw new ApiError(404, "RESOURCE_NOT_FOUND", "Spedizione non trovata");
-    if (current.loadId)
-      throw new ApiError(
-        409,
-        "RESOURCE_IN_USE",
-        "Una spedizione collegata non può essere eliminata",
-      );
+    if (!current.persisted)
+      throw new ApiError(404, "RESOURCE_NOT_FOUND", "Pianificazione non trovata");
+    if(current.actualDepartureDate||current.operationalStatus==="SPEDITO"||current.shipmentStatus==="IN_VIAGGIO"||current.shipmentStatus==="CONCLUSA")
+      throw new ApiError(409,"SHIPMENT_CONSOLIDATED","La spedizione non può essere eliminata perché è già partita o consolidata");
     if (!this.repo.delete(id))
       throw new ApiError(409, "RESOURCE_IN_USE", "Spedizione non eliminabile");
     return { success: true };

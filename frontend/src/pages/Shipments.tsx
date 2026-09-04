@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import {
   Alert,
   Box,
@@ -46,6 +47,7 @@ import {
 import type { TransportItem } from "../services/transportsApi";
 import PlannedDepartureDate from "../components/shipments/PlannedDepartureDate";
 import { operationalStatusPresentation } from "../services/dashboardService";
+import { ApiClientError } from "../services/apiClient";
 interface Props {
   items: ShipmentItem[];
   trailers: Rimorchio[];
@@ -159,6 +161,7 @@ export default function Shipments({
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [editing, setEditing] = useState<ShipmentItem | null | "new">(null),
     [form, setForm] = useState<ShipmentInput>(empty),
+    [deleteItem, setDeleteItem] = useState<ShipmentItem | null>(null),
     [departureItem, setDepartureItem] = useState<ShipmentItem | null>(null),
     [departureCarrierId, setDepartureCarrierId] = useState(""),
     [notice, setNotice] = useState<{
@@ -252,11 +255,13 @@ export default function Shipments({
     try {
       await deleteShipment(item.id);
       await onRefresh();
+      setDeleteItem(null);
+      setEditing(null);
       setNotice({ severity: "success", text: "Spedizione eliminata." });
-    } catch {
+    } catch (error:unknown) {
       setNotice({
         severity: "error",
-        text: "La spedizione collegata non può essere eliminata.",
+        text: error instanceof ApiClientError?error.message:"Impossibile eliminare la pianificazione.",
       });
     }
   };
@@ -662,15 +667,6 @@ export default function Shipments({
                           }}
                         >
                           {action(item)}
-                          {item.persisted && !item.loadId && (
-                            <Button
-                              color="error"
-                              size="small"
-                              onClick={() => void remove(item)}
-                            >
-                              Elimina
-                            </Button>
-                          )}
                         </Stack>
                       </TableCell>
                       <TableCell>{item.commessa}</TableCell>
@@ -793,6 +789,7 @@ export default function Shipments({
               />
             </Box>
           </DialogContent>
+          {editing!=="new"&&editing?.persisted&&<Box sx={{mx:3,pt:2,borderTop:1,borderColor:"divider"}}><Button color="error" variant="outlined" startIcon={<DeleteOutlinedIcon/>} onClick={()=>setDeleteItem(editing)}>Elimina spedizione</Button></Box>}
           <DialogActions>
             <Button onClick={() => setEditing(null)}>Annulla</Button>
             <Button
@@ -803,6 +800,11 @@ export default function Shipments({
               Salva
             </Button>
           </DialogActions>
+        </Dialog>
+        <Dialog open={deleteItem!==null} onClose={()=>setDeleteItem(null)} fullWidth maxWidth="xs">
+          <DialogTitle>Elimina spedizione</DialogTitle>
+          <DialogContent><Typography>Vuoi eliminare la pianificazione della spedizione {deleteItem?.commessa}{deleteItem?.camion?` / ${deleteItem.camion}`:""}?<br/>La commessa e il carico non verranno eliminati.</Typography></DialogContent>
+          <DialogActions><Button onClick={()=>setDeleteItem(null)}>Annulla</Button><Button color="error" variant="contained" startIcon={<DeleteOutlinedIcon/>} onClick={()=>deleteItem&&void remove(deleteItem)}>Elimina spedizione</Button></DialogActions>
         </Dialog>
         <Dialog
           open={departureItem !== null}
