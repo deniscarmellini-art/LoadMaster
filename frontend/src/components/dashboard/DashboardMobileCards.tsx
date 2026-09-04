@@ -41,8 +41,8 @@ export default function DashboardMobileCards(props: Props) {
         </Box>
         <Chip color={statusColor(row.stato)} label={row.stato.toUpperCase()} size="small" variant="outlined" sx={{ flexShrink: 0, fontWeight: 800 }} />
       </Stack>
-      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", my: 1.25 }}>
-        {[["Previsti", row.previsti], ["Pronti", row.pronti], ["Caricati", row.caricati]].map(([label, value]) => <Box key={label} sx={{ textAlign: "center" }}><Typography sx={{ fontWeight: 900 }}>{value}</Typography><Typography variant="caption" color="text.secondary">{label}</Typography></Box>)}
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", my: 1.25 }}>
+        {[["Previsti", row.previsti], ["Pronti", row.pronti], ["Mancanti", row.mancanti], ["Caricati", row.caricati]].map(([label, value]) => <Box key={label} sx={{ textAlign: "center" }}><Typography sx={{ fontWeight: 900 }}>{value}</Typography><Typography variant="caption" color="text.secondary">{label}</Typography></Box>)}
       </Box>
       <Stack direction="row" sx={{ color: "text.secondary", justifyContent: "space-between", mb: 1.25 }}>
         <Typography variant="body2">Peso <b>{row.peso.toLocaleString("it-IT", { maximumFractionDigits: 1 })} kg</b></Typography>

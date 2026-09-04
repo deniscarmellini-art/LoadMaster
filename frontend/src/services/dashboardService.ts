@@ -73,7 +73,7 @@ export function creaDashboard(commesse: Commessa[]): Camion[] {
 
             const caricati = pannelli.filter(p => p.caricato).length;
 
-            const mancanti = Math.max(0, previsti - pronti - caricati);
+            const mancanti = pannelli.filter(p => !p.preparato && !p.caricato).length;
 
             const peso = pannelli.reduce((t, p) => t + p.peso, 0);
 

@@ -44,6 +44,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
     { ...fixedColumn, field: "camion", headerName: "Camion", width: 100, align: "center", headerAlign: "center" },
     { ...fixedColumn, field: "previsti", headerName: "Previsti", width: 100, type: "number", align: "center", headerAlign: "center" },
     { ...fixedColumn, field: "pronti", headerName: "Pronti", width: 100, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "mancanti", headerName: "Mancanti", width: 105, type: "number", align: "center", headerAlign: "center" },
     { ...fixedColumn, field: "caricati", headerName: "Caricati", width: 105, type: "number", align: "center", headerAlign: "center" },
     {
       ...fixedColumn,

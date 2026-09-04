@@ -451,7 +451,40 @@ test("scansioni, singoli e pacchi persistono con associazioni e dimensioni",asyn
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
-test("elimina un pacco mai movimentato ma blocca con errore chiaro un pacco presente nello storico di carico",async()=>{
+test("gestisce N pacchi in lavorazione mantenendone uno solo attivo",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"package-multi-"));const persistentConfig={...config,databasePath:join(directory,"multi.sqlite")};
+  try{
+    const first=await buildApp(persistentConfig);
+    const operator=(await first.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const load=(await first.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("P1","C1"),importedPanel("P2","C1"),importedPanel("P3","C1"),importedPanel("P4","C1")]),commessa:"MULTI-PACKAGE"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+    const scanAndAdd=async(packageId:string,panelId:string)=>{await first.inject({method:"PATCH",url:`/api/panels/${panelId}/scan`,payload:{operatorId:operator.id}});const response=await first.inject({method:"POST",url:`/api/packages/${packageId}/panels`,payload:{panelId,operatorId:operator.id}});assert.equal(response.statusCode,200);};
+    const packageA=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();
+    await scanAndAdd(packageA.id,load.pannelli[0]!.id);await scanAndAdd(packageA.id,load.pannelli[1]!.id);
+    const packageB=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();
+    let warehouse=(await first.inject({method:"GET",url:"/api/warehouse"})).json<{openPackages:Array<{id:string}>;suspendedPackages:Array<{id:string}>}>();
+    assert.deepEqual(warehouse.openPackages.map(item=>item.id),[packageB.id]);assert.equal(warehouse.suspendedPackages.some(item=>item.id===packageA.id),true);
+    await scanAndAdd(packageB.id,load.pannelli[2]!.id);
+    await first.inject({method:"POST",url:`/api/packages/${packageA.id}/resume`});
+    warehouse=(await first.inject({method:"GET",url:"/api/warehouse"})).json<typeof warehouse>();
+    assert.deepEqual(warehouse.openPackages.map(item=>item.id),[packageA.id]);assert.equal(warehouse.suspendedPackages.some(item=>item.id===packageB.id),true);
+    await scanAndAdd(packageA.id,load.pannelli[3]!.id);
+    const packageC=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();
+    await first.inject({method:"POST",url:`/api/packages/${packageC.id}/suspend`});
+    await first.close();
+    const restarted=await buildApp(persistentConfig);
+    const afterRestart=(await restarted.inject({method:"GET",url:"/api/warehouse"})).json<{openPackages:unknown[];suspendedPackages:Array<{id:string;numeroPannelli:number}>}>();
+    assert.equal(afterRestart.openPackages.length,0);assert.equal(afterRestart.suspendedPackages.length,3);
+    assert.equal(afterRestart.suspendedPackages.find(item=>item.id===packageA.id)?.numeroPannelli,3);assert.equal(afterRestart.suspendedPackages.find(item=>item.id===packageB.id)?.numeroPannelli,1);assert.equal(afterRestart.suspendedPackages.find(item=>item.id===packageC.id)?.numeroPannelli,0);
+    await restarted.inject({method:"POST",url:`/api/packages/${packageB.id}/resume`});
+    const closed=await restarted.inject({method:"POST",url:`/api/packages/${packageB.id}/close`,payload:{codicePacco:"PK-2026-000001",operatoreId:operator.id,lunghezzaPacco:1000,larghezzaPacco:500,altezzaPacco:300}});
+    assert.equal(closed.statusCode,200);assert.equal(closed.json<{codicePacco:string;stato:string}>().codicePacco,"PK-2026-000001");assert.equal(closed.json<{stato:string}>().stato,"DISPONIBILE");
+    const finalWarehouse=(await restarted.inject({method:"GET",url:"/api/warehouse"})).json<{packages:Array<{id:string;pannelli:Array<{id:string}>}>;openPackages:unknown[];suspendedPackages:Array<{id:string;pannelli:Array<{id:string}>}>}>();
+    assert.equal(finalWarehouse.openPackages.length,0);assert.deepEqual(new Set(finalWarehouse.suspendedPackages.map(item=>item.id)),new Set([packageA.id,packageC.id]));assert.deepEqual(finalWarehouse.packages.find(item=>item.id===packageB.id)?.pannelli.map(item=>item.id),[load.pannelli[2]!.id]);
+    await restarted.close();
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+test("elimina sia un pacco mai movimentato sia un pacco scaricato da una sessione non conclusa",async()=>{
   const app=await buildApp(config);
   const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
   const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
@@ -465,9 +498,29 @@ test("elimina un pacco mai movimentato ma blocca con errore chiaro un pacco pres
   const removed=await app.inject({method:"DELETE",url:`/api/packages/${clean.id}`,payload:{operatorId:operator.id}});
   assert.equal(removed.statusCode,200);assert.equal(removed.json<{success:boolean}>().success,true);
   assert.equal((await app.inject({method:"GET",url:`/api/packages/${clean.id}`})).statusCode,404);
-  const blocked=await app.inject({method:"DELETE",url:`/api/packages/${historical.id}`,payload:{operatorId:operator.id}});
-  assert.equal(blocked.statusCode,409);assert.equal(blocked.json<{error:{code:string;message:string}}>().error.code,"RESOURCE_IN_USE");assert.match(blocked.json<{error:{message:string}}>().error.message,/storico operativo/);
-  const remaining=await app.inject({method:"GET",url:`/api/packages/${historical.id}`});assert.equal(remaining.statusCode,200);assert.equal(remaining.json<{pannelli:unknown[]}>().pannelli.length,1);
+  assert.equal((await app.inject({method:"GET",url:`/api/packages/${historical.id}`})).json<{stato:string}>().stato,"DISPONIBILE");
+  const reversibleDelete=await app.inject({method:"DELETE",url:`/api/packages/${historical.id}`,payload:{operatorId:operator.id}});
+  assert.equal(reversibleDelete.statusCode,200);assert.equal(reversibleDelete.json<{success:boolean}>().success,true);
+  assert.equal((await app.inject({method:"GET",url:`/api/packages/${historical.id}`})).statusCode,404);
+  const freed=(await app.inject({method:"GET",url:`/api/loads/${load.id}`})).json<{pannelli:Array<{id:string;stato:string;packageId:string|null}>}>().pannelli.find(panel=>panel.id===load.pannelli[1]!.id)!;
+  assert.equal(freed.stato,"DISPONIBILE");assert.equal(freed.packageId,null);
+  await app.close();
+});
+
+test("un pacco spedito non può essere eliminato dal magazzino",async()=>{
+  const app=await buildApp(config);
+  const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+  const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+  const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("P-SHIPPED","C2")]),commessa:"PACKAGE-SHIPPED"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+  const pack=(await app.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();
+  await app.inject({method:"POST",url:`/api/packages/${pack.id}/panels`,payload:{panelId:load.pannelli[0]!.id,operatorId:operator.id}});
+  await app.inject({method:"POST",url:`/api/packages/${pack.id}/close`,payload:{codicePacco:"PK-SHIPPED",operatoreId:operator.id,lunghezzaPacco:1000,larghezzaPacco:500,altezzaPacco:300}});
+  const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
+  await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PACKAGE",packageId:pack.id,operatorId:operator.id}});
+  assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}})).statusCode,200);
+  const blocked=await app.inject({method:"DELETE",url:`/api/packages/${pack.id}`,payload:{operatorId:operator.id}});
+  assert.equal(blocked.statusCode,409);assert.equal(blocked.json<{error:{code:string}}>().error.code,"RESOURCE_IN_USE");
+  assert.equal((await app.inject({method:"GET",url:`/api/packages/${pack.id}`})).json<{stato:string}>().stato,"SPEDITO");
   await app.close();
 });
 

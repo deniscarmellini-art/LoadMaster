@@ -2,6 +2,7 @@ import type { Pannello } from "../types/excel";
 
 export type StatoPannelloScansione = "MANCANTE" | "IN_LAVORAZIONE_PACCO" | "DISPONIBILE" | "CARICATO" | "SPEDITO";
 export type StatoPacco = "APERTO" | "DISPONIBILE" | "CARICATO" | "SPEDITO";
+export type StatoOperativoPacco = "ATTIVO" | "SOSPESO";
 
 export interface UnitaSingola {
   tipo: "SINGOLO";
@@ -18,6 +19,7 @@ export interface Pacco {
   loadId?: string;
   codice: string;
   stato: StatoPacco;
+  workflowState?: StatoOperativoPacco;
   commessa: string;
   cliente: string;
   camion: string;

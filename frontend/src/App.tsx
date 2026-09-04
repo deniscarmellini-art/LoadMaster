@@ -53,6 +53,7 @@ import {
   cancelPanelApi,
   loadScanningSnapshot,
   removePanelFromPackage,
+  suspendPackageApi,
   updatePanelManualLocation,
   updatePackageManualLocation,
 } from "./services/scanningApi";
@@ -86,6 +87,7 @@ export default function App() {
   >("dashboard");
   const [scanningTarget, setScanningTarget] = useState<Camion | null>(null);
   const [packages, setPackages] = useState<Pacco[]>([]);
+  const [suspendedPackages, setSuspendedPackages] = useState<Pacco[]>([]);
   const [singles, setSingles] = useState<UnitaSingola[]>([]);
   const [packageDrafts, setPackageDrafts] = useState<Map<string, Pannello[]>>(
     new Map(),
@@ -155,6 +157,7 @@ export default function App() {
       setCommesse(loads);
       setSingles(snapshot.singles);
       setPackages(snapshot.packages);
+      setSuspendedPackages(snapshot.suspendedPackages);
       setPackageDrafts(snapshot.drafts);
       setPackageDraftIds(snapshot.draftIds);
       setTruckLoads(sessions);
@@ -382,6 +385,17 @@ export default function App() {
   const scanningCommessa = scanningTarget
     ? commesse.find((item) => item.ordine === scanningTarget.commessa)
     : undefined;
+  const leaveScanning = async () => {
+    if (scanningTarget) {
+      const id = packageDraftIds.get(scanKey(scanningTarget.commessa, scanningTarget.camion));
+      if (id) {
+        try { await suspendPackageApi(id); } catch (error) { console.error("Sospensione pacco non riuscita", error); }
+      }
+    }
+    setScanningTarget(null);
+    setPage("dashboard");
+    await refreshScanningData().catch(() => undefined);
+  };
   const setDraftForTarget: React.Dispatch<React.SetStateAction<Pannello[]>> = (
     action,
   ) => {
@@ -784,12 +798,10 @@ export default function App() {
             draftId={packageDraftIds.get(
               scanKey(scanningTarget.commessa, scanningTarget.camion),
             )}
+            suspendedPackages={suspendedPackages.filter(pack=>pack.commessa===scanningTarget.commessa&&pack.camion===scanningTarget.camion)}
             onDraftChange={setDraftForTarget}
             onDataChanged={refreshScanningData}
-            onBack={() => {
-              setScanningTarget(null);
-              setPage("dashboard");
-            }}
+            onBack={()=>void leaveScanning()}
             onClosePackage={() => undefined}
             onCloseSingle={() => undefined}
             packages={packages}
@@ -819,6 +831,7 @@ export default function App() {
         {page !== "dashboard" && !loadsLoading && !loadsError && (
           <MobileDashboardReturn
             onBack={() => {
+              if(page==="scanning"){void leaveScanning();return;}
               setHistoryLoadId(undefined);
               setResumeLoad(null);
               setScanningTarget(null);

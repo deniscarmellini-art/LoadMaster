@@ -95,6 +95,7 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       loadId TEXT NOT NULL REFERENCES Loads(id) ON DELETE CASCADE,
       commessa TEXT NOT NULL, cliente TEXT NOT NULL, camion TEXT NOT NULL,
       stato TEXT NOT NULL CHECK (stato IN ('APERTO','DISPONIBILE','CARICATO','SPEDITO')),
+      workflowState TEXT NOT NULL DEFAULT 'ATTIVO' CHECK (workflowState IN ('ATTIVO','SOSPESO')),
       numeroPannelli INTEGER NOT NULL DEFAULT 0,
       pesoTotale REAL NOT NULL DEFAULT 0, volumeTotale REAL NOT NULL DEFAULT 0,
       lunghezzaPacco REAL NULL, larghezzaPacco REAL NULL, altezzaPacco REAL NULL,
@@ -151,6 +152,8 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
   `);
   migratePanelScanningColumns(database);
   migratePackageLocationColumn(database);
+  migratePackageWorkflowState(database);
+  database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_packages_active_load ON Packages(loadId) WHERE stato='APERTO' AND workflowState='ATTIVO'");
   const eventColumns=new Set((database.prepare("PRAGMA table_info(OperationalEvents)").all() as Array<{name:string}>).map(item=>item.name));
   if(!eventColumns.has("loadingSessionId"))database.exec("ALTER TABLE OperationalEvents ADD COLUMN loadingSessionId TEXT NULL");
   createOperationalDeleteTriggers(database);
@@ -202,6 +205,11 @@ const migratePanelScanningColumns = (database: DatabaseSync): void => {
 const migratePackageLocationColumn = (database: DatabaseSync): void => {
   const columns = new Set((database.prepare("PRAGMA table_info(Packages)").all() as Array<{name:string}>).map(item=>item.name));
   if(!columns.has("manualLocation")) database.exec("ALTER TABLE Packages ADD COLUMN manualLocation TEXT NULL");
+};
+
+const migratePackageWorkflowState = (database: DatabaseSync): void => {
+  const columns = new Set((database.prepare("PRAGMA table_info(Packages)").all() as Array<{name:string}>).map(item=>item.name));
+  if(!columns.has("workflowState")) database.exec("ALTER TABLE Packages ADD COLUMN workflowState TEXT NOT NULL DEFAULT 'ATTIVO' CHECK (workflowState IN ('ATTIVO','SOSPESO'))");
 };
 
 const migrateLegacyUniqueConstraints = (database: DatabaseSync): void => {
