@@ -133,6 +133,7 @@ export class ShipmentRepository {
           now,
           now,
         );
+      this.audit(input.loadId,"SHIPMENT_PLAN_CREATED",{id,...input});
     });
     return this.find(id)!;
   }
@@ -175,6 +176,7 @@ export class ShipmentRepository {
           now,
           id,
         );
+      this.audit(old.loadId, "SHIPMENT_PLAN_UPDATED", {before:old,after:input});
     });
     return this.find(id);
   }
@@ -219,11 +221,24 @@ export class ShipmentRepository {
     const old = this.find(id);
     if (!old || !old.persisted) return false;
     return this.transaction(() => {
+      const assignments=this.db.prepare("SELECT id,loadingSessionId,stato,departedAt,availableFrom FROM TransportAssignments WHERE (loadId IS NOT NULL AND loadId=?) OR (source='MANUAL' AND UPPER(TRIM(manualCommessa))=UPPER(TRIM(?)) AND UPPER(REPLACE(REPLACE(TRIM(COALESCE(manualCarico,'')),' ',''),'-',''))=?)").all(old.loadId,old.commessa,norm(old.camion??"")) as Array<{id:string;loadingSessionId:string|null;stato:string;departedAt:string|null;availableFrom:string|null}>;
+      const departedSession=old.loadId&&this.db.prepare("SELECT 1 FROM LoadingSessions WHERE loadId=? AND (shippedAt IS NOT NULL OR stato='SPEDITO')").get(old.loadId);
+      const departureEvent=old.loadId&&this.db.prepare("SELECT 1 FROM OperationalEvents WHERE loadId=? AND type='PARTENZA_CONFERMATA'").get(old.loadId);
+      if(old.actualDepartureDate||old.operationalStatus==="SPEDITO"||departedSession||departureEvent||assignments.some(a=>a.departedAt!==null||a.availableFrom!==null||a.stato==="IN_VIAGGIO"))throw new Error("SHIPMENT_CONSOLIDATED");
+      for(const assignment of assignments){
+        // Keep actual loading activity; discard only its preventive planning date.
+        if(assignment.loadingSessionId)this.db.prepare("UPDATE TransportAssignments SET plannedDepartureDate=NULL,updatedAt=? WHERE id=?").run(new Date().toISOString(),assignment.id);
+        else this.db.prepare("DELETE FROM TransportAssignments WHERE id=?").run(assignment.id);
+      }
+      this.audit(old.loadId,"SHIPMENT_PLAN_DELETED",old);
       return (
         this.db.prepare("DELETE FROM ShipmentPlans WHERE id=?").run(id)
           .changes > 0
       );
     });
+  }
+  private audit(loadId:string|null|undefined,type:string,details:unknown):void {
+    if(loadId)this.db.prepare("INSERT INTO OperationalEvents(id,loadId,type,timestamp,note) VALUES(?,?,?,?,?)").run(crypto.randomUUID(),loadId,type,new Date().toISOString(),JSON.stringify(details));
   }
   private assertUnique(input: ShipmentInput, exclude?: string) {
     if (

@@ -181,6 +181,18 @@ const addWeekdays=(iso:string,days:number):string=>{const date=new Date(iso);let
 const migrateTransportAssignments=(database:DatabaseSync):void=>{const rows=database.prepare("SELECT id,loadId,trailerId,stato,startedAt,shippedAt FROM LoadingSessions WHERE trailerId IS NOT NULL AND stato IN('DA_CARICARE','IN_CARICO','ATTESA_SPEDIZIONE','SPEDITO') ORDER BY startedAt DESC").all() as Array<{id:string;loadId:string;trailerId:string;stato:string;startedAt:string;shippedAt:string|null}>;const now=new Date().toISOString(),insert=database.prepare("INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,stato,assignedAt,departedAt,availableFrom,releasedAt,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,NULL,?,?)");for(const row of rows){if(database.prepare("SELECT 1 FROM TransportAssignments WHERE (trailerId=? OR loadId=?) AND releasedAt IS NULL").get(row.trailerId,row.loadId))continue;const departed=row.stato==="SPEDITO"?row.shippedAt:null,available=departed?addWeekdays(departed,2):null;if(row.stato==="SPEDITO"&&(!available||available<=now))continue;insert.run(crypto.randomUUID(),row.trailerId,row.loadId,row.id,row.stato==="SPEDITO"?"IN_VIAGGIO":"IMPEGNATO",row.startedAt,departed,available,now,now);}};
 
 const createOperationalDeleteTriggers=(database:DatabaseSync):void=>database.exec(`
+  CREATE TABLE IF NOT EXISTS DeletedLoadAudit (
+    eventId TEXT PRIMARY KEY, loadId TEXT NOT NULL, commessa TEXT NOT NULL,
+    camion TEXT NOT NULL, eventJson TEXT NOT NULL, archivedAt TEXT NOT NULL
+  );
+  CREATE TRIGGER IF NOT EXISTS trg_loads_archive_audit BEFORE DELETE ON Loads BEGIN
+    INSERT INTO DeletedLoadAudit(eventId,loadId,commessa,camion,eventJson,archivedAt)
+      SELECT id,OLD.id,OLD.commessa,OLD.camion,
+        json_object('id',id,'loadId',loadId,'panelId',panelId,'packageId',packageId,
+          'loadingSessionId',loadingSessionId,'type',type,'operatorId',operatorId,
+          'timestamp',timestamp,'note',note),datetime('now')
+      FROM OperationalEvents WHERE loadId=OLD.id;
+  END;
   CREATE TRIGGER IF NOT EXISTS trg_panels_unload_before_delete BEFORE DELETE ON Panels BEGIN
     INSERT INTO OperationalEvents(id,loadId,loadingSessionId,panelId,type,operatorId,timestamp,note)
       SELECT lower(hex(randomblob(16))),OLD.loadId,loadingSessionId,OLD.id,'UNIT_UNLOADED',loadedByOperatorId,datetime('now'),'Elemento rimosso durante aggiornamento distinta' FROM LoadingUnits WHERE panelId=OLD.id;

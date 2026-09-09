@@ -93,8 +93,12 @@ export class ShipmentService {
       throw new ApiError(404, "RESOURCE_NOT_FOUND", "Pianificazione non trovata");
     if(current.actualDepartureDate||current.operationalStatus==="SPEDITO"||current.shipmentStatus==="IN_VIAGGIO"||current.shipmentStatus==="CONCLUSA")
       throw new ApiError(409,"SHIPMENT_CONSOLIDATED","La spedizione non può essere eliminata perché è già partita o consolidata");
-    if (!this.repo.delete(id))
-      throw new ApiError(409, "RESOURCE_IN_USE", "Spedizione non eliminabile");
+    try {
+      if (!this.repo.delete(id))throw new ApiError(409, "RESOURCE_IN_USE", "Spedizione non eliminabile");
+    } catch(error) {
+      if(error instanceof Error&&error.message==="SHIPMENT_CONSOLIDATED")throw new ApiError(409,"SHIPMENT_CONSOLIDATED","La spedizione è già partita o consolidata");
+      throw error;
+    }
     return { success: true };
   }
   private validate(input: ShipmentInput) {

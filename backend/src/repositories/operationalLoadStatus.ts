@@ -13,14 +13,15 @@ export const deriveOperationalLoadStatus = (
   loadId: string,
 ): LoadStatus => {
   const session = database
-    .prepare("SELECT stato FROM LoadingSessions WHERE loadId=?")
-    .get(loadId) as { stato: string } | undefined;
+    .prepare("SELECT stato,shippedAt FROM LoadingSessions WHERE loadId=?")
+    .get(loadId) as { stato: string; shippedAt: string | null } | undefined;
   const departed = database
     .prepare(
       "SELECT 1 FROM ShipmentPlans WHERE loadId=? AND actualDepartureDate IS NOT NULL LIMIT 1",
     )
     .get(loadId);
-  if (session?.stato === "SPEDITO" || departed) return "SPEDITO";
+  const shippedLoad = database.prepare("SELECT 1 FROM Loads WHERE id=? AND stato='SPEDITO'").get(loadId);
+  if (shippedLoad || session?.shippedAt || session?.stato === "SPEDITO" || departed) return "SPEDITO";
   if (session?.stato === "ATTESA_SPEDIZIONE") return "ATTESA_SPEDIZIONE";
 
   const counts = database

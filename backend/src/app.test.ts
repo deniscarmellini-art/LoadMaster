@@ -111,6 +111,7 @@ test("elimina solo una pianificazione non partita e conserva carico ed elementi"
   assert.equal(shipments.some(item=>item.id===plan.id),false);assert.equal(shipments.some(item=>item.loadId===load.id&&!item.persisted),true);
   const untouched=(await app.inject({method:"GET",url:`/api/loads/${load.id}`})).json<{id:string;pannelli:Array<{id:string}>}>();
   assert.equal(untouched.id,load.id);assert.deepEqual(untouched.pannelli.map(item=>item.id),load.pannelli.map(item=>item.id));
+  assert.equal((await app.inject({method:"DELETE",url:`/api/loads/${load.id}`})).statusCode,204);
   await app.close();
 });
 
@@ -126,6 +127,8 @@ test("rifiuta la cancellazione di una pianificazione con partenza consolidata",a
   await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}});
   const blocked=await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`});
   assert.equal(blocked.statusCode,409);assert.equal(blocked.json<{error:{code:string}}>().error.code,"SHIPMENT_CONSOLIDATED");
+  assert.equal((await app.inject({method:"DELETE",url:`/api/loads/${load.id}`})).statusCode,409);
+  assert.equal((await app.inject({method:"DELETE",url:"/api/orders/PLAN-CONSOLIDATED"})).statusCode,409);
   assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string}>>().some(item=>item.id===plan.id),true);
   await app.close();
 });
@@ -730,4 +733,52 @@ test("aggiornare la distinta può scaricare e rimuovere un pannello già caricat
   assert.equal(update.statusCode,200);assert.deepEqual(update.json<{pannelli:Array<{numeroPannello:string}>}>().pannelli.map(panel=>panel.numeroPannello),["R1"]);
   const restored=await app.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(restored.json<{units:unknown[]}>().units.length,0);
   await app.close();
+});
+
+for(const deleteOrder of [false,true])test("audit reversibile 265587 e pianificazione eliminata: "+(deleteOrder?"commessa":"carico"),async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"reversible-audit-"));
+  const databasePath=join(directory,"audit.sqlite");
+  const app=await buildApp({...config,databasePath});
+  const db=new DatabaseSync(databasePath);
+  try{
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("1","C1-")]),commessa:"265587"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+    const input={loadId:load.id,commessa:"265587",cliente:"Cliente Test",camion:"C1-",plannedDepartureDate:"2026-09-20",transportType:"TRASPORTATORE_ESTERNO"};
+    const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json<{id:string}>();
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedDepartureDate:"2026-09-21"}})).statusCode,200);
+    const trailer=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
+    assert.equal((await app.inject({method:"POST",url:`/api/trailers/${trailer.id}/reservation`,payload:{commessa:"265587",cliente:"Cliente Test",carico:"C1",plannedDepartureDate:"2026-09-21"}})).statusCode,200);
+    assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`})).statusCode,200);
+    assert.equal(db.prepare("SELECT 1 FROM ShipmentPlans WHERE id=?").get(plan.id),undefined);
+    assert.equal(db.prepare("SELECT 1 FROM TransportAssignments WHERE manualCommessa='265587'").get(),undefined);
+    for(const type of ["PANEL_SCANNED","SINGLE_CLOSED","SCAN_CANCELLED","PACKAGE_OPENED","PANEL_ADDED_TO_PACKAGE","PACKAGE_CLOSED","PACKAGE_CANCELLED"])
+      db.prepare("INSERT INTO OperationalEvents(id,loadId,type,timestamp) VALUES(?,?,?,?)").run(crypto.randomUUID(),load.id,type,"2026-09-02T14:02:46.334Z");
+    const before=db.prepare("SELECT * FROM OperationalEvents WHERE loadId=? ORDER BY id").all(load.id);
+    assert.equal(before.length,10);
+    const result=await app.inject({method:"DELETE",url:deleteOrder?"/api/orders/265587":`/api/loads/${load.id}`});
+    assert.equal(result.statusCode,204,result.body);
+    const archived=db.prepare("SELECT eventJson FROM DeletedLoadAudit WHERE loadId=? ORDER BY eventId").all(load.id) as Array<{eventJson:string}>;
+    assert.deepEqual(archived.map(row=>JSON.parse(row.eventJson)),before.map(row=>({...row})));
+    assert.equal(db.prepare("PRAGMA foreign_key_check").all().length,0);
+  }finally{db.close();await app.close();rmSync(directory,{recursive:true,force:true});}
+});
+
+for(const marker of ["event","shippedAt","SPEDITO"])test("blocca storico definitivo isolato: "+marker,async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"departure-marker-"));
+  const databasePath=join(directory,"audit.sqlite");
+  const app=await buildApp({...config,databasePath});const db=new DatabaseSync(databasePath);
+  try{
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("1","C1")])})).json<Array<{id:string}>>()[0]!;
+    const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"TEST",cliente:"Test",camion:"C1",plannedDepartureDate:"2026-09-20",transportType:"TRASPORTATORE_ESTERNO"}})).json<{id:string}>();
+    if(marker==="event")db.prepare("INSERT INTO OperationalEvents(id,loadId,type,timestamp) VALUES(?,?,'PARTENZA_CONFERMATA',?)").run(crypto.randomUUID(),load.id,"2026-09-02T14:00:00Z");
+    else if(marker==="SPEDITO")db.prepare("UPDATE Loads SET stato='SPEDITO' WHERE id=?").run(load.id);
+    else{
+      const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+      const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
+      const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
+      db.prepare("UPDATE LoadingSessions SET shippedAt=? WHERE id=?").run("2026-09-02T14:00:00Z",session.id);
+    }
+    assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`})).statusCode,409);
+    assert.equal((await app.inject({method:"DELETE",url:`/api/loads/${load.id}`})).statusCode,409);
+    assert.ok(db.prepare("SELECT 1 FROM Loads WHERE id=?").get(load.id));
+  }finally{db.close();await app.close();rmSync(directory,{recursive:true,force:true});}
 });

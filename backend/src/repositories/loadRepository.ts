@@ -28,20 +28,22 @@ export class LoadRepository{
   const sessions=this.database.prepare(`SELECT id,loadId,stato,shippedAt FROM LoadingSessions WHERE loadId IN (${placeholders})`).all(...ids) as Array<{id:string;loadId:string;stato:string;shippedAt:string|null}>;
   const hasReversibleLoadingHistory=sessions.length>0;
   let blockingReason:string|null=null;
-  if(loads.some(load=>load.stato==="SPEDITO")||sessions.some(session=>session.stato==="SPEDITO"||session.shippedAt!==null))blockingReason="La commessa contiene una sessione di carico partita o consolidata.";
+  if(loads.some(load=>load.stato==="SPEDITO"||load.pannelli.some(panel=>panel.stato==="SPEDITO"))||sessions.some(session=>session.stato==="SPEDITO"||session.shippedAt!==null))blockingReason="La commessa contiene una sessione di carico partita o consolidata.";
   else if(has(`SELECT 1 FROM LoadingUnits u JOIN LoadingSessions s ON s.id=u.loadingSessionId WHERE s.loadId IN (${placeholders}) AND u.active=1 LIMIT 1`))blockingReason="La commessa contiene elementi o pacchi attualmente caricati.";
   else if(!hasReversibleLoadingHistory&&loads.some(load=>load.stato!=="DA_COMPLETARE"))blockingReason="La commessa contiene carichi già iniziati, completati o spediti.";
   else if(!hasReversibleLoadingHistory&&loads.some(load=>load.pannelli.some(panel=>panel.stato!=="MANCANTE"||panel.scannedAt!==null||panel.scannedByOperatorId!==null||panel.packageId!==null)))blockingReason="La commessa contiene elementi già scansionati o preparati.";
   const packages=this.database.prepare(`SELECT id,codicePacco,stato,numeroPannelli FROM Packages WHERE loadId IN (${placeholders})`).all(...ids) as Array<{id:string;codicePacco:string;stato:string;numeroPannelli:number}>;
   const emptyDraftPackageIds=new Set(packages.filter(pack=>pack.stato==="APERTO"&&pack.numeroPannelli===0&&pack.codicePacco.startsWith("DRAFT-")).map(pack=>pack.id));
+  if(!blockingReason&&packages.some(pack=>pack.stato==="SPEDITO"))blockingReason="La commessa contiene pacchi spediti.";
   if(!blockingReason&&!hasReversibleLoadingHistory&&packages.some(pack=>!emptyDraftPackageIds.has(pack.id)))blockingReason="La commessa contiene uno o più pacchi con elementi o già chiusi.";
   if(!blockingReason&&emptyDraftPackageIds.size){
    const packageIds=[...emptyDraftPackageIds],packagePlaceholders=packageIds.map(()=>"?").join(",");
    if(this.database.prepare(`SELECT 1 FROM LoadingUnits WHERE packageId IN (${packagePlaceholders}) AND active=1 LIMIT 1`).get(...packageIds))blockingReason="La commessa contiene un pacco attualmente caricato.";
   }
   if(!blockingReason){
-   const events=this.database.prepare(`SELECT type,packageId FROM OperationalEvents WHERE loadId IN (${placeholders})`).all(...ids) as Array<{type:string;packageId:string|null}>;
-   if(events.some(event=>event.type==="PARTENZA_CONFERMATA")||(!hasReversibleLoadingHistory&&events.some(event=>event.type!=="PACKAGE_OPENED"||event.packageId===null||!emptyDraftPackageIds.has(event.packageId))))blockingReason="La commessa contiene eventi operativi o storici consolidati.";
+   const events=this.database.prepare(`SELECT type FROM OperationalEvents WHERE loadId IN (${placeholders})`).all(...ids) as Array<{type:string}>;
+   // Audit records describe attempts and reversals; only departure is definitive.
+   if(events.some(event=>event.type==="PARTENZA_CONFERMATA"))blockingReason="La commessa contiene eventi operativi o storici consolidati.";
   }
   const plans=(this.database.prepare("SELECT id,loadId,manualCommessa,manualCarico,actualDepartureDate FROM ShipmentPlans").all() as unknown as RelatedShipmentPlan[]).filter(plan=>(plan.loadId!==null&&loadIds.has(plan.loadId))||(plan.loadId===null&&plan.manualCommessa!==null&&normalizedOrder(plan.manualCommessa)===normalizedOrder(commessa)&&trucks.has(normalizedTruck(plan.manualCarico??""))));
   if(!blockingReason&&plans.some(plan=>plan.actualDepartureDate!==null))blockingReason="La commessa contiene una spedizione partita o storicizzata.";
