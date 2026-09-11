@@ -1,7 +1,10 @@
 {
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n BACKEND,FRONTEND -c yellow,cyan \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev": "node scripts/start-test.mjs",
+    "start:test": "node scripts/start-test.mjs",
+    "db:test:init": "node scripts/init-test-db.mjs",
+    "db:test:refresh": "node scripts/init-test-db.mjs --refresh",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build": "npm --prefix backend run build && npm --prefix frontend run build",

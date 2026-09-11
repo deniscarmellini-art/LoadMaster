@@ -29,7 +29,7 @@ export class ApiClientError extends Error {
   }
 }
 
-const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:3001/api").replace(/\/$/, "");
+const apiUrl = (import.meta.env.VITE_SISLOG_TEST ? "/api" : import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 
 const isApiError = (value: unknown): value is ApiErrorPayload => {
   if (!value || typeof value !== "object") return false;

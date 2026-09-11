@@ -7,11 +7,11 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "npm run build && node dist/server.js",
+    "dev": "node ../scripts/start-test.mjs",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "type-check": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/app.test.js",
+    "test": "tsc -p tsconfig.json --outDir .test-dist && node --test .test-dist/app.test.js",
     "test:health": "node scripts/check-health.mjs"
   },
   "dependencies": {

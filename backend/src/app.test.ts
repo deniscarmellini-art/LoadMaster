@@ -8,6 +8,21 @@ import { DatabaseSync } from "node:sqlite";
 import { buildApp } from "./app.js";
 import { loadConfig, type AppConfig } from "./config/environment.js";
 import { addBusinessDays } from "./repositories/transportRepository.js";
+import { assertTestDatabase, productionDatabase, testConfig, testDatabase } from "./config/testEnvironment.js";
+
+test("il server TEST ignora porta, database e HTTPS ereditati dalla produzione",()=>{
+  const keys=["NODE_ENV","PORT","DATABASE_URL","HTTPS_KEY_PATH","HTTPS_CERT_PATH"] as const;
+  const previous=keys.map(key=>[key,process.env[key]] as const);
+  try{
+    Object.assign(process.env,{NODE_ENV:"production",PORT:"3001",DATABASE_URL:productionDatabase,HTTPS_KEY_PATH:"production.key",HTTPS_CERT_PATH:"production.pem"});
+    const actual=testConfig();
+    assert.equal(actual.port,3002);assert.equal(actual.host,"127.0.0.1");
+    assert.equal(actual.environment,"test");assert.equal(actual.databasePath,testDatabase);
+    assert.notEqual(actual.databasePath,productionDatabase);
+    assert.equal(actual.httpsKeyPath,null);assert.equal(actual.frontendDistPath,null);
+    assert.throws(()=>assertTestDatabase(productionDatabase),/esclusivamente/);
+  }finally{for(const [key,value] of previous)if(value===undefined)delete process.env[key];else process.env[key]=value;}
+});
 
 const config: AppConfig = {
   port: 3001,
