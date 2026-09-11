@@ -4,6 +4,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PrintIcon from "@mui/icons-material/Print";
 import { Alert, Box, Button, Checkbox, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
 import LabelPreview from "../components/labels/LabelPreview";
+import "../components/labels/elementLabel.css";
 import type { LabelFields } from "../components/labels/LabelPreview";
 import type { Commessa, Pannello } from "../types/excel";
 import type { ImpostazioneOperativa } from "../models/Settings";
@@ -11,7 +12,7 @@ import type { ImpostazioneOperativa } from "../models/Settings";
 interface Props { commesse:Commessa[]; listeOperative:ImpostazioneOperativa[]; onBack:()=>void; }
 const now = () => new Intl.DateTimeFormat("it-IT", { dateStyle:"short", timeStyle:"medium" }).format(new Date());
 const initialFields=(listeOperative:ImpostazioneOperativa[]):LabelFields => ({ anno:String(new Date().getFullYear()), commessa:"", cliente:"", riferimento:"", tipologia:"CLT L3-100", dtp:"Jlenia Pedrotti", operatore:"T.T.", autMin:"59/15-CL", codiceEta:"ETA-12/0362", cpr:listeOperative.find(item=>item.chiave==="CPR"&&item.attivo)?.valore??"", dataOra:now(), rotate:false });
-const labelWidthPx=250*96/25.4;
+const labelWidthPx=200*96/25.4;
 const labelHeightPx=100*96/25.4;
 
 function MobileLabelPreview({panel,fields,index}:{panel:Pannello;fields:LabelFields;index:number}) {
@@ -37,13 +38,7 @@ export default function PrintLabels({ commesse, listeOperative, onBack }:Props) 
   const selectTruck=(truck:string)=>setSelected(new Set(panels.map((panel,index)=>String(panel.numeroCamion).trim()===truck?index:-1).filter(index=>index>=0)));
   const printLabels=()=>{flushSync(()=>setFields(c=>({...c,dataOra:now()})));window.print();};
   return <Box>
-    <style>{`
-      .print-label{width:250mm;height:100mm;background:#fff;color:#151515;border:1px solid #777;padding:6mm 8mm;display:grid;grid-template-columns:26mm 1fr 50mm;grid-template-rows:27mm 1fr;gap:3mm 5mm;position:relative;font:10.5pt Arial,sans-serif;box-sizing:border-box;margin:28px auto;box-shadow:0 4px 18px #0008;transform-origin:center}.label-brand{display:flex;align-items:flex-start;justify-content:center;border-bottom:1.5px solid}.label-logo{display:block;width:23mm;height:23mm;object-fit:contain;filter:none;opacity:1;mix-blend-mode:normal;-webkit-print-color-adjust:exact;print-color-adjust:exact}.label-heading{border-bottom:1.5px solid;display:grid;grid-template-columns:1fr 1.35fr .75fr .8fr;column-gap:5mm;align-items:start}.label-heading>div:not(.heading-ce){display:grid;grid-template-rows:4mm 11mm auto;align-items:start}.label-heading small,.label-details span,.label-codes small{text-transform:uppercase;font-size:7pt;letter-spacing:.04em}.label-heading .heading-value{font-family:Arial,sans-serif;font-size:28pt;font-weight:900;line-height:11mm;white-space:nowrap;align-self:start}.label-heading span{font-size:7.5pt;margin-top:1mm}.label-heading .heading-ce{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;text-align:center;line-height:1.05;padding-top:0;gap:.8mm}.label-heading .heading-ce-mark{display:block;width:9mm;height:5mm;object-fit:contain;filter:none;opacity:1;mix-blend-mode:normal;margin-bottom:.2mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}.label-heading .heading-certification{display:flex;flex-direction:column;align-items:center;gap:.2mm;width:100%}.label-heading .heading-certification small{font-size:5.5pt;line-height:2mm;letter-spacing:0;white-space:nowrap}.label-heading .heading-certification b{font-size:6.5pt;line-height:2.3mm}.label-details{grid-column:1/3;display:grid;grid-template-columns:40mm 1fr;gap:1.8mm 3mm;align-content:start}.label-details>b{font-size:12pt;border-bottom:1px dotted #aaa;padding-bottom:.7mm}.label-details .large{font-size:14pt}.label-codes{grid-column:3;grid-row:1/3;border-left:1.5px solid;padding-left:4mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.5mm}.label-codes svg{width:27mm;height:27mm}.label-codes>div{width:100%;border-top:1px solid #ddd;padding-top:1.5mm;text-align:center;display:flex;flex-direction:column}.label-codes>div b{font-size:9pt}.preview-caption{position:absolute;top:-20px;left:0;color:#aaa;font-size:11px}.print-label--rotated{transform:rotate(90deg);margin:82mm auto}@media print{@page{size:250mm 100mm;margin:0}body{background:#fff!important}.no-print,footer{display:none!important}.labels-preview{padding:0!important}.print-label{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-shadow:none;border:0;margin:0;break-after:page;page-break-after:always}.label-logo,.heading-ce-mark{-webkit-print-color-adjust:exact;print-color-adjust:exact}.print-label--rotated{transform:rotate(90deg);margin:75mm auto}.preview-caption{display:none!important}}
-      .label-heading .heading-ce-mark{width:12mm;height:8mm}
-      .label-codes>svg{transform:translateY(-3mm)}
-      .scaled-label-preview .print-label{margin:0}
-      @media print{.scaled-label-preview,.scaled-label-preview-inner{display:contents!important}.scaled-label-preview-inner{transform:none!important}}
-    `}</style>
+
     <Stack className="no-print" direction={{xs:"column",sm:"row"}} sx={{alignItems:{xs:"stretch",sm:"center"},justifyContent:"space-between",gap:{xs:1,sm:0},mb:2}}><Button startIcon={<ArrowBackIcon/>} onClick={onBack} sx={{alignSelf:{xs:"flex-start",sm:"auto"}}}>Dashboard</Button><Typography variant={mobile?"h5":"h4"} sx={{fontWeight:800,textAlign:"center"}}>Stampa etichette</Typography><Box sx={{display:{xs:"none",sm:"block"},width:110}}/></Stack>
     <Paper className="no-print" sx={{p:{xs:1.5,sm:2.5},mb:2}}><Typography variant="h6" sx={{mb:2}}>1. Commessa e dati etichetta</Typography>
       {commesse.length===0?<Alert severity="info">Importa prima una commessa dalla Dashboard.</Alert>:<Stack sx={{gap:1.5}}>

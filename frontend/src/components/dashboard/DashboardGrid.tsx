@@ -1,3 +1,4 @@
+import { dashboardVisualStatus } from "./dashboardVisualStatus";
 import { useState } from "react";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import EditDocumentIcon from "@mui/icons-material/EditDocument";
@@ -74,14 +75,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       align: "center",
       headerAlign: "center",
       renderCell: (params) => {
-        const stato = params.value;
-        const color = stato === "In carico"
-          ? "warning"
-          : stato === "Attesa spedizione" || stato === "Partita"
-            ? "success"
-            : stato === "Da caricare"
-              ? "info"
-              : "error";
+        const { label: stato, color } = dashboardVisualStatus(params.row);
         return (
           <Chip
             color={color}

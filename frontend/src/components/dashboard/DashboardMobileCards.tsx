@@ -1,3 +1,4 @@
+import { dashboardVisualStatus } from "./dashboardVisualStatus";
 import { useState } from "react";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
@@ -19,7 +20,6 @@ interface Props extends DashboardPrimaryHandlers {
   transportFor: (row: Camion) => DashboardTransportPresentation;
 }
 
-const statusColor = (status: Camion["stato"]) => status === "In carico" ? "warning" : status === "Attesa spedizione" || status === "Partita" ? "success" : status === "Da caricare" ? "info" : "error";
 
 export default function DashboardMobileCards(props: Props) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -30,6 +30,7 @@ export default function DashboardMobileCards(props: Props) {
 
   return <Stack sx={{ gap: 1 }}>
     {props.rows.map((row) => {
+      const status = dashboardVisualStatus(row);
       const shipment = props.shipmentFor(row);
       const transport = props.transportFor(row);
       return <Paper key={row.id} variant="outlined" onClick={() => runDashboardPrimaryAction(row, handlers)} sx={{ p: 1.5, cursor: "pointer", overflow: "hidden", "&:active": { bgcolor: "action.selected" } }}>
@@ -39,7 +40,7 @@ export default function DashboardMobileCards(props: Props) {
           <Typography noWrap sx={{ fontWeight: 700 }}>{row.cliente}</Typography>
           <Typography variant="body2" color="text.secondary">Camion {row.camion}</Typography>
         </Box>
-        <Chip color={statusColor(row.stato)} label={row.stato.toUpperCase()} size="small" variant="outlined" sx={{ flexShrink: 0, fontWeight: 800 }} />
+        <Chip color={status.color} label={status.label.toUpperCase()} size="small" variant="outlined" sx={{ flexShrink: 0, fontWeight: 800 }} />
       </Stack>
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", my: 1.25 }}>
         {[["Previsti", row.previsti], ["Pronti", row.pronti], ["Mancanti", row.mancanti], ["Caricati", row.caricati]].map(([label, value]) => <Box key={label} sx={{ textAlign: "center" }}><Typography sx={{ fontWeight: 900 }}>{value}</Typography><Typography variant="caption" color="text.secondary">{label}</Typography></Box>)}
