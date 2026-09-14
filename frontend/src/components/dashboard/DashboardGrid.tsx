@@ -5,7 +5,7 @@ import EditDocumentIcon from "@mui/icons-material/EditDocument";
 import LaunchOutlinedIcon from "@mui/icons-material/LaunchOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
-import { Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from "@mui/material";
+import { Box, Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import type { GridColDef } from "@mui/x-data-grid";
 
@@ -18,6 +18,7 @@ import type { DashboardTransportPresentation } from "./dashboardTransport";
 
 interface Props {
   rows: Camion[];
+  referenceFor: (row: Camion) => string;
   onDelete: (row: Camion) => void;
   onOpenScanning: (row: Camion) => void;
   onStartLoad: (row: Camion) => void;
@@ -32,7 +33,7 @@ interface Props {
   transportFor: (row: Camion) => DashboardTransportPresentation;
 }
 
-export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory, shipmentFor, transportFor }: Props) {
+export default function DashboardGrid({ rows, referenceFor, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory, shipmentFor, transportFor }: Props) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [menuRow, setMenuRow] = useState<Camion | null>(null);
   const closeMenu = () => { setAnchorEl(null); setMenuRow(null); };
@@ -40,38 +41,39 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
   const primaryHandlers = { onConfirmDeparture, onContinueLoad, onOpenHistory, onOpenScanning, onStartLoad };
   const fixedColumn = { disableReorder: true } as const;
   const columns: GridColDef<Camion>[] = [
-    { ...fixedColumn, field: "commessa", headerName: "Commessa", width: 140, align: "left", headerAlign: "left" },
-    { ...fixedColumn, field: "cliente", headerName: "Cliente", width: 200, align: "left", headerAlign: "left" },
-    { ...fixedColumn, field: "camion", headerName: "Camion", width: 100, align: "center", headerAlign: "center" },
-    { ...fixedColumn, field: "previsti", headerName: "Previsti", width: 100, type: "number", align: "center", headerAlign: "center" },
-    { ...fixedColumn, field: "pronti", headerName: "Pronti", width: 100, type: "number", align: "center", headerAlign: "center" },
-    { ...fixedColumn, field: "mancanti", headerName: "Mancanti", width: 105, type: "number", align: "center", headerAlign: "center" },
-    { ...fixedColumn, field: "caricati", headerName: "Caricati", width: 105, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "commessa", headerName: "Commessa", width: 100, minWidth: 100, align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "cliente", headerName: "Cliente", minWidth: 160, flex: 1, align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "reference", headerName: "Rif. ordine", width: 140, minWidth: 140, valueGetter: (_value, row) => referenceFor(row), align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "camion", headerName: "Camion", width: 80, minWidth: 80, align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "previsti", headerName: "Previsti", width: 80, minWidth: 80, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "pronti", headerName: "Pronti", width: 80, minWidth: 80, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "mancanti", headerName: "Mancanti", width: 90, minWidth: 90, type: "number", align: "center", headerAlign: "center" },
+    { ...fixedColumn, field: "caricati", headerName: "Caricati", width: 90, minWidth: 90, type: "number", align: "center", headerAlign: "center" },
     {
       ...fixedColumn,
       field: "peso",
       headerName: "Peso",
-      width: 120,
+      width: 110, minWidth: 110,
       type: "number",
-      align: "right",
-      headerAlign: "right",
+      align: "center",
+      headerAlign: "center",
       valueFormatter: (value) => `${Number(value).toLocaleString("it-IT", { maximumFractionDigits: 1 })} kg`,
     },
     {
       ...fixedColumn,
       field: "volume",
       headerName: "Volume",
-      width: 120,
+      width: 100, minWidth: 100,
       type: "number",
-      align: "right",
-      headerAlign: "right",
+      align: "center",
+      headerAlign: "center",
       valueFormatter: (value) => `${Number(value).toLocaleString("it-IT", { maximumFractionDigits: 2 })} m³`,
     },
     {
       ...fixedColumn,
       field: "stato",
       headerName: "Stato",
-      width: 250,
+      width: 140, minWidth: 140,
       align: "center",
       headerAlign: "center",
       renderCell: (params) => {
@@ -82,7 +84,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
             label={stato}
             size="small"
             variant="outlined"
-            sx={{ fontWeight: 700, height: 30, minWidth: 142, "& .MuiChip-label": { px: 1.25, textAlign: "center", width: "100%" } }}
+            sx={{ fontWeight: 700, height: 30, minWidth: 0, maxWidth: "100%", "& .MuiChip-label": { px: 1, textAlign: "center", width: "100%" } }}
           />
         );
       },
@@ -91,7 +93,7 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       ...fixedColumn,
       field: "plannedDepartureDate",
       headerName: "Partenza prevista",
-      width: 170,
+      width: 140, minWidth: 140,
       type: "date",
       align: "center",
       headerAlign: "center",
@@ -108,21 +110,23 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       ...fixedColumn,
       field: "transport",
       headerName: "Trasporto",
-      width: 230,
+      minWidth: 160, flex: 1,
       align: "center",
       headerAlign: "center",
       valueGetter: (_value, row) => transportFor(row).label,
-      renderCell: (params) => (
-        <Typography noWrap variant="body2" title={transportFor(params.row).label}>
-          {transportFor(params.row).label}
-        </Typography>
-      ),
+      renderCell: (params) => {
+        const transport = transportFor(params.row);
+        return <Box sx={{minWidth:0,width:"100%",display:"flex",flexDirection:"column",justifyContent:"center",height:"100%"}}>
+          <Typography noWrap variant="body2" title={transport.label}>{transport.label}</Typography>
+          {transport.plannedCarrier && <Typography noWrap variant="caption" title={transport.plannedCarrier}>Previsto: {transport.plannedCarrier}</Typography>}
+        </Box>;
+      },
     },
     {
       ...fixedColumn,
       field: "operazione",
       headerName: "Operazioni",
-      width: 95,
+      width: 80, minWidth: 80,
       sortable: false,
       filterable: false,
       align: "center",
@@ -146,18 +150,23 @@ export default function DashboardGrid({ rows, onDelete, onOpenScanning, onStartL
       initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
       pageSizeOptions={[10, 25, 50]}
       rowHeight={56}
+      columnHeaderHeight={56}
       rows={rows}
       sortingOrder={["asc", "desc"]}
       sx={{
+        minWidth: 0, maxWidth: "100%",
+        "& .MuiDataGrid-columnHeaderTitleContainer": { overflow: "visible" },
+        "& .MuiDataGrid-columnHeaderTitleContainerContent": { overflow: "visible" },
+        "& .MuiDataGrid-iconButtonContainer": { position: "absolute", right: 0, bottom: 0 },
         bgcolor: dashboardColors.grid,
         border: 0,
         borderRadius: 2,
         "& .MuiDataGrid-columnHeaders": { backgroundColor: dashboardColors.header, borderBottom: "1px solid rgba(255,255,255,0.16)" },
-        "& .MuiDataGrid-columnHeader": { px: 2, transition: "background-color 180ms ease, color 180ms ease" },
+        "& .MuiDataGrid-columnHeader": { px: 1, transition: "background-color 180ms ease, color 180ms ease" },
         "& .MuiDataGrid-columnSeparator": { display: "none" },
-        "& .dashboard-grid__operations-header": { px: 1 },
-        "& .MuiDataGrid-columnHeaderTitle": { fontWeight: 800, letterSpacing: 0.2 },
-        "& .MuiDataGrid-cell": { borderColor: "rgba(255,255,255,0.07)", px: 2, transition: "background-color 180ms ease, color 180ms ease" },
+        "& .dashboard-grid__operations-header": { px: 0 },
+        "& .MuiDataGrid-columnHeaderTitle": { fontWeight: 800, letterSpacing: 0.2, whiteSpace: "normal", lineHeight: 1.2, overflow: "visible", textOverflow: "clip" },
+        "& .MuiDataGrid-cell": { borderColor: "rgba(255,255,255,0.07)", px: 1, transition: "background-color 180ms ease, color 180ms ease" },
         "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within": { outline: "none" },
         "& .MuiDataGrid-row": { cursor: "pointer", transition: "background-color 180ms ease, color 180ms ease" },
         "& .MuiDataGrid-row:nth-of-type(even)": { backgroundColor: dashboardColors.stripe },

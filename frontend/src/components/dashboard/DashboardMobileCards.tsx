@@ -61,6 +61,7 @@ export default function DashboardMobileCards(props: Props) {
       {transport.carrier && (
         <Typography variant="body2">Trasportatore: {transport.carrier}</Typography>
       )}
+      {transport.plannedCarrier && <Typography variant="body2">Previsto: {transport.plannedCarrier}</Typography>}
       <Stack direction="row" sx={{ gap: 1, mt: 1.25 }}>
         <Button fullWidth size="large" variant="contained" onClick={(event) => { event.stopPropagation(); runDashboardPrimaryAction(row, handlers); }}>{dashboardPrimaryLabel(row)}</Button>
         <IconButton aria-label={`Altre azioni commessa ${row.commessa}`} onClick={(event) => { event.stopPropagation(); setMenuAnchor(event.currentTarget); setMenuRow(row); }} sx={{ border: 1, borderColor: "divider", borderRadius: 1.5, minHeight: 44, minWidth: 44 }}><MoreVertIcon /></IconButton>

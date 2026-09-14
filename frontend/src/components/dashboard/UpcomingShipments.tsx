@@ -125,7 +125,9 @@ export default function UpcomingShipments({
                 </Typography>
               ) : (
                 <Stack sx={{ gap: 0.5 }}>
-                  {dayShipments.map((shipment) => (
+                  {dayShipments.map((shipment) => {
+                    const transport = dashboardTransportPresentation(shipment, transports, carriers);
+                    return (
                     <CardActionArea
                       key={shipment.id}
                       onClick={onOpenShipments}
@@ -178,14 +180,9 @@ export default function UpcomingShipments({
                         color="text.secondary"
                         sx={{ display: "block" }}
                       >
-                        {
-                          dashboardTransportPresentation(
-                            shipment,
-                            transports,
-                            carriers,
-                          ).label
-                        }
+                        {transport.label}
                       </Typography>
+                      {transport.plannedCarrier && <Typography variant="caption" sx={{display:"block",overflowWrap:"anywhere"}}>Previsto: {transport.plannedCarrier}</Typography>}
                       {shipment.operationalStatus && (
                         <Chip
                           size="small"
@@ -207,7 +204,7 @@ export default function UpcomingShipments({
                         <PlannedDepartureDate shipment={shipment} />
                       </Box>
                     </CardActionArea>
-                  ))}
+                  );})}
                 </Stack>
               )}
             </Box>

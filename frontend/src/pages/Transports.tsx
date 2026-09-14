@@ -35,9 +35,13 @@ import {
   type TransportStatus,
 } from "../services/transportsApi";
 import { formatOptionalDate, parseOptionalDate } from "../utils/dateFormatting";
+import type { ShipmentItem } from "../services/shipmentsApi";
+import type { Trasportatore } from "../models/Settings";
 
 interface Props {
   items: TransportItem[];
+  shipments: ShipmentItem[];
+  carriers: Trasportatore[];
   onBack: () => void;
   onRefresh: () => Promise<void>;
 }
@@ -67,7 +71,16 @@ const dateTime = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("it-IT");
 };
 
-export default function Transports({ items, onBack, onRefresh }: Props) {
+export default function Transports({ items, shipments, carriers, onBack, onRefresh }: Props) {
+  const plannedCarrier = (item: TransportItem) => {
+    if (!item.assignmentId) return null;
+    const normalize = (value: string | null) => (value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "");
+    const plan = shipments.find(p=>p.transportType==="BILICO_ESSEPI" && (
+      (p.loadId!==null && p.loadId===item.loadId) ||
+      (p.loadId===null && p.commessa.trim().toUpperCase()===item.commessa?.trim().toUpperCase() && normalize(p.camion)===normalize(item.camion))
+    ));
+    return carriers.find(c=>c.id===plan?.plannedCarrierId)?.nome ?? null;
+  };
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<TransportStatus | "">("");
   const [dueOnly, setDueOnly] = useState(false);
@@ -303,7 +316,7 @@ export default function Transports({ items, onBack, onRefresh }: Props) {
                       />
                     </TableCell>
                     <TableCell>{item.commessa ?? "—"}</TableCell>
-                    <TableCell>{item.cliente ?? "—"}</TableCell>
+                    <TableCell>{item.cliente ?? "—"}{plannedCarrier(item)&&<Typography variant="caption" sx={{display:"block"}}>Trasportatore previsto: {plannedCarrier(item)}</Typography>}</TableCell>
                     <TableCell>{item.camion ?? "—"}</TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", minWidth: 150 }}>
                       {formatOptionalDate(item.plannedDepartureDate)}
@@ -432,6 +445,7 @@ export default function Transports({ items, onBack, onRefresh }: Props) {
                       ["Commessa", item.commessa ?? "—"],
                       ["Cliente", item.cliente ?? "—"],
                       ["Carico / Camion", item.camion ?? "—"],
+                      ["Trasportatore previsto", plannedCarrier(item) ?? "—"],
                     ].map(([label, value]) => (
                       <Box key={label} sx={{ minWidth: 0 }}>
                         <Typography variant="caption" color="text.secondary">{label}</Typography>

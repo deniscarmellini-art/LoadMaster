@@ -217,6 +217,7 @@ export default function Shipments({
             transportType: item.transportType,
             trailerId: null,
             carrierId: null,
+            plannedCarrierId: item.plannedCarrierId,
             notes: item.notes,
           }
         : empty,
@@ -334,13 +335,15 @@ export default function Shipments({
   };
   const action = (item: ShipmentItem) =>
     item.persisted && item.shipmentStatus === "PRONTA" ? (
+      <Stack direction="row" spacing={1}>
+      <Button size="small" onClick={()=>open(item)}>Modifica pianificazione</Button>
       <Button
         variant="contained"
         size="small"
         onClick={() => {
           if (item.transportType === "BILICO_ESSEPI") {
             setDepartureItem(item);
-            setDepartureCarrierId(item.carrierId ?? "");
+            setDepartureCarrierId(item.carrierId ?? (activeCarriers.some(c=>c.id===item.plannedCarrierId) ? item.plannedCarrierId : null) ?? "");
             return;
           }
           void depart(item);
@@ -348,6 +351,7 @@ export default function Shipments({
       >
         Conferma partenza
       </Button>
+      </Stack>
     ) : item.shipmentStatus === "IN_VIAGGIO" ||
       item.shipmentStatus === "CONCLUSA" ? null : (
       <Stack direction="row">
@@ -374,11 +378,10 @@ export default function Shipments({
     const trailer = item.trailerId
       ? trailers.find((entry) => entry.id === item.trailerId)?.targa ?? "Rimorchio assegnato"
       : null;
-    if (!trailer) return "Bilico Essepi — Da assegnare";
-    const carrier = item.carrierId
-      ? carriers.find((entry) => entry.id === item.carrierId)?.nome ?? "Trasportatore non disponibile"
-      : null;
-    return carrier ? `${trailer} — ${carrier}` : `${trailer} — Trasportatore da definire`;
+    const planned = item.plannedCarrierId ? " — Previsto: " + (carriers.find(c=>c.id===item.plannedCarrierId)?.nome ?? "Trasportatore non disponibile") : "";
+    if (!trailer) return "Bilico Essepi — Da assegnare" + planned;
+    const carrier = item.carrierId ? carriers.find(c=>c.id===item.carrierId)?.nome ?? "Trasportatore non disponibile" : null;
+    return (carrier ? trailer + " — " + carrier : trailer + " — Trasportatore da definire") + planned;
   };
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
@@ -767,6 +770,7 @@ export default function Shipments({
                   setForm({
                     ...form,
                     transportType: value,
+                    plannedCarrierId: null,
                     trailerId: null,
                     carrierId: null,
                   });
@@ -780,6 +784,10 @@ export default function Shipments({
                   Ritira Cliente
                 </MenuItem>
               </TextField>
+              {form.transportType === "BILICO_ESSEPI" && <TextField select label="Trasportatore previsto" value={form.plannedCarrierId ?? ""} onChange={e=>setForm({...form,plannedCarrierId:e.target.value||null})} helperText="Facoltativo. Il trasportatore effettivo viene confermato alla partenza.">
+                <MenuItem value="">Da definire</MenuItem>
+                {carriers.filter(c=>c.attivo||c.id===form.plannedCarrierId).map(c=><MenuItem key={c.id} value={c.id} disabled={!c.attivo}>{c.nome}{!c.attivo?" (non attivo)":""}</MenuItem>)}
+              </TextField>}
               <TextField
                 multiline
                 minRows={2}

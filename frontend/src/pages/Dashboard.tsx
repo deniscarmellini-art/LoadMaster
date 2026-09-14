@@ -234,6 +234,7 @@ function Dashboard({
         </Box>
         <Box sx={{ order: mobile ? 2 : 2 }}>
           <DashboardContent
+            referenceFor={row=>commesse.find(order=>order.ordine===row.commessa&&order.cliente===row.cliente)?.riferimento || "—"}
             onDelete={(row) => {setDeleteRow(row);setDeletePlanningWarning(false);setDeleteError(null);}}
             onContinueLoad={(row) => {
               const load = truckLoads.find(
@@ -260,7 +261,8 @@ function Dashboard({
             }}
             onConfirmDeparture={(row) => {
               setDepartureRow(row);
-              setDepartureCarrierId("");
+              const plan = shipments.find(item=>item.loadId===row.id);
+              setDepartureCarrierId(carriers.some(c=>c.attivo&&c.id===plan?.plannedCarrierId) ? plan!.plannedCarrierId! : "");
               setDepartureAt(new Date().toISOString());
             }}
             onOpenHistory={onOpenHistory}

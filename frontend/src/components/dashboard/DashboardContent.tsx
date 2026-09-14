@@ -17,6 +17,7 @@ import { dashboardColors } from "../../theme/theme";
 
 interface DashboardContentProps {
   rows: Camion[];
+  referenceFor: (row: Camion) => string;
   onDelete: (row: Camion) => void;
   onOpenScanning: (row: Camion) => void;
   onStartLoad: (row: Camion) => void;
@@ -32,7 +33,7 @@ interface DashboardContentProps {
   transports: TransportItem[];
 }
 
-export default function DashboardContent({ rows, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory, shipments, carriers, transports }: DashboardContentProps) {
+export default function DashboardContent({ rows, referenceFor, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory, shipments, carriers, transports }: DashboardContentProps) {
   const [search, setSearch] = useState("");
   const theme = useTheme();
   const narrowPhone = useMediaQuery(theme.breakpoints.down("sm"));
@@ -92,7 +93,7 @@ export default function DashboardContent({ rows, onDelete, onOpenScanning, onSta
       />
       {mobile
         ? <DashboardMobileCards hasPackages={hasPackages} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onStartLoad={onStartLoad} rows={visibleRows} shipmentFor={shipmentFor} transportFor={transportFor} />
-        : <Box sx={{ height: 620, width: "100%" }}><DashboardGrid hasPackages={hasPackages} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} shipmentFor={shipmentFor} transportFor={transportFor} /></Box>}
+        : <Box sx={{ height: 620, width: "100%" }}><DashboardGrid referenceFor={referenceFor} hasPackages={hasPackages} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} shipmentFor={shipmentFor} transportFor={transportFor} /></Box>}
     </Paper>
   );
 }

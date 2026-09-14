@@ -605,6 +605,8 @@ export default function App() {
         ) : page === "transports" ? (
           <Transports
             items={transports}
+            shipments={shipmentsWithOperationalStatus}
+            carriers={settings.trasportatori}
             onBack={() => setPage("dashboard")}
             onRefresh={async () => setTransports(await listTransports())}
           />

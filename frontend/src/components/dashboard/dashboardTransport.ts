@@ -7,6 +7,7 @@ export interface DashboardTransportPresentation {
   transport: string;
   trailer: string | null;
   carrier: string | null;
+  plannedCarrier?: string | null;
 }
 
 const emptyPresentation: DashboardTransportPresentation = {
@@ -24,7 +25,7 @@ export const dashboardTransportPresentation = (
   if (!shipment?.transportType) return emptyPresentation;
   const transportType: string = shipment.transportType;
 
-  if (transportType === "RITIRO_CLIENTE") {
+  if (transportType === "RITIRO_CLIENTE" || (transportType === "TRASPORTATORE_ESTERNO" && !shipment.carrierId)) {
     return {
       label: "Ritiro cliente",
       transport: "Ritiro cliente",
@@ -34,19 +35,19 @@ export const dashboardTransportPresentation = (
   }
 
   if (transportType === "BILICO_ESSEPI") {
-    const trailer = shipment.loadId
-      ? transports.find(
+    const trailer = transports.find(
           (item) =>
             item.assignmentId !== null &&
-            item.loadId === shipment.loadId,
-        )
-      : undefined;
-    const trailerLabel = trailer?.plate ?? "Da assegnare";
+            (shipment.loadId ? item.loadId === shipment.loadId :
+              item.source === "MANUAL" && item.commessa?.trim().toUpperCase() === shipment.commessa.trim().toUpperCase() &&
+              (item.camion??"").replace(/[\s-]+/g,"").toUpperCase() === (shipment.camion??"").replace(/[\s-]+/g,"").toUpperCase()),
+        );
     return {
-      label: `Bilico Essepi · ${trailerLabel}`,
+      label: trailer ? `Bilico Essepi · ${trailer.plate}` : "Bilico Essepi",
       transport: "Bilico Essepi",
       trailer: trailer?.plate ?? null,
       carrier: null,
+      plannedCarrier: carriers.find(item=>item.id===shipment.plannedCarrierId)?.nome ?? null,
     };
   }
 

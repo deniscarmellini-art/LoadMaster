@@ -14,6 +14,7 @@ export interface ShipmentInput {
   transportType?: ShipmentTransportType | null;
   trailerId?: string | null;
   carrierId?: string | null;
+  plannedCarrierId?: string | null;
   notes?: string | null;
 }
 export interface ShipmentRecord {
@@ -31,6 +32,7 @@ export interface ShipmentRecord {
   transportType: ShipmentTransportType | null;
   trailerId: string | null;
   carrierId: string | null;
+  plannedCarrierId: string | null;
   notes: string | null;
   shipmentStatus: ShipmentStatus;
   operationalStatus: string | null;
@@ -107,6 +109,19 @@ export class ShipmentRepository {
   find(id: string): ShipmentRecord | null {
     return this.list().find((x) => x.id === id) ?? null;
   }
+  validatePlannedCarrier(input: ShipmentInput, previous?: string | null): void {
+    if (!input.plannedCarrierId) return;
+    const carrier = this.db.prepare("SELECT active FROM Carriers WHERE id=?").get(input.plannedCarrierId) as {active:number}|undefined;
+    if (!carrier || (!carrier.active && input.plannedCarrierId !== previous)) throw new Error("INVALID_PLANNED_CARRIER");
+  }
+  assertNotDeparted(id: string): void {
+    const plan = this.find(id);
+    if (!plan) return;
+    const session = plan.loadId && this.db.prepare("SELECT 1 FROM LoadingSessions WHERE loadId=? AND (shippedAt IS NOT NULL OR stato='SPEDITO')").get(plan.loadId);
+    const movement = this.db.prepare("SELECT 1 FROM TransportAssignments WHERE ((loadId IS NOT NULL AND loadId=?) OR (source='MANUAL' AND UPPER(TRIM(manualCommessa))=UPPER(TRIM(?)) AND UPPER(REPLACE(REPLACE(TRIM(COALESCE(manualCarico,'')),' ',''),'-',''))=?)) AND (departedAt IS NOT NULL OR availableFrom IS NOT NULL OR stato='IN_VIAGGIO')").get(plan.loadId,plan.commessa,norm(plan.camion??""));
+    if (plan.actualDepartureDate || plan.operationalStatus === "SPEDITO" || plan.shipmentStatus === "IN_VIAGGIO" || plan.shipmentStatus === "CONCLUSA" || session || movement)
+      throw new Error("SHIPMENT_CONSOLIDATED");
+  }
   create(input: ShipmentInput): ShipmentRecord {
     const now = new Date().toISOString(),
       id = crypto.randomUUID();
@@ -114,7 +129,7 @@ export class ShipmentRepository {
       this.assertUnique(input);
       this.db
         .prepare(
-          "INSERT INTO ShipmentPlans(id,loadId,manualCommessa,manualCliente,manualCarico,plannedLoadingDate,plannedDepartureDate,originalPlannedDepartureDate,plannedDepartureDateChangedAt,transportType,trailerId,carrierId,notes,createdAt,updatedAt)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO ShipmentPlans(id,loadId,manualCommessa,manualCliente,manualCarico,plannedLoadingDate,plannedDepartureDate,originalPlannedDepartureDate,plannedDepartureDateChangedAt,transportType,trailerId,carrierId,plannedCarrierId,notes,createdAt,updatedAt)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         )
         .run(
           id,
@@ -129,6 +144,7 @@ export class ShipmentRepository {
           input.transportType || null,
           input.trailerId || null,
           input.carrierId || null,
+          input.plannedCarrierId || null,
           input.notes?.trim() || null,
           now,
           now,
@@ -158,7 +174,7 @@ export class ShipmentRepository {
       this.assertUnique(input, id);
       this.db
         .prepare(
-          "UPDATE ShipmentPlans SET loadId=?,manualCommessa=?,manualCliente=?,manualCarico=?,plannedLoadingDate=?,plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,transportType=?,trailerId=?,carrierId=?,notes=?,updatedAt=? WHERE id=?",
+          "UPDATE ShipmentPlans SET loadId=?,manualCommessa=?,manualCliente=?,manualCarico=?,plannedLoadingDate=?,plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,transportType=?,plannedCarrierId=?,notes=?,updatedAt=? WHERE id=?",
         )
         .run(
           input.loadId || null,
@@ -170,8 +186,7 @@ export class ShipmentRepository {
           originalPlannedDepartureDate,
           plannedDepartureDateChangedAt,
           input.transportType || null,
-          input.trailerId || null,
-          input.carrierId || null,
+          input.plannedCarrierId || null,
           input.notes?.trim() || null,
           now,
           id,
@@ -301,6 +316,7 @@ export class ShipmentRepository {
       transportType: type,
       trailerId: nullable(r, "resolvedTrailerId") ?? nullable(r, "trailerId"),
       carrierId: nullable(r, "carrierId"),
+      plannedCarrierId: nullable(r, "plannedCarrierId"),
       notes: nullable(r, "notes"),
       shipmentStatus: status,
       operationalStatus: operational,

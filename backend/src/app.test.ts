@@ -10,6 +10,38 @@ import { loadConfig, type AppConfig } from "./config/environment.js";
 import { addBusinessDays } from "./repositories/transportRepository.js";
 import { assertTestDatabase, productionDatabase, testConfig, testDatabase } from "./config/testEnvironment.js";
 
+test("trasportatore previsto separato dall'effettivo, modificabile e cancellabile prima della partenza", async()=>{
+  const app=await buildApp(config);
+  try {
+    const carriers=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>();
+    const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const trailer=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("PLAN-CARRIER","C1")])})).json<Array<{id:string;commessa:string;cliente:string;camion:string;pannelli:Array<{id:string}>}>>()[0]!;
+    const input={loadId:load.id,commessa:load.commessa,cliente:load.cliente,camion:load.camion,transportType:"BILICO_ESSEPI",plannedCarrierId:carriers[0]!.id};
+    const created=await app.inject({method:"POST",url:"/api/shipments",payload:input});
+    assert.equal(created.statusCode,200);
+    const plan=created.json<{id:string;plannedCarrierId:string;carrierId:null;trailerId:null}>();
+    assert.equal(plan.plannedCarrierId,carriers[0]!.id);assert.equal(plan.carrierId,null);assert.equal(plan.trailerId,null);
+    const update=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedCarrierId:carriers[1]!.id}});
+    assert.equal(update.statusCode,200);assert.equal(update.json().plannedCarrierId,carriers[1]!.id);
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedCarrierId:"missing"}})).statusCode,400);
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,transportType:"TRASPORTATORE_ESTERNO"}})).statusCode,400);
+    assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`})).statusCode,200);
+    const second=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json<{id:string}>();
+    await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});
+    const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",trailerId:trailer.id}})).json<{id:string}>();
+    await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});
+    assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/complete`})).statusCode,200);
+    const edited=await app.inject({method:"PUT",url:`/api/shipments/${second.id}`,payload:{...input,plannedCarrierId:carriers[1]!.id}});
+    assert.equal(edited.statusCode,200);assert.equal(edited.json().trailerId,trailer.id);assert.equal(edited.json().carrierId,null);
+    assert.equal((await app.inject({method:"POST",url:`/api/shipments/${second.id}/depart`,payload:{carrierId:carriers[0]!.id}})).statusCode,200);
+    const final=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;carrierId:string;plannedCarrierId:string}>>().find(p=>p.id===second.id)!;
+    assert.equal(final.carrierId,carriers[0]!.id);assert.equal(final.plannedCarrierId,carriers[1]!.id);
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${second.id}`,payload:input})).statusCode,409);
+    assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${second.id}`})).statusCode,409);
+  } finally {await app.close();}
+});
+
 test("il server TEST ignora porta, database e HTTPS ereditati dalla produzione",()=>{
   const keys=["NODE_ENV","PORT","DATABASE_URL","HTTPS_KEY_PATH","HTTPS_CERT_PATH"] as const;
   const previous=keys.map(key=>[key,process.env[key]] as const);

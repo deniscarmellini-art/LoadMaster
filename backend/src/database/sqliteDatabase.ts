@@ -163,6 +163,8 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
   migrateTransportAssignmentSchema(database);
   migratePlannedDepartureDate(database);
   migrateShipmentPlanDepartureTracking(database);
+  const shipmentColumns = new Set((database.prepare("PRAGMA table_info(ShipmentPlans)").all() as Array<{name:string}>).map(column=>column.name));
+  if(!shipmentColumns.has("plannedCarrierId")) database.exec("ALTER TABLE ShipmentPlans ADD COLUMN plannedCarrierId TEXT NULL REFERENCES Carriers(id)");
   migrateTransportAssignments(database);
   seedSettings(database);
   return {
