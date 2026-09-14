@@ -3,8 +3,11 @@
   "scripts": {
     "dev": "node scripts/start-test.mjs",
     "start:test": "node scripts/start-test.mjs",
+    "start:demo": "node scripts/start-demo.mjs",
     "db:test:init": "node scripts/init-test-db.mjs",
     "db:test:refresh": "node scripts/init-test-db.mjs --refresh",
+    "db:demo:reset": "node scripts/init-demo-db.mjs --reset",
+    "db:demo:remove": "node scripts/remove-demo-db.mjs",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build": "npm --prefix backend run build && npm --prefix frontend run build",

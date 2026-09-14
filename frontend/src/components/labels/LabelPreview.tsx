@@ -1,6 +1,7 @@
 import { Box } from "@mui/material";
 import { QRCodeSVG } from "qrcode.react";
 import type { Pannello } from "../../types/excel";
+import { isDemoEnvironment } from "../../services/demoBranding";
 
 export interface LabelFields { anno:string; commessa:string; cliente:string; riferimento:string; tipologia:string; dtp:string; operatore:string; autMin:string; codiceEta:string; cpr:string; dataOra:string; rotate:boolean; }
 interface Props { panel:Pannello; fields:LabelFields; index:number; }
@@ -11,7 +12,7 @@ export default function LabelPreview({ panel, fields, index }:Props) {
   const serial = `${fields.anno}-${fields.commessa}-${number.padStart(3,"0")}`;
   const qr = `C=${fields.commessa}|CL=${fields.cliente}|N=${panel.numeroPannello}|CA=${panel.numeroCamion}|S=${Math.round(panel.spessore)}|L=${Math.round(panel.lunghezza)}|H=${Math.round(panel.altezza)}|P=${Math.round(panel.peso)}`;
   return <Box className={`print-label${fields.rotate ? " print-label--rotated" : ""}`}>
-    <Box className="label-brand"><img className="label-logo" src="/essepi-logo-print.png" alt="ESSEPI finestre & xlam" /></Box>
+    <Box className="label-brand">{isDemoEnvironment ? <Box sx={{alignItems:"center",bgcolor:"#111",color:"#fff",display:"flex",fontSize:".75rem",fontWeight:900,height:42,justifyContent:"center",width:96}}>SisLog DEMO</Box> : <img className="label-logo" src="/essepi-logo-print.png" alt="ESSEPI finestre & xlam" />}</Box>
     <Box className="label-heading">
       <Box className="heading-panel"><small>Elemento</small><strong className="heading-value">{panel.numeroPannello}</strong><span>Master panel <b>{panel.numeroMasterPanel}</b></span></Box>
       <Box className="heading-order"><small>Commessa</small><strong className="heading-value">{fields.commessa}</strong></Box>

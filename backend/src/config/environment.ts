@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
 
-export type NodeEnvironment = "development" | "test" | "production";
+export type NodeEnvironment = "development" | "test" | "demo" | "production";
 
 export interface AppConfig {
   port: number;
@@ -23,8 +23,8 @@ const parsePort = (value: string | undefined): number => {
 
 const parseEnvironment = (value: string | undefined): NodeEnvironment => {
   const environment = value ?? "development";
-  if (environment !== "development" && environment !== "test" && environment !== "production") {
-    throw new Error("NODE_ENV deve essere development, test oppure production");
+  if (environment !== "development" && environment !== "test" && environment !== "demo" && environment !== "production") {
+    throw new Error("NODE_ENV deve essere development, test, demo oppure production");
   }
   return environment;
 };

@@ -1,6 +1,7 @@
 import type { Trasportatore } from "../../models/Settings";
 import type { ShipmentItem } from "../../services/shipmentsApi";
 import type { TransportItem } from "../../services/transportsApi";
+import { demoBranding } from "../../services/demoBranding";
 
 export interface DashboardTransportPresentation {
   label: string;
@@ -43,8 +44,8 @@ export const dashboardTransportPresentation = (
               (item.camion??"").replace(/[\s-]+/g,"").toUpperCase() === (shipment.camion??"").replace(/[\s-]+/g,"").toUpperCase()),
         );
     return {
-      label: trailer ? `Bilico Essepi · ${trailer.plate}` : "Bilico Essepi",
-      transport: "Bilico Essepi",
+      label: trailer ? `${demoBranding.bilico} · ${trailer.plate}` : demoBranding.bilico,
+      transport: demoBranding.bilico,
       trailer: trailer?.plate ?? null,
       carrier: null,
       plannedCarrier: carriers.find(item=>item.id===shipment.plannedCarrierId)?.nome ?? null,

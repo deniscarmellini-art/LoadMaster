@@ -40,6 +40,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\init-test-db.p
 
 Il comando senza `-Refresh` conserva un DB TEST gia esistente. Il refresh archivia il precedente DB TEST in `sistema-logistico-test.sqlite.<timestamp>.bak`. Le modifiche fatte in TEST non vengono mai sincronizzate verso production. Il lock `backend/data/.sislog-test.lock` impedisce refresh/avvii concorrenti. Dopo un arresto forzato del PC puo rimanere: prima di rimuoverlo manualmente verificare che il PID scritto nel lock e i processi TEST sulle porte 3002/5174 siano terminati. Non fermare mai il processo production sulla 3001. I file journal/WAL residui bloccano il refresh: aprire e chiudere regolarmente TEST prima di riprovare.
 
+## Ambiente DEMO — dati fittizi
+
+L'ambiente DEMO e' dedicato esclusivamente a screenshot e dimostrazioni commerciali. Usa il database indipendente `backend/data/sistema-logistico-demo.sqlite`, non legge, copia o modifica i database Production e TEST.
+
+```powershell
+# Rigenera sempre lo stesso dataset fittizio.
+npm.cmd run db:demo:reset
+# Avvia DEMO: frontend http://localhost:5175 e API http://127.0.0.1:3003.
+npm.cmd run start:demo
+# Rimuove esclusivamente il database DEMO dopo aver arrestato l'ambiente.
+npm.cmd run db:demo:remove
+```
+
+L'interfaccia mostra la fascia **AMBIENTE DEMO — DATI FITTIZI**. Il database DEMO e' ignorato da Git insieme agli altri file SQLite locali.
+
 ## Avvio PRODUZIONE (invariato)
 
 ```powershell

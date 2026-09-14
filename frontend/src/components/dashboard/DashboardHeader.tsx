@@ -20,6 +20,7 @@ import {
 } from "@mui/material";
 
 import essepiLogo from "../../assets/logo-essepi-finestre-xlam.jpg";
+import { demoBranding, isDemoEnvironment } from "../../services/demoBranding";
 
 interface DashboardHeaderProps {
   section?: "header" | "menu";
@@ -109,19 +110,14 @@ export default function DashboardHeader({
           direction="row"
           sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}
         >
-          <Box
-            alt="Essepi - finestre & xlam"
-            component="img"
-            src={essepiLogo}
-            sx={{ aspectRatio: "1 / 1", height: 48, objectFit: "contain" }}
-          />
+          {isDemoEnvironment ? <Box sx={{alignItems:"center",bgcolor:"primary.main",borderRadius:1.5,color:"primary.contrastText",display:"flex",fontSize:".67rem",fontWeight:900,height:42,justifyContent:"center",letterSpacing:.4,textAlign:"center",width:58}}>SisLog<br/>DEMO</Box> : <Box alt="Essepi - finestre & xlam" component="img" src={essepiLogo} sx={{ aspectRatio: "1 / 1", height: 48, objectFit: "contain" }} />}
           <Box sx={{ minWidth: 0, textAlign: "center" }}>
             <Typography
               component="h1"
               noWrap
               sx={{ fontSize: "1.45rem", fontWeight: 900, lineHeight: 1.1 }}
             >
-              Sistema Logistico
+              {demoBranding.application}
             </Typography>
             <Typography
               noWrap
@@ -233,18 +229,7 @@ export default function DashboardHeader({
         <Box
           sx={{ alignItems: "center", display: "flex", justifySelf: "start" }}
         >
-          <Box
-            alt="Essepi - finestre & xlam"
-            component="img"
-            src={essepiLogo}
-            sx={{
-              aspectRatio: "1 / 1",
-              display: "block",
-              height: { xs: 66, sm: 78, md: 94 },
-              objectFit: "contain",
-              width: "auto",
-            }}
-          />
+          {isDemoEnvironment ? <Box sx={{alignItems:"center",bgcolor:"primary.main",borderRadius:2,color:"primary.contrastText",display:"flex",fontSize:{xs:".82rem",md:"1rem"},fontWeight:900,height:{xs:58,sm:70,md:84},justifyContent:"center",letterSpacing:.7,lineHeight:1.15,textAlign:"center",width:{xs:66,sm:80,md:96}}}>SisLog<br/>DEMO</Box> : <Box alt="Essepi - finestre & xlam" component="img" src={essepiLogo} sx={{aspectRatio:"1 / 1",display:"block",height:{xs:66,sm:78,md:94},objectFit:"contain",width:"auto"}} />}
         </Box>
         <Box sx={{ justifySelf: "center", textAlign: "center" }}>
           <Typography
@@ -256,7 +241,7 @@ export default function DashboardHeader({
               lineHeight: 1.05,
             }}
           >
-            Sistema Logistico
+            {demoBranding.application}
           </Typography>
           <Typography
             component="p"

@@ -46,6 +46,7 @@ import {
 } from "../services/shipmentsApi";
 import type { TransportItem } from "../services/transportsApi";
 import PlannedDepartureDate from "../components/shipments/PlannedDepartureDate";
+import { demoBranding } from "../services/demoBranding";
 import { operationalStatusPresentation } from "../services/dashboardService";
 import { ApiClientError } from "../services/apiClient";
 interface Props {
@@ -379,7 +380,7 @@ export default function Shipments({
       ? trailers.find((entry) => entry.id === item.trailerId)?.targa ?? "Rimorchio assegnato"
       : null;
     const planned = item.plannedCarrierId ? " — Previsto: " + (carriers.find(c=>c.id===item.plannedCarrierId)?.nome ?? "Trasportatore non disponibile") : "";
-    if (!trailer) return "Bilico Essepi — Da assegnare" + planned;
+    if (!trailer) return `${demoBranding.bilico} — Da assegnare` + planned;
     const carrier = item.carrierId ? carriers.find(c=>c.id===item.carrierId)?.nome ?? "Trasportatore non disponibile" : null;
     return (carrier ? trailer + " — " + carrier : trailer + " — Trasportatore da definire") + planned;
   };
@@ -399,7 +400,7 @@ export default function Shipments({
             : null;
         case "transportType":
           return item.transportType === "BILICO_ESSEPI"
-            ? "Bilico Essepi"
+            ? demoBranding.bilico
             : item.transportType === "TRASPORTATORE_ESTERNO"
               ? "Ritira Cliente"
               : null;
@@ -555,7 +556,7 @@ export default function Shipments({
               }
             >
               <MenuItem value="">Tutti</MenuItem>
-              <MenuItem value="BILICO_ESSEPI">Bilico Essepi</MenuItem>
+              <MenuItem value="BILICO_ESSEPI">{demoBranding.bilico}</MenuItem>
               <MenuItem value="TRASPORTATORE_ESTERNO">Ritira Cliente</MenuItem>
             </TextField>
             <TextField
@@ -602,7 +603,7 @@ export default function Shipments({
                     <Typography variant="body2">
                       Trasporto:{" "}
                       {item.transportType === "BILICO_ESSEPI"
-                        ? "Bilico Essepi"
+                        ? demoBranding.bilico
                         : item.transportType === "TRASPORTATORE_ESTERNO"
                           ? "Ritira Cliente"
                           : "—"}
@@ -690,7 +691,7 @@ export default function Shipments({
                       </TableCell>
                       <TableCell>
                         {item.transportType === "BILICO_ESSEPI"
-                          ? "Bilico Essepi"
+                        ? demoBranding.bilico
                           : item.transportType === "TRASPORTATORE_ESTERNO"
                             ? "Ritira Cliente"
                             : "—"}
@@ -779,7 +780,7 @@ export default function Shipments({
                 <MenuItem value="" disabled>
                   Seleziona tipo trasporto
                 </MenuItem>
-                <MenuItem value="BILICO_ESSEPI">Bilico Essepi</MenuItem>
+                <MenuItem value="BILICO_ESSEPI">{demoBranding.bilico}</MenuItem>
                 <MenuItem value="TRASPORTATORE_ESTERNO">
                   Ritira Cliente
                 </MenuItem>

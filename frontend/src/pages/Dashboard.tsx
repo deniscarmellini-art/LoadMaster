@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { demoBranding } from "../services/demoBranding";
 import {
   Alert,
   Box,
@@ -404,7 +405,7 @@ function Dashboard({
               slotProps={{ input: { readOnly: true } }}
             />
             <TextField
-              label="Rimorchio Essepi"
+              label={demoBranding.rimorchio}
               value={
                 departureTrailer
                   ? `${departureTrailer.targa} — ${departureTrailer.descrizione}`

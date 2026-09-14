@@ -16,6 +16,7 @@ backend/node_modules/
 backend/.test-dist/
 .verification/
 backend/data/.sislog-test.lock
+backend/data/.sislog-demo.lock
 backend/data/*.sqlite.*
 **/.env.local
 **/.env.*.local
