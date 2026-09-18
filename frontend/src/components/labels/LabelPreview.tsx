@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import type { Pannello } from "../../types/excel";
 import { isDemoEnvironment } from "../../services/demoBranding";
 
-export interface LabelFields { anno:string; commessa:string; cliente:string; riferimento:string; tipologia:string; dtp:string; operatore:string; autMin:string; codiceEta:string; cpr:string; dataOra:string; rotate:boolean; }
+export interface LabelFields { anno:string; commessa:string; cliente:string; riferimento:string; dtp:string; operatore:string; autMin:string; codiceEta:string; cpr:string; dataOra:string; rotate:boolean; }
 interface Props { panel:Pannello; fields:LabelFields; index:number; }
 const show = (v:string|number) => v === "" ? "—" : String(v);
 
@@ -20,7 +20,7 @@ export default function LabelPreview({ panel, fields, index }:Props) {
       <Box className="heading-ce"><img className="heading-ce-mark" src="/ce-mark-official.png" alt="Marcatura CE" /><Box className="heading-certification"><small>C. TRAF. AUT_MIN</small><b>{fields.autMin}</b></Box><Box className="heading-certification"><small>CODICE ETA</small><b>{fields.codiceEta}</b></Box><Box className="heading-certification"><small>CODICE CPR</small><b>{fields.cpr}</b></Box></Box>
     </Box>
     <Box className="label-details">
-      <span>Matricola</span><b className="large">{serial}</b><span>Tipologia</span><b>{show(fields.tipologia || panel.tipoPannello)}</b>
+      <span>Matricola</span><b className="large">{serial}</b><span>Tipologia</span><b>{show(panel.tipoPannello)}</b>
       <span>Qualità lato 1 / lato 2</span><b>{show(`${panel.lato1} / ${panel.lato2}`)}</b><span>S × L × H (mm)</span><b>{Math.round(panel.spessore)} × {Math.round(panel.lunghezza)} × {Math.round(panel.altezza)}</b>
       <span>Peso</span><b className="large">{Math.round(panel.peso)} KG</b><span>Cliente</span><b>{show(fields.cliente)}</b><span>Rif. ordine</span><b>{show(fields.riferimento)}</b>
     </Box>

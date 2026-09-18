@@ -15,7 +15,7 @@ export class ShipmentService {
   create(input: ShipmentInput) {
     this.validate(input);
     try {
-      this.repo.validatePlannedCarrier(input);
+      this.repo.validateTransportDetail(input);
       return this.repo.create(input);
     } catch (e) {
       return this.conflict(e);
@@ -25,7 +25,7 @@ export class ShipmentService {
     this.validate(input);
     try {
       this.repo.assertNotDeparted(id);
-      this.repo.validatePlannedCarrier(input, this.repo.find(id)?.plannedCarrierId);
+      this.repo.validateTransportDetail(input, this.repo.find(id)?.transportDetailId);
       const value = this.repo.update(id, input);
       if (!value)
         throw new ApiError(404, "RESOURCE_NOT_FOUND", "Spedizione non trovata");
@@ -117,8 +117,10 @@ export class ShipmentService {
         "VALIDATION_ERROR",
         "Tipo trasporto obbligatorio",
       );
+    if(input.transportDetailId&&input.plannedCarrierId&&input.transportDetailId!==input.plannedCarrierId)
+      throw new ApiError(400,"VALIDATION_ERROR","Dettaglio trasporto incoerente");
     if (input.plannedCarrierId && (typeof input.plannedCarrierId !== "string" || input.transportType !== "BILICO_ESSEPI"))
-      throw new ApiError(400, "VALIDATION_ERROR", "Trasportatore previsto consentito solo per Bilico Essepi");
+      throw new ApiError(400, "VALIDATION_ERROR", "Trasportatore Essepi consentito solo per Bilico Essepi");
     if (input.trailerId || input.carrierId)
       throw new ApiError(
         400,
@@ -128,7 +130,7 @@ export class ShipmentService {
   }
   private conflict(error: unknown): never {
     if (error instanceof ApiError) throw error;
-    if (error instanceof Error && error.message === "INVALID_PLANNED_CARRIER") throw new ApiError(400,"VALIDATION_ERROR","Trasportatore previsto non disponibile");
+    if (error instanceof Error && error.message === "INVALID_TRANSPORT_DETAIL") throw new ApiError(400,"VALIDATION_ERROR","Dettaglio della modalità di trasporto non disponibile o incoerente");
     if (error instanceof Error && error.message === "SHIPMENT_CONSOLIDATED") throw new ApiError(409,"SHIPMENT_CONSOLIDATED","Spedizione già partita o consolidata");
     if (error instanceof Error && error.message === "SHIPMENT_DUPLICATE")
       throw new ApiError(

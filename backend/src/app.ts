@@ -36,6 +36,9 @@ import { operationalSettingRoutes } from "./routes/operationalSettingRoutes.js";
 import { ShipmentRepository } from "./repositories/shipmentRepository.js";
 import { ShipmentService } from "./services/shipmentService.js";
 import { shipmentRoutes } from "./routes/shipmentRoutes.js";
+import { TransportRegistryRepository } from "./repositories/transportRegistryRepository.js";
+import { TransportRegistryService } from "./services/transportRegistryService.js";
+import { transportRegistryRoutes } from "./routes/transportRegistryRoutes.js";
 
 export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   if(config.environment==="production"){
@@ -55,6 +58,8 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const operatorService = new OperatorService(new OperatorRepository(connection.database));
   const trailerService = new TrailerService(new TrailerRepository(connection.database));
   const carrierService = new CarrierService(new CarrierRepository(connection.database));
+  const clientVehicleTypeService=new TransportRegistryService(new TransportRegistryRepository(connection.database,"ClientVehicleTypes"),"Tipo di mezzo cliente");
+  const thirdPartyTransportModeService=new TransportRegistryService(new TransportRegistryRepository(connection.database,"ThirdPartyTransportModes"),"Modalità Terzi per Essepi");
   const transportRepository=new TransportRepository(connection.database);
   const loadService = new LoadService(new LoadRepository(connection.database));
   const scanningService = new ScanningService(new ScanningRepository(connection.database));
@@ -72,6 +77,8 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(operatorRoutes, { prefix: "/api/operators", service: operatorService });
   await app.register(trailerRoutes, { prefix: "/api/trailers", service: trailerService });
   await app.register(carrierRoutes, { prefix: "/api/carriers", service: carrierService });
+  await app.register(transportRegistryRoutes,{prefix:"/api/client-vehicle-types",service:clientVehicleTypeService});
+  await app.register(transportRegistryRoutes,{prefix:"/api/third-party-transport-modes",service:thirdPartyTransportModeService});
   await app.register(operationalSettingRoutes, { prefix: "/api/operational-settings", service: operationalSettingService });
   await app.register(loadRoutes, { prefix: "/api/loads", service: loadService });
   await app.register(orderRoutes, { prefix: "/api/orders", service: loadService });

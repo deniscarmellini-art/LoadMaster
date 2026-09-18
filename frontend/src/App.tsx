@@ -615,6 +615,8 @@ export default function App() {
             items={shipmentsWithOperationalStatus}
             trailers={settings.rimorchi}
             carriers={settings.trasportatori}
+            clientVehicleTypes={settings.tipiMezzoCliente}
+            thirdPartyTransportModes={settings.modalitaTerziEssepi}
             transports={transports}
             onBack={() => setPage("dashboard")}
             onRefresh={refreshScanningData}

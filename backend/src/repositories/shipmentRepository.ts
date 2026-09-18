@@ -3,7 +3,7 @@ import { reconcileAllOperationalLoadStatuses } from "./operationalLoadStatus.js"
 
 export type ShipmentStatus =
   "DA_PIANIFICARE" | "PIANIFICATA" | "PRONTA" | "IN_VIAGGIO" | "CONCLUSA";
-export type ShipmentTransportType = "BILICO_ESSEPI" | "TRASPORTATORE_ESTERNO";
+export type ShipmentTransportType = "BILICO_ESSEPI" | "RITIRA_CLIENTE" | "TERZI_PER_ESSEPI";
 export interface ShipmentInput {
   loadId?: string | null;
   commessa: string;
@@ -12,6 +12,7 @@ export interface ShipmentInput {
   plannedLoadingDate?: string | null;
   plannedDepartureDate?: string | null;
   transportType?: ShipmentTransportType | null;
+  transportDetailId?: string | null;
   trailerId?: string | null;
   carrierId?: string | null;
   plannedCarrierId?: string | null;
@@ -23,6 +24,7 @@ export interface ShipmentRecord {
   loadId: string | null;
   commessa: string;
   cliente: string;
+  orderReference: string | null;
   camion: string | null;
   plannedLoadingDate: string | null;
   plannedDepartureDate: string | null;
@@ -30,6 +32,8 @@ export interface ShipmentRecord {
   plannedDepartureDateChangedAt: string | null;
   actualDepartureDate: string | null;
   transportType: ShipmentTransportType | null;
+  transportDetailId: string | null;
+  transportDetailLabel: string | null;
   trailerId: string | null;
   carrierId: string | null;
   plannedCarrierId: string | null;
@@ -56,6 +60,7 @@ export class ShipmentRepository {
           COALESCE(l.commessa,p.manualCommessa) commessa,
           COALESCE(l.cliente,p.manualCliente) cliente,
           COALESCE(l.camion,p.manualCarico) camion,
+          l.riferimentoOrdine orderReference,
           l.stato operationalStatus,
           COALESCE((
             SELECT a.trailerId FROM TransportAssignments a
@@ -89,7 +94,7 @@ export class ShipmentRepository {
     const plannedLoads = new Set(plans.map((p) => p.loadId).filter(Boolean));
     const virtual = this.db
       .prepare(
-        `SELECT l.id loadId,l.commessa,l.cliente,l.camion,l.stato operationalStatus,
+        `SELECT l.id loadId,l.commessa,l.cliente,l.camion,l.riferimentoOrdine orderReference,l.stato operationalStatus,
           l.createdAt,l.updatedAt,
           (SELECT a.trailerId FROM TransportAssignments a
             WHERE a.loadId=l.id AND a.releasedAt IS NULL
@@ -109,10 +114,23 @@ export class ShipmentRepository {
   find(id: string): ShipmentRecord | null {
     return this.list().find((x) => x.id === id) ?? null;
   }
-  validatePlannedCarrier(input: ShipmentInput, previous?: string | null): void {
-    if (!input.plannedCarrierId) return;
-    const carrier = this.db.prepare("SELECT active FROM Carriers WHERE id=?").get(input.plannedCarrierId) as {active:number}|undefined;
-    if (!carrier || (!carrier.active && input.plannedCarrierId !== previous)) throw new Error("INVALID_PLANNED_CARRIER");
+  validateTransportDetail(input: ShipmentInput, previous?: string | null): void {
+    const detailId=this.detailId(input);
+    if (!detailId) return;
+    const table=input.transportType==="BILICO_ESSEPI"?"Carriers":input.transportType==="RITIRA_CLIENTE"?"ClientVehicleTypes":"ThirdPartyTransportModes";
+    const detail=this.db.prepare(`SELECT active FROM ${table} WHERE id=?`).get(detailId) as {active:number}|undefined;
+    if(!detail||(!detail.active&&detailId!==previous))throw new Error("INVALID_TRANSPORT_DETAIL");
+  }
+  private detailLabel(input:ShipmentInput):string|null {
+    const detailId=this.detailId(input);
+    if(!detailId)return null;
+    const table=input.transportType==="BILICO_ESSEPI"?"Carriers":input.transportType==="RITIRA_CLIENTE"?"ClientVehicleTypes":"ThirdPartyTransportModes";
+    const row=this.db.prepare(`SELECT name FROM ${table} WHERE id=?`).get(detailId) as {name:string}|undefined;
+    return row?.name??null;
+  }
+  private detailId(input:ShipmentInput):string|null {
+    const value=input.transportDetailId??input.plannedCarrierId;
+    return typeof value==="string"&&value.trim()?value.trim():null;
   }
   assertNotDeparted(id: string): void {
     const plan = this.find(id);
@@ -129,7 +147,7 @@ export class ShipmentRepository {
       this.assertUnique(input);
       this.db
         .prepare(
-          "INSERT INTO ShipmentPlans(id,loadId,manualCommessa,manualCliente,manualCarico,plannedLoadingDate,plannedDepartureDate,originalPlannedDepartureDate,plannedDepartureDateChangedAt,transportType,trailerId,carrierId,plannedCarrierId,notes,createdAt,updatedAt)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO ShipmentPlans(id,loadId,manualCommessa,manualCliente,manualCarico,plannedLoadingDate,plannedDepartureDate,originalPlannedDepartureDate,plannedDepartureDateChangedAt,transportType,transportMode,transportDetailId,transportDetailLabel,trailerId,carrierId,plannedCarrierId,notes,createdAt,updatedAt)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         )
         .run(
           id,
@@ -141,10 +159,13 @@ export class ShipmentRepository {
           input.plannedDepartureDate || null,
           input.plannedDepartureDate || null,
           null,
+          input.transportType==="BILICO_ESSEPI"?"BILICO_ESSEPI":input.transportType==="RITIRA_CLIENTE"?"TRASPORTATORE_ESTERNO":null,
           input.transportType || null,
+          this.detailId(input),
+          this.detailLabel(input),
           input.trailerId || null,
           input.carrierId || null,
-          input.plannedCarrierId || null,
+          input.transportType==="BILICO_ESSEPI"?this.detailId(input):null,
           input.notes?.trim() || null,
           now,
           now,
@@ -174,7 +195,7 @@ export class ShipmentRepository {
       this.assertUnique(input, id);
       this.db
         .prepare(
-          "UPDATE ShipmentPlans SET loadId=?,manualCommessa=?,manualCliente=?,manualCarico=?,plannedLoadingDate=?,plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,transportType=?,plannedCarrierId=?,notes=?,updatedAt=? WHERE id=?",
+          "UPDATE ShipmentPlans SET loadId=?,manualCommessa=?,manualCliente=?,manualCarico=?,plannedLoadingDate=?,plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,transportType=?,transportMode=?,transportDetailId=?,transportDetailLabel=?,plannedCarrierId=?,notes=?,updatedAt=? WHERE id=?",
         )
         .run(
           input.loadId || null,
@@ -185,8 +206,11 @@ export class ShipmentRepository {
           nextPlannedDepartureDate,
           originalPlannedDepartureDate,
           plannedDepartureDateChangedAt,
+          input.transportType==="BILICO_ESSEPI"?"BILICO_ESSEPI":input.transportType==="RITIRA_CLIENTE"?"TRASPORTATORE_ESTERNO":null,
           input.transportType || null,
-          input.plannedCarrierId || null,
+          this.detailId(input),
+          this.detailLabel(input),
+          input.transportType==="BILICO_ESSEPI"?this.detailId(input):null,
           input.notes?.trim() || null,
           now,
           id,
@@ -281,7 +305,7 @@ export class ShipmentRepository {
       operational = nullable(r, "operationalStatus"),
       planned = nullable(r, "plannedDepartureDate"),
       actual = nullable(r, "actualDepartureDate"),
-      type = nullable(r, "transportType") as ShipmentTransportType | null,
+      type = (nullable(r, "transportMode") ?? (nullable(r,"transportType")==="TRASPORTATORE_ESTERNO"?"RITIRA_CLIENTE":nullable(r,"transportType"))) as ShipmentTransportType | null,
       assignment = nullable(r, "assignmentStatus");
     let status: ShipmentStatus = !planned ? "DA_PIANIFICARE" : "PIANIFICATA";
     if (operational === "ATTESA_SPEDIZIONE") status = "PRONTA";
@@ -301,6 +325,7 @@ export class ShipmentRepository {
       loadId,
       commessa: String(r.commessa ?? ""),
       cliente: String(r.cliente ?? ""),
+      orderReference: nullable(r,"orderReference"),
       camion: nullable(r, "camion"),
       plannedLoadingDate: nullable(r, "plannedLoadingDate"),
       plannedDepartureDate: planned,
@@ -314,6 +339,8 @@ export class ShipmentRepository {
       ),
       actualDepartureDate: actual,
       transportType: type,
+      transportDetailId: nullable(r,"transportDetailId") ?? (type==="BILICO_ESSEPI"?nullable(r,"plannedCarrierId"):null),
+      transportDetailLabel: nullable(r,"transportDetailLabel"),
       trailerId: nullable(r, "resolvedTrailerId") ?? nullable(r, "trailerId"),
       carrierId: nullable(r, "carrierId"),
       plannedCarrierId: nullable(r, "plannedCarrierId"),

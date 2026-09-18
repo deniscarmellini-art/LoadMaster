@@ -3,6 +3,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -25,6 +26,8 @@ import {
   TableSortLabel,
   TextField,
   Typography,
+  ToggleButton,
+  ToggleButtonGroup,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
@@ -32,7 +35,7 @@ import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs from "dayjs";
 import "dayjs/locale/it";
-import type { Rimorchio, Trasportatore } from "../models/Settings";
+import type { Rimorchio, Trasportatore, VoceTrasporto } from "../models/Settings";
 import {
   createShipment,
   deleteShipment,
@@ -47,12 +50,16 @@ import {
 import type { TransportItem } from "../services/transportsApi";
 import PlannedDepartureDate from "../components/shipments/PlannedDepartureDate";
 import { demoBranding } from "../services/demoBranding";
+import ShipmentCalendar from "../components/shipments/ShipmentCalendar";
 import { operationalStatusPresentation } from "../services/dashboardService";
 import { ApiClientError } from "../services/apiClient";
+import { shipmentTransportLabel } from "../services/shipmentTransportPresentation";
 interface Props {
   items: ShipmentItem[];
   trailers: Rimorchio[];
   carriers: Trasportatore[];
+  clientVehicleTypes: VoceTrasporto[];
+  thirdPartyTransportModes: VoceTrasporto[];
   transports: TransportItem[];
   onBack: () => void;
   onRefresh: () => Promise<void>;
@@ -71,6 +78,7 @@ const empty: ShipmentInput = {
   plannedLoadingDate: "",
   plannedDepartureDate: "",
   transportType: null,
+  transportDetailId: null,
   trailerId: null,
   carrierId: null,
   notes: "",
@@ -119,8 +127,8 @@ const columns: ReadonlyArray<{ label: string; sortKey?: SortKey }> = [
   { label: "Stato spedizione", sortKey: "shipmentStatus" },
   { label: "Partenza prevista", sortKey: "plannedDepartureDate" },
   { label: "Stato operativo carico", sortKey: "operationalStatus" },
-  { label: "Tipo trasporto", sortKey: "transportType" },
-  { label: "Mezzo / Trasportatore", sortKey: "vehicle" },
+  { label: "Modalità di trasporto", sortKey: "transportType" },
+  { label: "Dettaglio / Mezzo", sortKey: "vehicle" },
   { label: "Data partenza effettiva", sortKey: "actualDepartureDate" },
   { label: "Note" },
 ];
@@ -148,6 +156,8 @@ export default function Shipments({
   items,
   trailers,
   carriers,
+  clientVehicleTypes,
+  thirdPartyTransportModes,
   onBack,
   onRefresh,
 }: Props) {
@@ -160,6 +170,9 @@ export default function Shipments({
     [to, setTo] = useState(""),
     [sortKey, setSortKey] = useState<SortKey | null>(null),
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [view, setView] = useState<"list" | "calendar">("list");
+  const [calendarDate, setCalendarDate] = useState<string | null>(null);
+  const [orderReference,setOrderReference]=useState("");
   const [editing, setEditing] = useState<ShipmentItem | null | "new">(null),
     [form, setForm] = useState<ShipmentInput>(empty),
     [deleteItem, setDeleteItem] = useState<ShipmentItem | null>(null),
@@ -204,7 +217,9 @@ export default function Shipments({
       }),
     [operationalItems, search, status, type, from, to],
   );
-  const open = (item?: ShipmentItem) => {
+  const open = (item?: ShipmentItem, date?: string) => {
+    setCalendarDate(date ?? null);
+    setOrderReference(item?.orderReference??"");
     setEditing(item ?? "new");
     setForm(
       item
@@ -214,14 +229,15 @@ export default function Shipments({
             cliente: item.cliente,
             camion: item.camion,
             plannedLoadingDate: item.plannedLoadingDate,
-            plannedDepartureDate: item.plannedDepartureDate,
+            plannedDepartureDate: date ?? item.plannedDepartureDate,
             transportType: item.transportType,
+            transportDetailId: item.transportDetailId,
             trailerId: null,
             carrierId: null,
             plannedCarrierId: item.plannedCarrierId,
             notes: item.notes,
           }
-        : empty,
+        : { ...empty, plannedDepartureDate: date ?? empty.plannedDepartureDate },
     );
   };
   const valid = Boolean(
@@ -268,6 +284,9 @@ export default function Shipments({
     }
   };
   const activeCarriers = carriers.filter((carrier) => carrier.attivo);
+  const detailOptions=form.transportType==="BILICO_ESSEPI"?carriers:form.transportType==="RITIRA_CLIENTE"?clientVehicleTypes:form.transportType==="TERZI_PER_ESSEPI"?thirdPartyTransportModes:[];
+  const detailLabel=form.transportType==="BILICO_ESSEPI"?"Trasportatore Essepi":form.transportType==="RITIRA_CLIENTE"?"Tipo di mezzo":"Modalità Terzi per Essepi";
+  const transportLabel=(value:ShipmentTransportType|null)=>value==="BILICO_ESSEPI"?demoBranding.bilico:shipmentTransportLabel(value);
   const depart = async (item: ShipmentItem, carrierId?: string) => {
     try {
       await departShipment(item.id, carrierId);
@@ -374,12 +393,11 @@ export default function Shipments({
       </Stack>
     );
   const vehicle = (item: ShipmentItem) => {
-    if (item.transportType === "TRASPORTATORE_ESTERNO") return "Ritira Cliente";
-    if (item.transportType !== "BILICO_ESSEPI") return "—";
+    if (item.transportType !== "BILICO_ESSEPI") return item.transportDetailLabel??"Non specificato";
     const trailer = item.trailerId
       ? trailers.find((entry) => entry.id === item.trailerId)?.targa ?? "Rimorchio assegnato"
       : null;
-    const planned = item.plannedCarrierId ? " — Previsto: " + (carriers.find(c=>c.id===item.plannedCarrierId)?.nome ?? "Trasportatore non disponibile") : "";
+    const planned = item.transportDetailLabel ? " — Previsto: " + item.transportDetailLabel : "";
     if (!trailer) return `${demoBranding.bilico} — Da assegnare` + planned;
     const carrier = item.carrierId ? carriers.find(c=>c.id===item.carrierId)?.nome ?? "Trasportatore non disponibile" : null;
     return (carrier ? trailer + " — " + carrier : trailer + " — Trasportatore da definire") + planned;
@@ -399,11 +417,7 @@ export default function Shipments({
             ? Date.parse(item.actualDepartureDate)
             : null;
         case "transportType":
-          return item.transportType === "BILICO_ESSEPI"
-            ? demoBranding.bilico
-            : item.transportType === "TRASPORTATORE_ESTERNO"
-              ? "Ritira Cliente"
-              : null;
+          return item.transportType?transportLabel(item.transportType):null;
         case "vehicle":
           return item.transportType ? vehicle(item) : null;
         default:
@@ -453,18 +467,19 @@ export default function Shipments({
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="it">
       <Box>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
+        <Box
           sx={{
-            alignItems: { xs: "stretch", sm: "center" },
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", sm: "1fr auto 1fr" },
+            alignItems: "center",
             gap: { xs: 1, sm: 0 },
-            mb: 2,
+            mb: view === "calendar" ? 0.5 : 2,
           }}
         >
           <Button
             startIcon={<ArrowBackIcon />}
             onClick={onBack}
-            sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}
+            sx={{ justifySelf: "start" }}
           >
             Dashboard
           </Button>
@@ -472,21 +487,13 @@ export default function Shipments({
             variant={mobile ? "h5" : "h4"}
             sx={{
               fontWeight: 800,
-              mx: { xs: 0, sm: "auto" },
               textAlign: "center",
             }}
           >
             Spedizioni
           </Typography>
-          <Button
-            variant="contained"
-            onClick={() => open()}
-            sx={{ alignSelf: { xs: "flex-end", sm: "auto" } }}
-          >
-            + Pianifica spedizione
-          </Button>
-        </Stack>
-        <Box
+        </Box>
+        {view === "list" && <Box
           sx={{
             display: "grid",
             gridTemplateColumns: { xs: "repeat(2,1fr)", md: "repeat(4,1fr)" },
@@ -512,7 +519,7 @@ export default function Shipments({
               </CardContent>
             </Card>
           ))}
-        </Box>
+        </Box>}
         {legacyCount > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>
             {legacyCount} spedizion{legacyCount === 1 ? "e" : "i"} conclus
@@ -520,13 +527,17 @@ export default function Shipments({
             restano visibili perché non è possibile calcolare il limite di 7 giorni.
           </Alert>
         )}
-        <Paper sx={{ p: { xs: 1, md: 2 } }}>
+        <Paper sx={{ p: { xs: 1, md: 2 }, ...(view === "calendar" && { py: 1 }) }}>
+          <ToggleButtonGroup exclusive value={view} onChange={(_, value) => { if (value) setView(value); }} aria-label="Visualizzazione spedizioni" size="small" sx={{ mb: view === "calendar" ? 1 : 2 }}>
+            <ToggleButton value="list">Elenco</ToggleButton>
+            <ToggleButton value="calendar">Calendario</ToggleButton>
+          </ToggleButtonGroup>
           <Box
             sx={{
               display: "grid",
               gridTemplateColumns: { xs: "1fr", md: "2fr repeat(4,1fr)" },
               gap: 1,
-              mb: 2,
+              mb: view === "calendar" ? 1 : 2,
             }}
           >
             <TextField
@@ -549,7 +560,7 @@ export default function Shipments({
             </TextField>
             <TextField
               select
-              label="Tipo trasporto"
+              label="Modalità di trasporto"
               value={type}
               onChange={(e) =>
                 setType(e.target.value as ShipmentTransportType | "")
@@ -557,7 +568,8 @@ export default function Shipments({
             >
               <MenuItem value="">Tutti</MenuItem>
               <MenuItem value="BILICO_ESSEPI">{demoBranding.bilico}</MenuItem>
-              <MenuItem value="TRASPORTATORE_ESTERNO">Ritira Cliente</MenuItem>
+              <MenuItem value="RITIRA_CLIENTE">Ritira Cliente</MenuItem>
+              <MenuItem value="TERZI_PER_ESSEPI">Terzi per Essepi</MenuItem>
             </TextField>
             <TextField
               type="date"
@@ -574,7 +586,9 @@ export default function Shipments({
               slotProps={{ inputLabel: { shrink: true } }}
             />
           </Box>
-          {mobile ? (
+          {view === "calendar" ? (
+            <ShipmentCalendar items={filtered} onSelectShipment={(item) => open(item)} onSelectDate={(date) => open(undefined, date)} />
+          ) : mobile ? (
             <Stack sx={{ gap: 1 }}>
               {filtered.map((item) => (
                 <Card key={item.id} variant="outlined">
@@ -602,11 +616,7 @@ export default function Shipments({
                     </Typography>
                     <Typography variant="body2">
                       Trasporto:{" "}
-                      {item.transportType === "BILICO_ESSEPI"
-                        ? demoBranding.bilico
-                        : item.transportType === "TRASPORTATORE_ESTERNO"
-                          ? "Ritira Cliente"
-                          : "—"}
+                      {transportLabel(item.transportType)}
                     </Typography>
                     <Typography variant="body2">
                       Mezzo / Trasportatore: {vehicle(item)}
@@ -690,11 +700,7 @@ export default function Shipments({
                         <OperationalStatusChip status={item.operationalStatus} />
                       </TableCell>
                       <TableCell>
-                        {item.transportType === "BILICO_ESSEPI"
-                        ? demoBranding.bilico
-                          : item.transportType === "TRASPORTATORE_ESTERNO"
-                            ? "Ritira Cliente"
-                            : "—"}
+                        {transportLabel(item.transportType)}
                       </TableCell>
                       <TableCell>{vehicle(item)}</TableCell>
                       <TableCell>
@@ -715,12 +721,21 @@ export default function Shipments({
           maxWidth="sm"
         >
           <DialogTitle>
-            {editing === "new"
+            {editing === "new" || (editing && !editing.persisted)
               ? "Pianifica spedizione"
-              : "Pianificazione spedizione"}
+              : "Modifica pianificazione"}
           </DialogTitle>
           <DialogContent>
             <Box sx={{ display: "grid", gap: 1.5, pt: 1 }}>
+              {calendarDate && <Autocomplete
+                options={items.filter((item) => !item.persisted && item.loadId && !item.plannedDepartureDate)}
+                value={editing && editing !== "new" ? editing : null}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                getOptionLabel={(item) => [item.commessa, item.camion, item.cliente].filter(Boolean).join(" · ")}
+                onChange={(_, item) => open(item ?? undefined, calendarDate)}
+                renderInput={(params) => <TextField {...params} label="Carico da pianificare" helperText="Seleziona un carico esistente oppure compila una nuova pianificazione." />}
+                noOptionsText="Nessun carico da pianificare"
+              />}
               <TextField
                 required
                 label="Commessa"
@@ -734,6 +749,12 @@ export default function Shipments({
                 disabled={editing !== "new" && Boolean(editing?.loadId)}
                 value={form.cliente}
                 onChange={(e) => setForm({ ...form, cliente: e.target.value })}
+              />
+              <TextField
+                label="Riferimento ordine"
+                value={orderReference}
+                slotProps={{input:{readOnly:true}}}
+                helperText="Recuperato dalla commessa importata"
               />
               <TextField
                 label="Carico / Camion"
@@ -764,13 +785,14 @@ export default function Shipments({
               <TextField
                 select
                 required
-                label="Tipo trasporto"
+                label="Modalità di trasporto"
                 value={form.transportType ?? ""}
                 onChange={(e) => {
                   const value = e.target.value as ShipmentTransportType;
                   setForm({
                     ...form,
                     transportType: value,
+                    transportDetailId: null,
                     plannedCarrierId: null,
                     trailerId: null,
                     carrierId: null,
@@ -778,16 +800,16 @@ export default function Shipments({
                 }}
               >
                 <MenuItem value="" disabled>
-                  Seleziona tipo trasporto
+                  Seleziona modalità di trasporto
                 </MenuItem>
                 <MenuItem value="BILICO_ESSEPI">{demoBranding.bilico}</MenuItem>
-                <MenuItem value="TRASPORTATORE_ESTERNO">
-                  Ritira Cliente
-                </MenuItem>
+                <MenuItem value="RITIRA_CLIENTE">Ritira Cliente</MenuItem>
+                <MenuItem value="TERZI_PER_ESSEPI">Terzi per Essepi</MenuItem>
               </TextField>
-              {form.transportType === "BILICO_ESSEPI" && <TextField select label="Trasportatore previsto" value={form.plannedCarrierId ?? ""} onChange={e=>setForm({...form,plannedCarrierId:e.target.value||null})} helperText="Facoltativo. Il trasportatore effettivo viene confermato alla partenza.">
-                <MenuItem value="">Da definire</MenuItem>
-                {carriers.filter(c=>c.attivo||c.id===form.plannedCarrierId).map(c=><MenuItem key={c.id} value={c.id} disabled={!c.attivo}>{c.nome}{!c.attivo?" (non attivo)":""}</MenuItem>)}
+              {form.transportType&&<TextField select label={detailLabel} value={form.transportDetailId??""} onChange={e=>setForm({...form,transportDetailId:e.target.value||null,plannedCarrierId:null})} helperText="Facoltativo">
+                <MenuItem value="">Non specificato</MenuItem>
+                {detailOptions.filter(item=>item.attivo||item.id===form.transportDetailId).map(item=><MenuItem key={item.id} value={item.id} disabled={!item.attivo}>{item.nome}{!item.attivo?" (non attivo)":""}</MenuItem>)}
+                {form.transportDetailId&&!detailOptions.some(item=>item.id===form.transportDetailId)&&<MenuItem value={form.transportDetailId} disabled>{editing&&editing!=="new"?editing.transportDetailLabel??"Voce storica":"Voce storica"} (non disponibile)</MenuItem>}
               </TextField>}
               <TextField
                 multiline

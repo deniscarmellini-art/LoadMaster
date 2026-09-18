@@ -25,7 +25,7 @@ test("trasportatore previsto separato dall'effettivo, modificabile e cancellabil
     const update=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedCarrierId:carriers[1]!.id}});
     assert.equal(update.statusCode,200);assert.equal(update.json().plannedCarrierId,carriers[1]!.id);
     assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedCarrierId:"missing"}})).statusCode,400);
-    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,transportType:"TRASPORTATORE_ESTERNO"}})).statusCode,400);
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,transportType:"RITIRA_CLIENTE"}})).statusCode,400);
     assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`})).statusCode,200);
     const second=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json<{id:string}>();
     await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});
@@ -40,6 +40,19 @@ test("trasportatore previsto separato dall'effettivo, modificabile e cancellabil
     assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${second.id}`,payload:input})).statusCode,409);
     assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${second.id}`})).statusCode,409);
   } finally {await app.close();}
+});
+
+test("la pianificazione espone il riferimento ordine autorevole del carico senza duplicarlo",async()=>{
+  const app=await buildApp(config);
+  try{
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("ORDER-REF","C1")])})).json<Array<{id:string;commessa:string;cliente:string;camion:string}>>()[0]!;
+    const virtual=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{loadId:string|null;orderReference:string|null}>>().find(item=>item.loadId===load.id)!;
+    assert.equal(virtual.orderReference,"RIF-01");
+    const planned=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:load.commessa,cliente:load.cliente,camion:load.camion,transportType:"RITIRA_CLIENTE"}})).json<{orderReference:string|null}>();
+    assert.equal(planned.orderReference,"RIF-01");
+    const manual=(await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MANUAL-REF",cliente:"Cliente",camion:"C2",transportType:"TERZI_PER_ESSEPI"}})).json<{orderReference:string|null}>();
+    assert.equal(manual.orderReference,null);
+  }finally{await app.close();}
 });
 
 test("il server TEST ignora porta, database e HTTPS ereditati dalla produzione",()=>{
@@ -137,7 +150,7 @@ test("le spedizioni future manuali sono persistenti e non creano carichi operati
     const first=await buildApp({...config,databasePath});
     const created=await first.inject({method:"POST",url:"/api/shipments",payload:{commessa:"265700",cliente:"ROSSI",camion:"C1",plannedLoadingDate:"2026-09-10",plannedDepartureDate:"2026-09-12",transportType:"BILICO_ESSEPI",trailerId:null,carrierId:null,notes:"Pianificazione futura"}});
     assert.equal(created.statusCode,200);assert.equal(created.json<{shipmentStatus:string;trailerId:string|null}>().shipmentStatus,"PIANIFICATA");assert.equal(created.json<{trailerId:string|null}>().trailerId,null);
-    const pickup=await first.inject({method:"POST",url:"/api/shipments",payload:{commessa:"265701",cliente:"BIANCHI",camion:"C2",plannedDepartureDate:null,transportType:"TRASPORTATORE_ESTERNO",trailerId:null,carrierId:null}});assert.equal(pickup.statusCode,200);
+    const pickup=await first.inject({method:"POST",url:"/api/shipments",payload:{commessa:"265701",cliente:"BIANCHI",camion:"C2",plannedDepartureDate:null,transportType:"RITIRA_CLIENTE",trailerId:null,carrierId:null}});assert.equal(pickup.statusCode,200);
     assert.deepEqual((await first.inject({method:"GET",url:"/api/loads"})).json(),[]);
     const trailer=(await first.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;const reserved=await first.inject({method:"POST",url:`/api/trailers/${trailer.id}/reservation`,payload:{commessa:"265700",cliente:"ROSSI",carico:"C1",plannedDepartureDate:"2026-09-12"}});assert.equal(reserved.statusCode,200);const assigned=(await first.inject({method:"GET",url:"/api/shipments"})).json<Array<{commessa:string;trailerId:string|null}>>().find(item=>item.commessa==="265700");assert.equal(assigned?.trailerId,trailer.id);
     await first.close();
@@ -151,7 +164,7 @@ test("le spedizioni future manuali sono persistenti e non creano carichi operati
 test("elimina solo una pianificazione non partita e conserva carico ed elementi",async()=>{
   const app=await buildApp(config);
   const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("PLAN-1","C1")]),commessa:"PLAN-DELETE"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
-  const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"PLAN-DELETE",cliente:"Cliente Test",camion:"C1",plannedDepartureDate:"2026-09-20",transportType:"TRASPORTATORE_ESTERNO",trailerId:null,carrierId:null}})).json<{id:string}>();
+  const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"PLAN-DELETE",cliente:"Cliente Test",camion:"C1",plannedDepartureDate:"2026-09-20",transportType:"RITIRA_CLIENTE",trailerId:null,carrierId:null}})).json<{id:string}>();
   const removed=await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`});
   assert.equal(removed.statusCode,200);assert.equal(removed.json<{success:boolean}>().success,true);
   const shipments=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;persisted:boolean;loadId:string}>>();
@@ -168,7 +181,7 @@ test("rifiuta la cancellazione di una pianificazione con partenza consolidata",a
   const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
   const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("PLAN-SHIPPED","C2")]),commessa:"PLAN-CONSOLIDATED"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
   await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});
-  const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"PLAN-CONSOLIDATED",cliente:"Cliente Test",camion:"C2",plannedDepartureDate:"2026-09-20",transportType:"TRASPORTATORE_ESTERNO",trailerId:null,carrierId:null}})).json<{id:string}>();
+  const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"PLAN-CONSOLIDATED",cliente:"Cliente Test",camion:"C2",plannedDepartureDate:"2026-09-20",transportType:"RITIRA_CLIENTE",trailerId:null,carrierId:null}})).json<{id:string}>();
   const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
   await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});
   await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}});
@@ -187,7 +200,7 @@ test("la prima partenza prevista resta originale e le modifiche sono persistenti
     const created=(await first.inject({method:"POST",url:"/api/shipments",payload:{...base,plannedDepartureDate:"2026-08-29"}})).json<{id:string;plannedDepartureDate:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(created.plannedDepartureDate,"2026-08-29");assert.equal(created.originalPlannedDepartureDate,"2026-08-29");assert.equal(created.plannedDepartureDateChangedAt,null);
     const changed=(await first.inject({method:"PUT",url:`/api/shipments/${created.id}`,payload:{...base,plannedDepartureDate:"2026-08-31"}})).json<{originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(changed.originalPlannedDepartureDate,"2026-08-29");assert.ok(changed.plannedDepartureDateChangedAt);
     const changedAgain=(await first.inject({method:"PUT",url:`/api/shipments/${created.id}`,payload:{...base,plannedDepartureDate:"2026-09-02"}})).json<{plannedDepartureDate:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(changedAgain.plannedDepartureDate,"2026-09-02");assert.equal(changedAgain.originalPlannedDepartureDate,"2026-08-29");assert.ok(changedAgain.plannedDepartureDateChangedAt);
-    const laterBase={commessa:"HISTORY-2",cliente:"Cliente",camion:"C2",transportType:"TRASPORTATORE_ESTERNO",trailerId:null,carrierId:null};const withoutDate=(await first.inject({method:"POST",url:"/api/shipments",payload:{...laterBase,plannedDepartureDate:null}})).json<{id:string}>();const firstDate=(await first.inject({method:"PUT",url:`/api/shipments/${withoutDate.id}`,payload:{...laterBase,plannedDepartureDate:"2026-09-10"}})).json<{originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(firstDate.originalPlannedDepartureDate,"2026-09-10");assert.equal(firstDate.plannedDepartureDateChangedAt,null);
+    const laterBase={commessa:"HISTORY-2",cliente:"Cliente",camion:"C2",transportType:"RITIRA_CLIENTE",trailerId:null,carrierId:null};const withoutDate=(await first.inject({method:"POST",url:"/api/shipments",payload:{...laterBase,plannedDepartureDate:null}})).json<{id:string}>();const firstDate=(await first.inject({method:"PUT",url:`/api/shipments/${withoutDate.id}`,payload:{...laterBase,plannedDepartureDate:"2026-09-10"}})).json<{originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(firstDate.originalPlannedDepartureDate,"2026-09-10");assert.equal(firstDate.plannedDepartureDateChangedAt,null);
     await first.close();const second=await buildApp(persistentConfig);const restored=(await second.inject({method:"GET",url:"/api/shipments"})).json<Array<{commessa:string;plannedDepartureDate:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>>().find(item=>item.commessa==="HISTORY-1")!;assert.equal(restored.plannedDepartureDate,"2026-09-02");assert.equal(restored.originalPlannedDepartureDate,"2026-08-29");assert.ok(restored.plannedDepartureDateChangedAt);await second.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
@@ -299,6 +312,68 @@ test("aggiunta e modifica funzionano per tutte le anagrafiche",async()=>{
     assert.equal(updated.json<{sortOrder:number}>().sortOrder,91);
   }
   await app.close();
+});
+
+test("le nuove anagrafiche trasporti supportano CRUD logico senza valori hardcodati",async()=>{
+  const app=await buildApp(config);
+  for(const item of [
+    {path:"client-vehicle-types",name:"Mezzo cliente test",updated:"Mezzo cliente aggiornato"},
+    {path:"third-party-transport-modes",name:"Modalità terzi test",updated:"Modalità terzi aggiornata"},
+  ]){
+    const initial=await app.inject({method:"GET",url:`/api/${item.path}`});
+    assert.equal(initial.statusCode,200);assert.equal(initial.json<unknown[]>().length,0);
+    const created=await app.inject({method:"POST",url:`/api/${item.path}`,payload:{name:item.name,active:true,sortOrder:0}});
+    assert.equal(created.statusCode,201);const id=created.json<{id:string}>().id;
+    const updated=await app.inject({method:"PUT",url:`/api/${item.path}/${id}`,payload:{name:item.updated,active:true,sortOrder:1}});
+    assert.equal(updated.statusCode,200);assert.equal(updated.json<{name:string}>().name,item.updated);
+    const disabled=await app.inject({method:"PATCH",url:`/api/${item.path}/${id}`,payload:{active:false}});
+    assert.equal(disabled.statusCode,200);assert.equal(disabled.json<{active:boolean}>().active,false);
+    const enabled=await app.inject({method:"PATCH",url:`/api/${item.path}/${id}`,payload:{active:true}});
+    assert.equal(enabled.json<{active:boolean}>().active,true);
+    const logicallyDeleted=await app.inject({method:"DELETE",url:`/api/${item.path}/${id}`});
+    assert.equal(logicallyDeleted.statusCode,200);assert.equal(logicallyDeleted.json<{active:boolean}>().active,false);
+  }
+  await app.close();
+});
+
+test("le nuove anagrafiche trasporti persistono e non modificano i trasportatori esistenti",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"transport-registries-"));
+  const persistentConfig={...config,databasePath:join(directory,"settings.sqlite")};
+  try{
+    const first=await buildApp(persistentConfig);
+    const carriersBefore=(await first.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string;name:string}>>();
+    const vehicle=(await first.inject({method:"POST",url:"/api/client-vehicle-types",payload:{name:"Bilico cliente",active:true,sortOrder:0}})).json<{id:string}>();
+    const mode=(await first.inject({method:"POST",url:"/api/third-party-transport-modes",payload:{name:"Servizio esterno",active:true,sortOrder:0}})).json<{id:string}>();
+    await first.close();
+    const restarted=await buildApp(persistentConfig);
+    assert.ok((await restarted.inject({method:"GET",url:"/api/client-vehicle-types"})).json<Array<{id:string}>>().some(item=>item.id===vehicle.id));
+    assert.ok((await restarted.inject({method:"GET",url:"/api/third-party-transport-modes"})).json<Array<{id:string}>>().some(item=>item.id===mode.id));
+    assert.deepEqual((await restarted.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string;name:string}>>().map(({id,name})=>({id,name})),carriersBefore.map(({id,name})=>({id,name})));
+    await restarted.close();
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+test("le pianificazioni validano macro-categoria, dettaglio opzionale e voci disattivate",async()=>{
+  const app=await buildApp(config);
+  try{
+    const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string;name:string}>>()[0]!;
+    const vehicle=(await app.inject({method:"POST",url:"/api/client-vehicle-types",payload:{name:"Motrice",active:true,sortOrder:0}})).json<{id:string}>();
+    const thirdParty=(await app.inject({method:"POST",url:"/api/third-party-transport-modes",payload:{name:"Vettore dedicato",active:true,sortOrder:0}})).json<{id:string}>();
+    const bilico=await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MODE-B",cliente:"Cliente",camion:"C1",transportType:"BILICO_ESSEPI",transportDetailId:carrier.id}});
+    assert.equal(bilico.statusCode,200);assert.equal(bilico.json<{transportDetailLabel:string}>().transportDetailLabel,carrier.name);
+    const pickup=await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MODE-R",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:vehicle.id}});
+    assert.equal(pickup.statusCode,200);assert.equal(pickup.json<{transportDetailLabel:string}>().transportDetailLabel,"Motrice");
+    const third=await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MODE-T",cliente:"Cliente",camion:"C1",transportType:"TERZI_PER_ESSEPI",transportDetailId:thirdParty.id}});
+    assert.equal(third.statusCode,200);assert.equal(third.json<{transportDetailLabel:string}>().transportDetailLabel,"Vettore dedicato");
+    assert.equal((await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MODE-OPTIONAL",cliente:"Cliente",camion:"C1",transportType:"TERZI_PER_ESSEPI"}})).statusCode,200);
+    assert.equal((await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MODE-BAD",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:carrier.id}})).statusCode,400);
+    await app.inject({method:"PATCH",url:`/api/client-vehicle-types/${vehicle.id}`,payload:{active:false}});
+    const pickupRecord=pickup.json<{id:string;transportDetailId:string}>();
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${pickupRecord.id}`,payload:{commessa:"MODE-R",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:vehicle.id}})).statusCode,200);
+    assert.equal((await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MODE-INACTIVE",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:vehicle.id}})).statusCode,400);
+    const changed=await app.inject({method:"PUT",url:`/api/shipments/${bilico.json<{id:string}>().id}`,payload:{commessa:"MODE-B",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:null}});
+    assert.equal(changed.statusCode,200);assert.equal(changed.json<{transportDetailId:null}>().transportDetailId,null);
+  }finally{await app.close();}
 });
 
 test("la disattivazione rimane persistente dopo il riavvio",async()=>{
@@ -767,7 +842,7 @@ test("rientra in una sessione parziale esistente e continua la stessa storia ope
 
 test("il ritiro diretto salva la partenza effettiva e conclude la spedizione",async()=>{
   const app=await buildApp(config);
-  try{const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!,carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!,load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("DIRECT-1","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});const shipment=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"COMM-TEST",cliente:"Cliente Test",camion:"C1",plannedDepartureDate:"2026-09-15",transportType:"TRASPORTATORE_ESTERNO",trailerId:null,carrierId:null}})).json<{id:string}>();assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}})).json<{stato:string}>().stato,"SPEDITO");const departed=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;shipmentStatus:string;actualDepartureDate:string|null}>>().find(item=>item.id===shipment.id)!;assert.equal(departed.shipmentStatus,"CONCLUSA");assert.ok(departed.actualDepartureDate);}finally{await app.close();}
+  try{const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!,carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!,load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("DIRECT-1","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});const shipment=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"COMM-TEST",cliente:"Cliente Test",camion:"C1",plannedDepartureDate:"2026-09-15",transportType:"RITIRA_CLIENTE",trailerId:null,carrierId:null}})).json<{id:string}>();assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}})).json<{stato:string}>().stato,"SPEDITO");const departed=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;shipmentStatus:string;actualDepartureDate:string|null}>>().find(item=>item.id===shipment.id)!;assert.equal(departed.shipmentStatus,"CONCLUSA");assert.ok(departed.actualDepartureDate);}finally{await app.close();}
 });
 
 test("aggiornare la distinta può scaricare e rimuovere un pannello già caricato",async()=>{
@@ -789,7 +864,7 @@ for(const deleteOrder of [false,true])test("audit reversibile 265587 e pianifica
   const db=new DatabaseSync(databasePath);
   try{
     const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("1","C1-")]),commessa:"265587"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
-    const input={loadId:load.id,commessa:"265587",cliente:"Cliente Test",camion:"C1-",plannedDepartureDate:"2026-09-20",transportType:"TRASPORTATORE_ESTERNO"};
+    const input={loadId:load.id,commessa:"265587",cliente:"Cliente Test",camion:"C1-",plannedDepartureDate:"2026-09-20",transportType:"RITIRA_CLIENTE"};
     const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json<{id:string}>();
     assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedDepartureDate:"2026-09-21"}})).statusCode,200);
     const trailer=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
@@ -815,7 +890,7 @@ for(const marker of ["event","shippedAt","SPEDITO"])test("blocca storico definit
   const app=await buildApp({...config,databasePath});const db=new DatabaseSync(databasePath);
   try{
     const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("1","C1")])})).json<Array<{id:string}>>()[0]!;
-    const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"TEST",cliente:"Test",camion:"C1",plannedDepartureDate:"2026-09-20",transportType:"TRASPORTATORE_ESTERNO"}})).json<{id:string}>();
+    const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"TEST",cliente:"Test",camion:"C1",plannedDepartureDate:"2026-09-20",transportType:"RITIRA_CLIENTE"}})).json<{id:string}>();
     if(marker==="event")db.prepare("INSERT INTO OperationalEvents(id,loadId,type,timestamp) VALUES(?,?,'PARTENZA_CONFERMATA',?)").run(crypto.randomUUID(),load.id,"2026-09-02T14:00:00Z");
     else if(marker==="SPEDITO")db.prepare("UPDATE Loads SET stato='SPEDITO' WHERE id=?").run(load.id);
     else{

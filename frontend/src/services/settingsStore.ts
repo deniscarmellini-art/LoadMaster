@@ -1,4 +1,4 @@
-import type { Operatore, Rimorchio, SettingsData, Trasportatore } from "../models/Settings";
+import type { Operatore, Rimorchio, SettingsData, Trasportatore, VoceTrasporto } from "../models/Settings";
 
 const VERSION=1;
 const listeOperative:SettingsData["listeOperative"]=[
@@ -12,13 +12,16 @@ const strings=(value:Record<string,unknown>,keys:string[])=>keys.every(key=>type
 const operator=(value:unknown):value is Operatore=>object(value)&&strings(value,["id","nome","cognome","sigla"])&&typeof value.attivo==="boolean";
 const trailer=(value:unknown):value is Rimorchio=>object(value)&&strings(value,["id","targa","descrizione","note"])&&typeof value.attivo==="boolean";
 const carrier=(value:unknown):value is Trasportatore=>object(value)&&strings(value,["id","nome","note"])&&typeof value.attivo==="boolean";
+const transportEntry=(value:unknown):value is VoceTrasporto=>object(value)&&strings(value,["id","nome"])&&typeof value.attivo==="boolean";
 
-export const loadSettings=():SettingsData=>({operatori:[],rimorchi:[],trasportatori:[],listeOperative});
+export const loadSettings=():SettingsData=>({operatori:[],rimorchi:[],trasportatori:[],tipiMezzoCliente:[],modalitaTerziEssepi:[],listeOperative});
 export const createRegistryId=(prefix:string)=>`${prefix}-${crypto.randomUUID()}`;
-export interface SettingsBackup{version:number;exportedAt:string;operatori:Operatore[];rimorchi:Rimorchio[];trasportatori:Trasportatore[]}
-export const createSettingsBackup=(settings:SettingsData):SettingsBackup=>({version:VERSION,exportedAt:new Date().toISOString(),operatori:settings.operatori,rimorchi:settings.rimorchi,trasportatori:settings.trasportatori});
+export interface SettingsBackup{version:number;exportedAt:string;operatori:Operatore[];rimorchi:Rimorchio[];trasportatori:Trasportatore[];tipiMezzoCliente:VoceTrasporto[];modalitaTerziEssepi:VoceTrasporto[]}
+export const createSettingsBackup=(settings:SettingsData):SettingsBackup=>({version:VERSION,exportedAt:new Date().toISOString(),operatori:settings.operatori,rimorchi:settings.rimorchi,trasportatori:settings.trasportatori,tipiMezzoCliente:settings.tipiMezzoCliente,modalitaTerziEssepi:settings.modalitaTerziEssepi});
 export function parseSettingsBackup(text:string):SettingsBackup{
   const parsed:unknown=JSON.parse(text);
   if(!object(parsed)||parsed.version!==VERSION||typeof parsed.exportedAt!=="string"||!Array.isArray(parsed.operatori)||!parsed.operatori.every(operator)||!Array.isArray(parsed.rimorchi)||!parsed.rimorchi.every(trailer)||!Array.isArray(parsed.trasportatori)||!parsed.trasportatori.every(carrier))throw new Error("Il file non è un backup LoadMaster valido");
-  return{version:VERSION,exportedAt:parsed.exportedAt,operatori:parsed.operatori,rimorchi:parsed.rimorchi,trasportatori:parsed.trasportatori};
+  const tipiMezzoCliente=Array.isArray(parsed.tipiMezzoCliente)&&parsed.tipiMezzoCliente.every(transportEntry)?parsed.tipiMezzoCliente:[];
+  const modalitaTerziEssepi=Array.isArray(parsed.modalitaTerziEssepi)&&parsed.modalitaTerziEssepi.every(transportEntry)?parsed.modalitaTerziEssepi:[];
+  return{version:VERSION,exportedAt:parsed.exportedAt,operatori:parsed.operatori,rimorchi:parsed.rimorchi,trasportatori:parsed.trasportatori,tipiMezzoCliente,modalitaTerziEssepi};
 }
