@@ -5,6 +5,7 @@ export type ShipmentStatus =
   "DA_PIANIFICARE" | "PIANIFICATA" | "PRONTA" | "IN_VIAGGIO" | "CONCLUSA";
 export type ShipmentTransportType = "BILICO_ESSEPI" | "RITIRA_CLIENTE" | "TERZI_PER_ESSEPI";
 export interface ShipmentInput {
+  orderReference?: string | null;
   loadId?: string | null;
   commessa: string;
   cliente: string;
@@ -60,7 +61,6 @@ export class ShipmentRepository {
           COALESCE(l.commessa,p.manualCommessa) commessa,
           COALESCE(l.cliente,p.manualCliente) cliente,
           COALESCE(l.camion,p.manualCarico) camion,
-          l.riferimentoOrdine orderReference,
           l.stato operationalStatus,
           COALESCE((
             SELECT a.trailerId FROM TransportAssignments a
@@ -147,7 +147,7 @@ export class ShipmentRepository {
       this.assertUnique(input);
       this.db
         .prepare(
-          "INSERT INTO ShipmentPlans(id,loadId,manualCommessa,manualCliente,manualCarico,plannedLoadingDate,plannedDepartureDate,originalPlannedDepartureDate,plannedDepartureDateChangedAt,transportType,transportMode,transportDetailId,transportDetailLabel,trailerId,carrierId,plannedCarrierId,notes,createdAt,updatedAt)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO ShipmentPlans(id,loadId,manualCommessa,manualCliente,manualCarico,plannedLoadingDate,plannedDepartureDate,originalPlannedDepartureDate,plannedDepartureDateChangedAt,transportType,transportMode,transportDetailId,transportDetailLabel,trailerId,carrierId,plannedCarrierId,notes,createdAt,updatedAt,orderReference)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         )
         .run(
           id,
@@ -169,6 +169,9 @@ export class ShipmentRepository {
           input.notes?.trim() || null,
           now,
           now,
+          input.orderReference === undefined
+            ? ((input.loadId ? this.db.prepare("SELECT riferimentoOrdine FROM Loads WHERE id=?").get(input.loadId) as {riferimentoOrdine:string}|undefined : undefined)?.riferimentoOrdine?.trim() || null)
+            : input.orderReference?.trim() || null,
         );
       this.audit(input.loadId,"SHIPMENT_PLAN_CREATED",{id,...input});
     });
@@ -195,7 +198,7 @@ export class ShipmentRepository {
       this.assertUnique(input, id);
       this.db
         .prepare(
-          "UPDATE ShipmentPlans SET loadId=?,manualCommessa=?,manualCliente=?,manualCarico=?,plannedLoadingDate=?,plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,transportType=?,transportMode=?,transportDetailId=?,transportDetailLabel=?,plannedCarrierId=?,notes=?,updatedAt=? WHERE id=?",
+          "UPDATE ShipmentPlans SET loadId=?,manualCommessa=?,manualCliente=?,manualCarico=?,plannedLoadingDate=?,plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,transportType=?,transportMode=?,transportDetailId=?,transportDetailLabel=?,plannedCarrierId=?,notes=?,updatedAt=?,orderReference=? WHERE id=?",
         )
         .run(
           input.loadId || null,
@@ -213,6 +216,7 @@ export class ShipmentRepository {
           input.transportType==="BILICO_ESSEPI"?this.detailId(input):null,
           input.notes?.trim() || null,
           now,
+          input.orderReference === undefined ? old.orderReference : input.orderReference?.trim() || null,
           id,
         );
       this.audit(old.loadId, "SHIPMENT_PLAN_UPDATED", {before:old,after:input});

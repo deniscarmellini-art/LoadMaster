@@ -172,7 +172,6 @@ export default function Shipments({
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [view, setView] = useState<"list" | "calendar">("list");
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
-  const [orderReference,setOrderReference]=useState("");
   const [editing, setEditing] = useState<ShipmentItem | null | "new">(null),
     [form, setForm] = useState<ShipmentInput>(empty),
     [deleteItem, setDeleteItem] = useState<ShipmentItem | null>(null),
@@ -219,7 +218,6 @@ export default function Shipments({
   );
   const open = (item?: ShipmentItem, date?: string) => {
     setCalendarDate(date ?? null);
-    setOrderReference(item?.orderReference??"");
     setEditing(item ?? "new");
     setForm(
       item
@@ -227,6 +225,7 @@ export default function Shipments({
             loadId: item.loadId,
             commessa: item.commessa,
             cliente: item.cliente,
+            orderReference: item.orderReference ?? "",
             camion: item.camion,
             plannedLoadingDate: item.plannedLoadingDate,
             plannedDepartureDate: date ?? item.plannedDepartureDate,
@@ -237,7 +236,7 @@ export default function Shipments({
             plannedCarrierId: item.plannedCarrierId,
             notes: item.notes,
           }
-        : { ...empty, plannedDepartureDate: date ?? empty.plannedDepartureDate },
+        : { ...empty, orderReference: "", plannedDepartureDate: date ?? empty.plannedDepartureDate },
     );
   };
   const valid = Boolean(
@@ -752,9 +751,9 @@ export default function Shipments({
               />
               <TextField
                 label="Riferimento ordine"
-                value={orderReference}
-                slotProps={{input:{readOnly:true}}}
-                helperText="Recuperato dalla commessa importata"
+                value={form.orderReference ?? ""}
+                onChange={(event) => setForm({ ...form, orderReference: event.target.value })}
+                helperText="Facoltativo. Salvato solo nella pianificazione."
               />
               <TextField
                 label="Carico / Camion"

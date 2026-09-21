@@ -42,7 +42,7 @@ test("trasportatore previsto separato dall'effettivo, modificabile e cancellabil
   } finally {await app.close();}
 });
 
-test("la pianificazione espone il riferimento ordine autorevole del carico senza duplicarlo",async()=>{
+test("la nuova pianificazione precompila il riferimento ordine dal carico quando omesso",async()=>{
   const app=await buildApp(config);
   try{
     const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("ORDER-REF","C1")])})).json<Array<{id:string;commessa:string;cliente:string;camion:string}>>()[0]!;
@@ -53,6 +53,49 @@ test("la pianificazione espone il riferimento ordine autorevole del carico senza
     const manual=(await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MANUAL-REF",cliente:"Cliente",camion:"C2",transportType:"TERZI_PER_ESSEPI"}})).json<{orderReference:string|null}>();
     assert.equal(manual.orderReference,null);
   }finally{await app.close();}
+});
+
+test("riferimento pianificazione indipendente, facoltativo e persistente anche dopo migrazione", async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"shipment-reference-"));
+  const databasePath=join(directory,"test.sqlite");
+  let app=await buildApp({...config,databasePath});
+  try {
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("REF-INDEPENDENT","C1")])})).json<Array<{id:string;commessa:string;cliente:string;camion:string}>>()[0]!;
+    const input={loadId:load.id,commessa:load.commessa,cliente:load.cliente,camion:load.camion,transportType:"RITIRA_CLIENTE"};
+    const created=await app.inject({method:"POST",url:"/api/shipments",payload:input});
+    assert.equal(created.statusCode,200);
+    const plan=created.json<{id:string;orderReference:string|null}>();
+    assert.equal(plan.orderReference,"RIF-01");
+    const update=async(value:Record<string,unknown>)=>{
+      const response=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,...value}});
+      assert.equal(response.statusCode,200);return response.json<{orderReference:string|null}>();
+    };
+    assert.equal((await update({orderReference:"  RIF-MANUALE  "})).orderReference,"RIF-MANUALE");
+    assert.equal((await update({})).orderReference,"RIF-MANUALE");
+    const original=(await app.inject({method:"GET",url:`/api/loads/${load.id}`})).json<{riferimentoOrdine:string}>();
+    assert.equal(original.riferimentoOrdine,"RIF-01");
+    await app.close();
+    app=await buildApp({...config,databasePath});
+    const read=async()=>(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;orderReference:string|null}>>().find(p=>p.id===plan.id)!.orderReference;
+    assert.equal(await read(),"RIF-MANUALE");
+    assert.equal((await update({orderReference:""})).orderReference,null);
+    await app.close();
+    app=await buildApp({...config,databasePath});
+    assert.equal(await read(),null);
+    const manual=await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"REF-MANUAL",cliente:"Cliente",transportType:"TERZI_PER_ESSEPI",orderReference:"INSERITO"}});
+    assert.equal(manual.statusCode,200);assert.equal(manual.json().orderReference,"INSERITO");
+    // Simulate the old schema and verify one-time backfill on reopening.
+    await app.close();
+    const db=new DatabaseSync(databasePath);
+    db.exec("ALTER TABLE ShipmentPlans DROP COLUMN orderReference");
+    db.close();
+    app=await buildApp({...config,databasePath});
+    assert.equal(await read(),"RIF-01");
+    await update({orderReference:null});
+    await app.close();
+    app=await buildApp({...config,databasePath});
+    assert.equal(await read(),null);
+  } finally {await app.close();rmSync(directory,{recursive:true,force:true});}
 });
 
 test("il server TEST ignora porta, database e HTTPS ereditati dalla produzione",()=>{

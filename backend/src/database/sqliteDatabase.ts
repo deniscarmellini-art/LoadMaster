@@ -184,6 +184,18 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
   migrateShipmentPlanDepartureTracking(database);
   const shipmentColumns = new Set((database.prepare("PRAGMA table_info(ShipmentPlans)").all() as Array<{name:string}>).map(column=>column.name));
   if(!shipmentColumns.has("plannedCarrierId")) database.exec("ALTER TABLE ShipmentPlans ADD COLUMN plannedCarrierId TEXT NULL REFERENCES Carriers(id)");
+  if (!shipmentColumns.has("orderReference")) {
+    // Snapshot legacy references once; an explicitly cleared reference must stay empty.
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      database.exec("ALTER TABLE ShipmentPlans ADD COLUMN orderReference TEXT NULL");
+      database.exec("UPDATE ShipmentPlans SET orderReference=(SELECT NULLIF(TRIM(riferimentoOrdine),'') FROM Loads WHERE Loads.id=ShipmentPlans.loadId)");
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
   migrateShipmentTransportModel(database);
   migrateTransportAssignments(database);
   seedSettings(database);
