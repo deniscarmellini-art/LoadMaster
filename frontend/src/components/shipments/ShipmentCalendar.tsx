@@ -14,7 +14,7 @@ interface Props {
   onSelectDate: (date: string) => void;
 }
 
-const weekdays = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"];
+const weekdays = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
 
 export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate }: Props) {
   const [month, setMonth] = useState(() => dayjs().startOf("month"));
@@ -28,9 +28,16 @@ export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate
     }
     return result;
   }, [items]);
-  const offset = (month.day() + 6) % 7;
-  const first = month.subtract(offset, "day");
-  const days = Array.from({ length: Math.ceil((offset + month.daysInMonth()) / 7) * 7 }, (_, index) => first.add(index, "day"));
+  // Anchor each row to a real Monday; advance seven calendar days per row,
+  // but generate only its six operational dates. No dates are derived on click.
+  const firstOperationalDay = month.day() === 0 ? month.add(1, "day") : month;
+  const first = firstOperationalDay.subtract((firstOperationalDay.day() + 6) % 7, "day");
+  const end = month.endOf("month").startOf("day");
+  const lastOperationalDay = end.day() === 0 ? end.subtract(1, "day") : end;
+  const weekCount = Math.ceil((lastOperationalDay.diff(first, "day") + 1) / 7);
+  const days = Array.from({ length: weekCount }, (_, week) =>
+    weekdays.map((_, weekday) => first.add(week * 7 + weekday, "day")),
+  ).flat();
 
   return <Box>
     <Stack direction="row" sx={{ alignItems: "center", flexWrap: "wrap", columnGap: 2, rowGap: 0.5, mb: 0.5 }}>
@@ -44,12 +51,12 @@ export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate
       </Stack>
     </Stack>
     <Box sx={{ overflowX: "auto" }}>
-      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(150px, 1fr))", minWidth: 1050, borderTop: 1, borderLeft: 1, borderColor: "divider" }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", minWidth: 900, borderTop: 1, borderLeft: 1, borderColor: "divider" }}>
         {weekdays.map((day) => <Typography key={day} sx={{ p: 1, textAlign: "center", fontWeight: 700, bgcolor: "action.hover", borderRight: 1, borderBottom: 1, borderColor: "divider" }}>{day}</Typography>)}
         {days.map((day) => {
           const date = day.format("YYYY-MM-DD");
           const current = date === today;
-          return <Box key={date} data-calendar-date={date} onClick={() => onSelectDate(date)} sx={{ position: "relative", minHeight: { xs: 155, md: 175 }, p: 0.75, borderRight: 1, borderBottom: 1, borderColor: "divider", bgcolor: current ? "action.selected" : day.month() === month.month() ? "background.paper" : "action.hover", cursor: "pointer" }}>
+          return <Box key={date} data-calendar-date={date} onClick={() => onSelectDate(date)} sx={{ position: "relative", minHeight: { xs: 155, md: `max(120px, calc((100dvh - 300px) / ${weekCount}))` }, p: 0.75, borderRight: 1, borderBottom: 1, borderColor: "divider", bgcolor: current ? "action.selected" : day.month() === month.month() ? "background.paper" : "action.hover", cursor: "pointer" }}>
             <Button size="small" aria-label={`Pianifica spedizione il ${day.format("DD/MM/YYYY")}`} aria-current={current ? "date" : undefined} onClick={(event) => { event.stopPropagation(); onSelectDate(date); }} sx={{ minWidth: 30, mb: 0.5, borderRadius: "50%", color: current ? "primary.contrastText" : day.month() === month.month() ? "text.primary" : "text.secondary", bgcolor: current ? "primary.main" : undefined }}>{day.date()}</Button>
             <Stack sx={{ gap: 0.75 }}>
               {(events.get(date) ?? []).map((item) => {
@@ -57,12 +64,14 @@ export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate
                 const transportText=[presentation.label,item.transportDetailLabel].filter(Boolean).join(" · ");
                 const heading=[item.commessa,item.camion,item.cliente].filter(Boolean).join(" · ");
                 const reference=item.orderReference?.trim();
-                const fullText=[heading,reference?`Rif. ${reference}`:null,transportText].filter(Boolean).join("\n");
+                const note=item.notes?.trim();
+                const fullText=[heading,reference?`Rif. ${reference}`:null,transportText,note?`Nota: ${note}`:null].filter(Boolean).join("\n");
                 const compactText={overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"} as const;
                 return <ButtonBase key={item.id} title={fullText} onClick={(event) => { event.stopPropagation(); onSelectShipment(item); }} sx={{ display: "block", width: "100%", textAlign: "left", p: 0.75, borderRadius: 1, borderLeft: `3px solid ${presentation.color}`, bgcolor: alpha(presentation.color, 0.13), "&:hover": { bgcolor: alpha(presentation.color, 0.24) }, "&.Mui-focusVisible": { outline: `2px solid ${presentation.color}` }, minWidth:0 }}>
                   <Typography variant="body2" sx={{fontWeight:800,...compactText}}>{heading}</Typography>
                   {reference&&<Typography variant="caption" component="div" sx={compactText}>Rif. {reference}</Typography>}
                   <Typography variant="caption" component="div" sx={{color:"text.secondary",...compactText}}>{transportText}</Typography>
+                  {note&&<Typography variant="caption" component="div" sx={compactText}>Nota: <Box component="span" sx={{fontStyle:"italic"}}>{note}</Box></Typography>}
                 </ButtonBase>;
               })}
             </Stack>

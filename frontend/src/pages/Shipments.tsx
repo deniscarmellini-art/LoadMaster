@@ -170,7 +170,7 @@ export default function Shipments({
     [to, setTo] = useState(""),
     [sortKey, setSortKey] = useState<SortKey | null>(null),
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [view, setView] = useState<"list" | "calendar">("list");
+  const [view, setView] = useState<"list" | "calendar">("calendar");
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
   const [editing, setEditing] = useState<ShipmentItem | null | "new">(null),
     [form, setForm] = useState<ShipmentInput>(empty),
@@ -528,15 +528,15 @@ export default function Shipments({
         )}
         <Paper sx={{ p: { xs: 1, md: 2 }, ...(view === "calendar" && { py: 1 }) }}>
           <ToggleButtonGroup exclusive value={view} onChange={(_, value) => { if (value) setView(value); }} aria-label="Visualizzazione spedizioni" size="small" sx={{ mb: view === "calendar" ? 1 : 2 }}>
-            <ToggleButton value="list">Elenco</ToggleButton>
             <ToggleButton value="calendar">Calendario</ToggleButton>
+            <ToggleButton value="list">Elenco</ToggleButton>
           </ToggleButtonGroup>
-          <Box
+          {view === "list" && <Box
             sx={{
               display: "grid",
               gridTemplateColumns: { xs: "1fr", md: "2fr repeat(4,1fr)" },
               gap: 1,
-              mb: view === "calendar" ? 1 : 2,
+              mb: 2,
             }}
           >
             <TextField
@@ -584,9 +584,9 @@ export default function Shipments({
               onChange={(e) => setTo(e.target.value)}
               slotProps={{ inputLabel: { shrink: true } }}
             />
-          </Box>
+          </Box>}
           {view === "calendar" ? (
-            <ShipmentCalendar items={filtered} onSelectShipment={(item) => open(item)} onSelectDate={(date) => open(undefined, date)} />
+            <ShipmentCalendar items={operationalItems} onSelectShipment={(item) => open(item)} onSelectDate={(date) => open(undefined, date)} />
           ) : mobile ? (
             <Stack sx={{ gap: 1 }}>
               {filtered.map((item) => (
