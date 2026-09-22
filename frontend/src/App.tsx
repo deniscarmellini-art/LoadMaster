@@ -638,6 +638,9 @@ export default function App() {
           <TruckLoading
             key={`${resumeLoad?.loadId ?? "loading-list"}:${loadingInstance}`}
             initialLoad={resumeLoad}
+            shipments={shipmentsWithOperationalStatus}
+            clientVehicleTypes={settings.tipiMezzoCliente}
+            thirdPartyTransportModes={settings.modalitaTerziEssepi}
             onResumeLoad={resumeLoadingSession}
             loads={truckLoads}
             onSessionChange={(load) => {

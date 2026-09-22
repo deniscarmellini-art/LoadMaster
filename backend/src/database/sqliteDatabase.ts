@@ -1,3 +1,4 @@
+import { migrateLoadingTransport } from "./loadingTransportMigration.js";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -196,6 +197,7 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       throw error;
     }
   }
+  migrateLoadingTransport(database);
   migrateShipmentTransportModel(database);
   migrateTransportAssignments(database);
   seedSettings(database);
