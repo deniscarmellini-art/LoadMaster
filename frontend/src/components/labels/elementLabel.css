@@ -1,55 +1,58 @@
-/* Element labels only. Package labels use .package-print and their own page CSS. */
+/* Element labels only: all physical geometry is in mm, shared by preview and print. */
 .print-label {
-  width: 200mm;
-  height: 100mm;
-  box-sizing: border-box;
-  padding: 4mm 5mm;
-  display: grid;
-  grid-template-columns: 22mm minmax(0, 1fr) 36mm;
-  grid-template-rows: 27mm minmax(0, 1fr);
-  gap: 2.5mm;
-  position: relative;
-  margin: 28px auto;
-  border: 1px solid #777;
-  background: #fff;
-  color: #151515;
-  font: 10.5pt Arial, sans-serif;
-  box-shadow: 0 4px 18px #0008;
-  transform-origin: center;
+  width: 200mm; height: 100mm; box-sizing: border-box; padding: 4mm 5mm;
+  display: grid; grid-template-columns: 48mm minmax(0, 1fr) 35mm;
+  grid-template-rows: minmax(0, 1fr); gap: 3mm;
+  position: relative; margin: 28px auto; outline: 1px solid #777;
+  background: #fff; color: #151515; font: 10.5pt Arial, sans-serif;
+  box-shadow: 0 4px 18px #0008; transform-origin: center;
 }
-.print-label > * { min-width: 0; }
-.print-label .label-brand { display: flex; align-items: flex-start; justify-content: center; border-bottom: 1.5px solid; }
+.print-label *, .print-label *::before { box-sizing: border-box; }
+.print-label > *, .print-label .label-heading > div { min-width: 0; min-height: 0; }
+.print-label .label-brand {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3mm; padding-right: 3mm; border-right: .2mm solid #777;
+}
 .print-label .label-logo {
-  display: block; width: 22mm; height: 22mm; object-fit: contain;
+  display: block; width: 42mm; height: 42mm; object-fit: contain; flex: none;
   filter: none; opacity: 1; mix-blend-mode: normal;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
+.print-label .label-demo-logo { display: grid; place-items: center; background: #111; color: #fff; font-weight: 900; }
+/* White padding supplements the unchanged QR's own one-module margin. */
+.print-label .label-qr { padding: 3mm; background: #fff; flex: none; }
+.print-label .label-qr svg { display: block; width: 38mm; height: 38mm; }
+.print-label .label-main { display: grid; grid-template-rows: 23mm minmax(0, 1fr); }
 .print-label .label-heading {
-  border-bottom: 1.5px solid;
-  display: grid;
-  grid-template-columns: 1.1fr 1.55fr 1.05fr 1.05fr;
-  column-gap: 2mm;
-  align-items: start;
+  display: grid; grid-template-columns: 1fr 1.5fr .85fr; gap: 2mm;
+  border-bottom: .2mm solid #777;
 }
-.print-label .label-heading > div { min-width: 0; }
-/* Use the existing column's free space: move the whole block, keep CE fixed. */
-.print-label .heading-truck { width: max-content; justify-self: end; transform: translateX(1mm); }
-.print-label .label-heading > div:not(.heading-ce) { display: grid; grid-template-rows: 4mm 11mm auto; align-items: start; }
-.print-label .label-heading small, .print-label .label-details span, .print-label .label-codes small { text-transform: uppercase; font-size: 7pt; letter-spacing: .04em; }
-.print-label .label-heading .heading-value { font-family: Arial, sans-serif; font-size: 28pt; font-weight: 900; line-height: 11mm; white-space: nowrap; align-self: start; }
-.print-label .label-heading span { font-size: 7.5pt; margin-top: 1mm; overflow-wrap: anywhere; }
-.print-label .label-heading .heading-ce { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.05; padding-top: 0; gap: .8mm; }
-.print-label .heading-ce-mark { display: block; width: 12mm; height: 8mm; object-fit: contain; filter: none; opacity: 1; mix-blend-mode: normal; margin-bottom: .2mm; }
-.print-label .heading-certification { display: flex; flex-direction: column; align-items: center; gap: .2mm; width: 100%; }
-.print-label .heading-certification small { font-size: 5.5pt; line-height: 2mm; letter-spacing: 0; white-space: nowrap; }
-.print-label .heading-certification b { font-size: 6.5pt; line-height: 2.3mm; overflow-wrap: anywhere; }
-.print-label .label-details { grid-column: 1 / 3; display: grid; grid-template-columns: 33mm minmax(0, 1fr); gap: 1.3mm 3mm; align-content: start; }
-.print-label .label-details > b { font-size: 12pt; line-height: 1.15; border-bottom: 1px dotted #aaa; padding-bottom: .7mm; overflow-wrap: anywhere; }
-.print-label .label-details .large { font-size: 14pt; }
-.print-label .label-codes { grid-column: 3; grid-row: 1 / 3; border-left: 1.5px solid; padding-left: 3mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.5mm; }
-.print-label .label-codes > svg { width: 30mm; height: 30mm; flex: 0 0 auto; transform: translateY(-3mm); }
-.print-label .label-codes > div { width: 100%; border-top: 1px solid #ddd; padding-top: 1.5mm; text-align: center; display: flex; flex-direction: column; }
-.print-label .label-codes > div b { font-size: 9pt; overflow-wrap: anywhere; }
+.print-label .label-heading > div { display: grid; grid-template-rows: 4mm 12mm 5mm; }
+.print-label small { display: block; font-size: 7pt; line-height: 1.15; text-transform: uppercase; letter-spacing: .025em; }
+.print-label .heading-value { font-size: 30pt; font-weight: 900; line-height: 1.05; white-space: nowrap; }
+.print-label .label-heading span { font-size: 7.5pt; line-height: 1.1; }
+.print-label .label-fit { display: block; min-width: 0; min-height: 0; overflow-wrap: anywhere; overflow: hidden; }
+.print-label .label-details {
+  display: grid; grid-template-columns: 1.4fr 1fr;
+  grid-template-rows: 12mm 12mm 12mm 16mm minmax(0, 1fr); column-gap: 3mm;
+}
+.print-label .label-field { min-width: 0; min-height: 0; padding: 1.5mm 0 1mm; border-bottom: .15mm solid #ccc; display: grid; grid-template-rows: 3mm minmax(0, 1fr); }
+.print-label .label-field-wide { grid-column: 1 / -1; }
+.print-label .label-field:last-child { border-bottom: 0; }
+.print-label .label-field b { font-size: 13pt; line-height: 1.08; }
+.print-label .label-field .large { font-size: 15pt; }
+.print-label .label-codes {
+  border-left: .2mm solid #777; padding-left: 3mm;
+  display: grid; grid-template-rows: 48mm 14mm 13mm minmax(0, 1fr);
+  text-align: center;
+}
+.print-label .heading-ce { display: flex; flex-direction: column; align-items: center; gap: 2mm; }
+.print-label .heading-ce-mark { display: block; width: 24mm; height: 17mm; object-fit: contain; flex: none; filter: none; opacity: 1; mix-blend-mode: normal; }
+.print-label .heading-certification { width: 100%; display: grid; grid-template-rows: 3mm 4.5mm; }
+.print-label .heading-certification small { font-size: 6.5pt; letter-spacing: 0; }
+.print-label .heading-certification b { font-size: 10pt; line-height: 1.1; }
+.print-label .label-meta { min-width: 0; min-height: 0; border-top: .15mm solid #ccc; padding: 2mm 0 1mm; display: grid; grid-template-rows: 3mm minmax(0, 1fr); }
+.print-label .label-meta b { font-size: 10pt; line-height: 1.15; }
 .print-label .preview-caption { position: absolute; top: -20px; left: 0; color: #aaa; font-size: 11px; }
 .print-label--rotated { transform: rotate(90deg); margin: 65mm auto; }
 .scaled-label-preview .print-label { margin: 0; }
@@ -73,7 +76,7 @@
   .labels-preview .print-label {
     page: sislog-element;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    box-shadow: none; border: 0; margin: 0; transform: none;
+    box-shadow: none; border: 0; outline: 0; margin: 0; transform: none;
     break-inside: avoid; break-after: page; page-break-after: always;
   }
   .labels-preview .print-label:last-child { break-after: auto; page-break-after: auto; }
