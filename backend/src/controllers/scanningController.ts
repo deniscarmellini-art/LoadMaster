@@ -4,7 +4,7 @@ interface Id{id:string} interface PackagePanel{ id:string;panelId:string }
 export class ScanningController{
  constructor(private readonly service:ScanningService){}
  warehouse=async()=>this.service.warehouse(); packages=async()=>this.service.listPackages(); getPackage=async(r:FastifyRequest<{Params:Id}>)=>this.service.getPackage(r.params.id);
- createPackage=async(r:FastifyRequest<{Body:{loadId:string;operatorId:string}}>,reply:FastifyReply)=>reply.status(201).send(this.service.createPackage(r.body));
+ createPackage=async(r:FastifyRequest<{Body:{loadId:string;operatorId:string;panelId:string}}>,reply:FastifyReply)=>reply.status(201).send(this.service.createPackage(r.body));
  suspendPackage=async(r:FastifyRequest<{Params:Id}>)=>this.service.suspendPackage(r.params.id);
  resumePackage=async(r:FastifyRequest<{Params:Id}>)=>this.service.resumePackage(r.params.id);
  scan=async(r:FastifyRequest<{Params:Id;Body:{operatorId:string}}>)=>this.service.scan(r.params.id,r.body);

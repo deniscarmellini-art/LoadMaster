@@ -6,7 +6,7 @@ interface Options{service:ScanningService}
 const operatorBody={type:"object",additionalProperties:false,required:["operatorId"],properties:{operatorId:{type:"string",minLength:1}}} as const;
 export const scanningRoutes:FastifyPluginAsync<Options>=async(app,{service})=>{const c=new ScanningController(service);
  app.get("/warehouse",c.warehouse);app.get("/packages",c.packages);app.get("/packages/:id",{schema:{params:idParamsSchema}},c.getPackage);
- app.post("/packages",{schema:{body:{type:"object",additionalProperties:false,required:["loadId","operatorId"],properties:{loadId:{type:"string",minLength:1},operatorId:{type:"string",minLength:1}}}}},c.createPackage);
+ app.post("/packages",{schema:{body:{type:"object",additionalProperties:false,required:["loadId","operatorId","panelId"],properties:{panelId:{type:"string",minLength:1},loadId:{type:"string",minLength:1},operatorId:{type:"string",minLength:1}}}}},c.createPackage);
  app.post("/packages/:id/suspend",{schema:{params:idParamsSchema}},c.suspendPackage);
  app.post("/packages/:id/resume",{schema:{params:idParamsSchema}},c.resumePackage);
  app.patch("/packages/:id/location",{schema:{params:idParamsSchema,body:{type:"object",additionalProperties:false,required:["location"],properties:{location:{type:"string",maxLength:120}}}}},c.updatePackageManualLocation);

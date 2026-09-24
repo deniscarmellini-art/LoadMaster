@@ -5,11 +5,135 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { ScanningRepository } from "./repositories/scanningRepository.js";
+import { openSqliteDatabase } from "./database/sqliteDatabase.js";
+import { ScanningService } from "./services/scanningService.js";
 import { buildApp } from "./app.js";
 import { loadConfig, type AppConfig } from "./config/environment.js";
 import { addBusinessDays } from "./repositories/transportRepository.js";
 import { assertTestDatabase, productionDatabase, testConfig, testDatabase } from "./config/testEnvironment.js";
 import { migrateLoadingTransport } from "./database/loadingTransportMigration.js";
+
+test("draft: atomic first scan, safe abandonment, resume and last removal", async t=>{
+  const {database:db,close}=openSqliteDatabase(":memory:");
+  const repo=new ScanningRepository(db),service=new ScanningService(repo);
+  const now=new Date().toISOString(),operatorId="TEST-OP",loadId="TEST-LOAD";
+  db.prepare("INSERT INTO Loads(id,commessa,cliente,camion,createdAt,updatedAt) VALUES(?,?,?,?,?,?)").run(loadId,"TEST","Cliente","C1",now,now);
+  for(let n=1;n<=5;n++)db.prepare("INSERT INTO Panels(id,loadId,numeroPannello,camion,peso,volume,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?)").run(`P${n}`,loadId,String(n),"C1",10,2,now,now);
+  const first=(panelId:string)=>service.createPackage({loadId,operatorId,panelId});
+  try {
+    await t.test("no scan: no draft exists",()=>assert.equal(service.listPackages().length,0));
+    const a=first("P1");
+    await t.test("first scan creates active package with correct totals",()=>{
+      assert.equal(a.workflowState,"ATTIVO");assert.equal(a.numeroPannelli,1);
+      assert.equal(a.pesoTotale,10);assert.equal(a.volumeTotale,2);assert.equal(a.pannelli[0]?.id,"P1");
+    });
+    await t.test("suspend A and abandon new B without creating a record",()=>{
+      assert.equal(service.suspendPackage(a.id)?.workflowState,"SOSPESO");
+      assert.equal(service.listPackages().length,1);assert.equal(service.getPackage(a.id).pannelli.length,1);
+    });
+    await t.test("resume preserves operator, associations and totals",()=>{
+      const resumed=service.resumePackage(a.id)!;
+      assert.equal(resumed.workflowState,"ATTIVO");assert.equal(resumed.operatoreId,operatorId);
+      assert.equal(resumed.pesoTotale,10);assert.equal(resumed.volumeTotale,2);assert.equal(resumed.pannelli[0]?.id,"P1");
+    });
+    await t.test("failed first scan rolls back draft, scan and suspension",()=>{
+      db.exec("CREATE TRIGGER reject_test_panel BEFORE UPDATE OF packageId ON Panels WHEN NEW.id='P2' AND NEW.packageId IS NOT NULL BEGIN SELECT RAISE(ABORT,'test failure'); END");
+      assert.throws(()=>first("P2"));assert.equal(service.listPackages().length,1);
+      assert.equal(service.getPackage(a.id).workflowState,"ATTIVO");assert.equal(repo.findPanel("P2")?.scannedAt,null);
+      db.exec("DROP TRIGGER reject_test_panel");
+    });
+    const b=first("P2");
+    await t.test("new persisted B suspends A; resume A suspends B",()=>{
+      assert.equal(service.getPackage(a.id).workflowState,"SOSPESO");
+      service.resumePackage(a.id);assert.equal(service.getPackage(b.id).workflowState,"SOSPESO");
+      assert.equal(service.getPackage(b.id).pannelli[0]?.id,"P2");
+    });
+    await t.test("last removal deletes only empty draft and retains audit and panel",()=>{
+      assert.equal(service.removePanel(a.id,"P1",{operatorId}),null);
+      assert.equal(repo.findPackage(a.id),null);assert.equal(repo.findPanel("P1")?.stato,"MANCANTE");
+      assert.equal(repo.findPanel("P1")?.packageId,null);
+      const audit=db.prepare("SELECT * FROM OperationalEvents WHERE type='EMPTY_DRAFT_CANCELLED'").get()!;
+      assert.equal(audit.packageId,null);assert.ok(String(audit.note).includes(a.id));
+      assert.ok(db.prepare("SELECT 1 FROM OperationalEvents WHERE type='PANEL_REMOVED_FROM_PACKAGE'").get());
+      assert.equal(service.suspendPackage(a.id),null);
+    });
+    await t.test("valid suspended draft survives even with stale zero counter",()=>{
+      db.prepare("UPDATE Packages SET numeroPannelli=0 WHERE id=?").run(b.id);
+      assert.equal(service.suspendPackage(b.id)?.pannelli.length,1);
+      assert.ok(repo.findPackage(b.id));
+      db.prepare("UPDATE Packages SET numeroPannelli=1 WHERE id=?").run(b.id);
+    });
+    await t.test("closing a valid package preserves contents and dimensions",()=>{
+      service.resumePackage(b.id);
+      const closed=service.closePackage(b.id,{codicePacco:"PK-TEST",operatoreId:operatorId,lunghezzaPacco:1000,larghezzaPacco:500,altezzaPacco:300});
+      assert.equal(closed.stato,"DISPONIBILE");assert.equal(closed.pannelli[0]?.id,"P2");
+      assert.equal(closed.pesoTotale,10);assert.equal(closed.volumeTotale,2);assert.ok(closed.closedAt);
+      assert.throws(()=>service.suspendPackage(b.id));
+    });
+    await t.test("legacy empty cannot close, is discarded even with stale positive counter",()=>{
+      const legacy=repo.createPackage(loadId,operatorId);
+      db.prepare("UPDATE Packages SET numeroPannelli=99 WHERE id=?").run(legacy.id);
+      assert.throws(()=>service.closePackage(legacy.id,{codicePacco:"INVALID",operatoreId:operatorId,lunghezzaPacco:1,larghezzaPacco:1,altezzaPacco:1}));
+      assert.equal(service.suspendPackage(legacy.id),null);assert.equal(repo.findPackage(legacy.id),null);
+    });
+    await t.test("resume removes empty legacy draft; opening cleans previous empty",()=>{
+      const legacy=repo.createPackage(loadId,operatorId);repo.suspendPackage(legacy.id);
+      assert.equal(service.resumePackage(legacy.id),null);
+      const other=repo.createPackage(loadId,operatorId);const c=first("P3");
+      assert.equal(repo.findPackage(other.id),null);assert.equal(c.pannelli.length,1);
+      service.suspendPackage(c.id);
+    });
+    await t.test("empty draft with any loading reference is preserved",()=>{
+      const legacy=repo.createPackage(loadId,operatorId);
+      db.prepare("INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,carrierId,startedAt,createdAt,updatedAt) VALUES('SESSION',?,'IN_CARICO',?,'TRASPORTATORE','CARRIER',?,?,?)").run(loadId,operatorId,now,now,now);
+      db.prepare("INSERT INTO LoadingUnits(id,loadingSessionId,unitType,packageId,loadedAt,loadedByOperatorId,active,createdAt,updatedAt) VALUES('UNIT','SESSION','PACKAGE',?,?,?,0,?,?)").run(legacy.id,now,operatorId,now,now);
+      assert.throws(()=>service.suspendPackage(legacy.id));assert.ok(repo.findPackage(legacy.id));
+      assert.ok(db.prepare("SELECT 1 FROM LoadingUnits WHERE id='UNIT'").get());
+    });
+  } finally {close();}
+});
+
+test("draft: stale empty snapshot cannot delete an element assigned by another connection",()=>{
+  const directory=mkdtempSync(join(tmpdir(),"draft-concurrency-")),path=join(directory,"test.sqlite");
+  const first=openSqliteDatabase(path),other=new DatabaseSync(path);
+  try{
+    const now=new Date().toISOString(),repo=new ScanningRepository(first.database),secondRepo=new ScanningRepository(other);
+    first.database.prepare("INSERT INTO Loads(id,commessa,cliente,camion,createdAt,updatedAt) VALUES('L','T','C','C1',?,?)").run(now,now);
+    first.database.prepare("INSERT INTO Panels(id,loadId,numeroPannello,camion,createdAt,updatedAt) VALUES('P','L','1','C1',?,?)").run(now,now);
+    const draft=repo.createPackage("L","OP");assert.equal(draft.pannelli.length,0);
+    secondRepo.transaction(()=>secondRepo.addPanel(draft.id,"P","OP"));
+    // A stale UI still considers it empty. The transaction reads the newly committed association.
+    const suspended=new ScanningService(repo).suspendPackage(draft.id)!;
+    assert.equal(suspended.workflowState,"SOSPESO");assert.equal(suspended.pannelli[0]?.id,"P");
+    assert.equal(repo.transaction(()=>repo.discardEmptyDraft(draft.id)),false);
+    // BEGIN IMMEDIATE excludes a competing writer throughout check/delete.
+    first.database.exec("BEGIN IMMEDIATE");
+    try{assert.throws(()=>other.exec("BEGIN IMMEDIATE"),/locked/);}finally{first.database.exec("ROLLBACK");}
+  } finally {other.close();first.close();rmSync(directory,{recursive:true,force:true});}
+});
+
+test("draft API: first panel required, duplicate requests safe, empty removal response",async()=>{
+  const app=await buildApp(config);
+  try{
+    const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("ATOMIC","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+    const input={loadId:load.id,operatorId:operator.id};
+    assert.equal((await app.inject({method:"POST",url:"/api/packages",payload:input})).statusCode,400);
+    assert.deepEqual((await app.inject({method:"GET",url:"/api/packages"})).json(),[]);
+    const panelId=load.pannelli[0]!.id;
+    const responses=await Promise.all([1,2].map(()=>app.inject({method:"POST",url:"/api/packages",payload:{...input,panelId}})));
+    assert.deepEqual(responses.map(r=>r.statusCode).sort(),[201,409]);
+    const pack=responses.find(r=>r.statusCode===201)!.json<{id:string;numeroPannelli:number}>();
+    assert.equal(pack.numeroPannelli,1);
+    assert.equal((await app.inject({method:"GET",url:"/api/packages"})).json<unknown[]>().length,1);
+    const removed=await app.inject({method:"DELETE",url:`/api/packages/${pack.id}/panels/${panelId}`,payload:{operatorId:operator.id}});
+    assert.equal(removed.statusCode,200);assert.equal(removed.json(),null);
+    const repeated=await app.inject({method:"POST",url:`/api/packages/${pack.id}/suspend`});
+    assert.equal(repeated.statusCode,200);assert.equal(repeated.json(),null);
+    assert.equal((await app.inject({method:"GET",url:`/api/packages/${pack.id}`})).statusCode,404);
+  }finally{await app.close();}
+});
 
 test("trasportatore previsto separato dall'effettivo, modificabile e cancellabile prima della partenza", async()=>{
   const app=await buildApp(config);
@@ -641,11 +765,13 @@ test("elimina atomicamente la commessa 265588 dopo conferma della pianificazione
 });
 
 test("elimina una commessa con il solo pacco bozza vuoto",async()=>{
-  const app=await buildApp(config);
+  const directory=mkdtempSync(join(tmpdir(),"legacy-empty-"));
+  const path=join(directory,"test.sqlite");
+  const app=await buildApp({...config,databasePath:path});
   const payload={...importedLoad([importedPanel("101","C3"),importedPanel("104","C4")]),commessa:"EMPTY-DRAFT"};
   const loads=(await app.inject({method:"POST",url:"/api/loads/import",payload})).json<Array<{id:string}>>();
   const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
-  assert.equal((await app.inject({method:"POST",url:"/api/packages",payload:{loadId:loads[0]!.id,operatorId:operator.id}})).statusCode,201);
+  const legacyDb=new DatabaseSync(path);new ScanningRepository(legacyDb).createPackage(loads[0]!.id,operator.id);legacyDb.close();
   const removed=await app.inject({method:"DELETE",url:"/api/orders/EMPTY-DRAFT"});
   assert.equal(removed.statusCode,204);
   assert.equal((await app.inject({method:"GET",url:"/api/loads"})).json<Array<{commessa:string}>>().some(load=>load.commessa==="EMPTY-DRAFT"),false);
@@ -758,10 +884,8 @@ test("scansioni, singoli e pacchi persistono con associazioni e dimensioni",asyn
     const [single,panel1,panel2]=created.pannelli;
     assert.equal((await first.inject({method:"PATCH",url:`/api/panels/${single!.id}/scan`,payload:{operatorId:operator.id}})).statusCode,200);
     assert.equal((await first.inject({method:"PATCH",url:`/api/panels/${single!.id}/close-single`,payload:{operatorId:operator.id}})).json<{stato:string}>().stato,"DISPONIBILE");
-    const opened=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:created.id,operatorId:operator.id}})).json<{id:string;stato:string}>();
+    const opened=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:created.id,operatorId:operator.id,panelId:panel1!.id}})).json<{id:string;stato:string}>();
     assert.equal(opened.stato,"APERTO");
-    await first.inject({method:"PATCH",url:`/api/panels/${panel1!.id}/scan`,payload:{operatorId:operator.id}});
-    await first.inject({method:"POST",url:`/api/packages/${opened.id}/panels`,payload:{panelId:panel1!.id,operatorId:operator.id}});
     await first.inject({method:"PATCH",url:`/api/panels/${panel2!.id}/scan`,payload:{operatorId:operator.id}});
     const twoPanels=await first.inject({method:"POST",url:`/api/packages/${opened.id}/panels`,payload:{panelId:panel2!.id,operatorId:operator.id}});
     assert.equal(twoPanels.json<{numeroPannelli:number}>().numeroPannelli,2);
@@ -786,28 +910,26 @@ test("gestisce N pacchi in lavorazione mantenendone uno solo attivo",async()=>{
     const operator=(await first.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
     const load=(await first.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("P1","C1"),importedPanel("P2","C1"),importedPanel("P3","C1"),importedPanel("P4","C1")]),commessa:"MULTI-PACKAGE"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
     const scanAndAdd=async(packageId:string,panelId:string)=>{await first.inject({method:"PATCH",url:`/api/panels/${panelId}/scan`,payload:{operatorId:operator.id}});const response=await first.inject({method:"POST",url:`/api/packages/${packageId}/panels`,payload:{panelId,operatorId:operator.id}});assert.equal(response.statusCode,200);};
-    const packageA=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();
-    await scanAndAdd(packageA.id,load.pannelli[0]!.id);await scanAndAdd(packageA.id,load.pannelli[1]!.id);
-    const packageB=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();
+    const packageA=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id,panelId:load.pannelli[0]!.id}})).json<{id:string}>();
+    await scanAndAdd(packageA.id,load.pannelli[1]!.id);
+    const packageB=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id,panelId:load.pannelli[2]!.id}})).json<{id:string}>();
     let warehouse=(await first.inject({method:"GET",url:"/api/warehouse"})).json<{openPackages:Array<{id:string}>;suspendedPackages:Array<{id:string}>}>();
     assert.deepEqual(warehouse.openPackages.map(item=>item.id),[packageB.id]);assert.equal(warehouse.suspendedPackages.some(item=>item.id===packageA.id),true);
-    await scanAndAdd(packageB.id,load.pannelli[2]!.id);
     await first.inject({method:"POST",url:`/api/packages/${packageA.id}/resume`});
     warehouse=(await first.inject({method:"GET",url:"/api/warehouse"})).json<typeof warehouse>();
     assert.deepEqual(warehouse.openPackages.map(item=>item.id),[packageA.id]);assert.equal(warehouse.suspendedPackages.some(item=>item.id===packageB.id),true);
     await scanAndAdd(packageA.id,load.pannelli[3]!.id);
-    const packageC=(await first.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();
-    await first.inject({method:"POST",url:`/api/packages/${packageC.id}/suspend`});
+    await first.inject({method:"POST",url:`/api/packages/${packageA.id}/suspend`});
     await first.close();
     const restarted=await buildApp(persistentConfig);
     const afterRestart=(await restarted.inject({method:"GET",url:"/api/warehouse"})).json<{openPackages:unknown[];suspendedPackages:Array<{id:string;numeroPannelli:number}>}>();
-    assert.equal(afterRestart.openPackages.length,0);assert.equal(afterRestart.suspendedPackages.length,3);
-    assert.equal(afterRestart.suspendedPackages.find(item=>item.id===packageA.id)?.numeroPannelli,3);assert.equal(afterRestart.suspendedPackages.find(item=>item.id===packageB.id)?.numeroPannelli,1);assert.equal(afterRestart.suspendedPackages.find(item=>item.id===packageC.id)?.numeroPannelli,0);
+    assert.equal(afterRestart.openPackages.length,0);assert.equal(afterRestart.suspendedPackages.length,2);
+    assert.equal(afterRestart.suspendedPackages.find(item=>item.id===packageA.id)?.numeroPannelli,3);assert.equal(afterRestart.suspendedPackages.find(item=>item.id===packageB.id)?.numeroPannelli,1);
     await restarted.inject({method:"POST",url:`/api/packages/${packageB.id}/resume`});
     const closed=await restarted.inject({method:"POST",url:`/api/packages/${packageB.id}/close`,payload:{codicePacco:"PK-2026-000001",operatoreId:operator.id,lunghezzaPacco:1000,larghezzaPacco:500,altezzaPacco:300}});
     assert.equal(closed.statusCode,200);assert.equal(closed.json<{codicePacco:string;stato:string}>().codicePacco,"PK-2026-000001");assert.equal(closed.json<{stato:string}>().stato,"DISPONIBILE");
     const finalWarehouse=(await restarted.inject({method:"GET",url:"/api/warehouse"})).json<{packages:Array<{id:string;pannelli:Array<{id:string}>}>;openPackages:unknown[];suspendedPackages:Array<{id:string;pannelli:Array<{id:string}>}>}>();
-    assert.equal(finalWarehouse.openPackages.length,0);assert.deepEqual(new Set(finalWarehouse.suspendedPackages.map(item=>item.id)),new Set([packageA.id,packageC.id]));assert.deepEqual(finalWarehouse.packages.find(item=>item.id===packageB.id)?.pannelli.map(item=>item.id),[load.pannelli[2]!.id]);
+    assert.equal(finalWarehouse.openPackages.length,0);assert.deepEqual(new Set(finalWarehouse.suspendedPackages.map(item=>item.id)),new Set([packageA.id]));assert.deepEqual(finalWarehouse.packages.find(item=>item.id===packageB.id)?.pannelli.map(item=>item.id),[load.pannelli[2]!.id]);
     await restarted.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
@@ -817,7 +939,7 @@ test("elimina sia un pacco mai movimentato sia un pacco scaricato da una session
   const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
   const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
   const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("P-CLEAN","C1"),importedPanel("P-HISTORY","C1")]),commessa:"PACKAGE-DELETE"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
-  const makePackage=async(panelId:string,code:string)=>{const pack=(await app.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();await app.inject({method:"POST",url:`/api/packages/${pack.id}/panels`,payload:{panelId,operatorId:operator.id}});await app.inject({method:"POST",url:`/api/packages/${pack.id}/close`,payload:{codicePacco:code,operatoreId:operator.id,lunghezzaPacco:1000,larghezzaPacco:500,altezzaPacco:300}});return pack;};
+  const makePackage=async(panelId:string,code:string)=>{const pack=(await app.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id,panelId}})).json<{id:string}>();await app.inject({method:"POST",url:`/api/packages/${pack.id}/close`,payload:{codicePacco:code,operatoreId:operator.id,lunghezzaPacco:1000,larghezzaPacco:500,altezzaPacco:300}});return pack;};
   const clean=await makePackage(load.pannelli[0]!.id,"PK-CLEAN");
   const historical=await makePackage(load.pannelli[1]!.id,"PK-HISTORY");
   const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
@@ -840,8 +962,7 @@ test("un pacco spedito non può essere eliminato dal magazzino",async()=>{
   const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
   const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!;
   const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("P-SHIPPED","C2")]),commessa:"PACKAGE-SHIPPED"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
-  const pack=(await app.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id}})).json<{id:string}>();
-  await app.inject({method:"POST",url:`/api/packages/${pack.id}/panels`,payload:{panelId:load.pannelli[0]!.id,operatorId:operator.id}});
+  const pack=(await app.inject({method:"POST",url:"/api/packages",payload:{loadId:load.id,operatorId:operator.id,panelId:load.pannelli[0]!.id}})).json<{id:string}>();
   await app.inject({method:"POST",url:`/api/packages/${pack.id}/close`,payload:{codicePacco:"PK-SHIPPED",operatoreId:operator.id,lunghezzaPacco:1000,larghezzaPacco:500,altezzaPacco:300}});
   const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();
   await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PACKAGE",packageId:pack.id,operatorId:operator.id}});

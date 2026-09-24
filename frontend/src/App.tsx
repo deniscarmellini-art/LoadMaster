@@ -796,6 +796,7 @@ export default function App() {
           />
         ) : scanningTarget && scanningCommessa ? (
           <PanelScanning
+            key={scanKey(scanningTarget.commessa, scanningTarget.camion)}
             commessa={scanningCommessa}
             draftPanels={
               packageDrafts.get(
