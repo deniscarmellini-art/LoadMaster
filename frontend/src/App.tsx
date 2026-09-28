@@ -25,6 +25,7 @@ import History from "./pages/History";
 import Transports from "./pages/Transports";
 import Shipments from "./pages/Shipments";
 import MobileDashboardReturn from "./components/navigation/MobileDashboardReturn";
+import type { PrimaryNavigationPage } from "./components/navigation/PrimaryNavigation";
 import theme from "./theme/theme";
 import {
   creaDashboard,
@@ -65,6 +66,7 @@ import {
 import { listTransports, type TransportItem } from "./services/transportsApi";
 import { departShipment, listShipments, type ShipmentItem } from "./services/shipmentsApi";
 import useAutoRefresh from "./hooks/useAutoRefresh";
+import { importaExcel } from "./services/excelImport";
 
 const panelKey = (panel: Pannello) =>
   `${normalizeTruck(panel.numeroCamion)}\u0000${String(panel.numeroPannello).trim()}`;
@@ -106,6 +108,8 @@ export default function App() {
   const [resumeLoad, setResumeLoad] = useState<CaricoCamion | null>(null);
   const [loadingInstance, setLoadingInstance] = useState(0);
   const [historyLoadId, setHistoryLoadId] = useState<string | undefined>();
+  const [isImporting,setIsImporting]=useState(false);
+  const importInputRef=useRef<HTMLInputElement>(null);
   const [pendingImport, setPendingImport] = useState<Commessa | null>(null);
   const [blockedImport, setBlockedImport] = useState<{
     commessa: string;
@@ -312,6 +316,15 @@ export default function App() {
     },
     [commesse, truckLoads],
   );
+  const openImportPicker=()=>{if(!isImporting)importInputRef.current?.click();};
+  const handleImportFile=async(event:React.ChangeEvent<HTMLInputElement>)=>{
+    const file=event.target.files?.[0];
+    if(!file)return;
+    setIsImporting(true);
+    try{await handleImported(await importaExcel(file));}
+    catch(error){console.error("Errore durante l'importazione del file Excel",error);alert("Errore durante l'importazione del file.");}
+    finally{event.target.value="";setIsImporting(false);}
+  };
 
   const removedPanels = pendingImport
     ? (() => {
@@ -385,7 +398,7 @@ export default function App() {
   const scanningCommessa = scanningTarget
     ? commesse.find((item) => item.ordine === scanningTarget.commessa)
     : undefined;
-  const leaveScanning = async () => {
+  const leaveScanning = async (destination:Exclude<PrimaryNavigationPage,"import">="dashboard") => {
     if (scanningTarget) {
       const id = packageDraftIds.get(scanKey(scanningTarget.commessa, scanningTarget.camion));
       if (id) {
@@ -393,8 +406,28 @@ export default function App() {
       }
     }
     setScanningTarget(null);
-    setPage("dashboard");
+    setPage(destination);
     await refreshScanningData().catch(() => undefined);
+  };
+  const activePrimaryPage:PrimaryNavigationPage=page==="scanning"?"scanning-list":page;
+  const navigatePrimary=(target:PrimaryNavigationPage)=>{
+    const destination:Exclude<PrimaryNavigationPage,"import">=target==="import"?"dashboard":target;
+    const complete=()=>{
+      setHistoryLoadId(undefined);
+      setResumeLoad(null);
+      setScanningTarget(null);
+      setPage(destination);
+      if(target==="import")openImportPicker();
+    };
+    if(page==="scanning"){
+      if(target==="import")openImportPicker();
+      void leaveScanning(destination).then(()=>{
+        setHistoryLoadId(undefined);
+        setResumeLoad(null);
+      });
+      return;
+    }
+    complete();
   };
   const setDraftForTarget: React.Dispatch<React.SetStateAction<Pannello[]>> = (
     action,
@@ -411,7 +444,8 @@ export default function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <MainLayout>
+      <input ref={importInputRef} type="file" accept=".xlsx,.xls" hidden onChange={handleImportFile}/>
+      <MainLayout activePage={activePrimaryPage} onNavigate={navigatePrimary}>
         {loadsLoading ? (
           <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
             <CircularProgress />
@@ -421,21 +455,12 @@ export default function App() {
         ) : page === "dashboard" ? (
           <Dashboard
             commesse={commesse}
-            onImported={handleImported}
+            onImportClick={openImportPicker}
             onDeleteLoad={async (row, confirmPlanning) => {
               await deleteLoadFromApi(row.id, confirmPlanning);
               await refreshScanningData();
             }}
-            onOpenLabels={() => setPage("labels")}
             onOpenScanning={openScanning}
-            onOpenScanningList={() => setPage("scanning-list")}
-            onOpenWarehouse={() => setPage("warehouse")}
-            onOpenSettings={() => setPage("settings")}
-            onOpenLoading={() => {
-              setResumeLoad(null);
-              setPage("loading");
-            }}
-            onOpenTransports={() => setPage("transports")}
             onOpenShipments={() => setPage("shipments")}
             shipments={shipmentsWithOperationalStatus}
             onOpenHistory={(row) => {

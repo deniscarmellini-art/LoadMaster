@@ -19,7 +19,12 @@ export default function ScannerInput({ managedFocus=false, onRestoreFocus, disab
   useEffect(()=>{if(!managedFocus&&!disabled&&!smartphone)requestAnimationFrame(()=>inputRef.current?.focus());},[managedFocus,disabled,smartphone,inputRef]);
   const submit=()=>{if(!value.trim())return;onScan(value);};
   const closeCamera=useCallback(()=>{setCameraOpen(false);restoreFocus();},[restoreFocus]);
-  const cameraDetected=useCallback((rawValue:string)=>{setCameraOpen(false);onScanRef.current(rawValue);restoreFocus();},[restoreFocus]);
+  const cameraDetected=useCallback((rawValue:string)=>{
+    setCameraOpen(false);
+    onScanRef.current(rawValue);
+    // With managed focus, the owner restores focus only after the async scan finishes.
+    if(!managedFocus)restoreFocus();
+  },[managedFocus,restoreFocus]);
   return <>
     <Stack direction={{xs:"column",sm:"row"}} sx={{gap:1.5,alignItems:"stretch"}}>
       {!smartphone && (

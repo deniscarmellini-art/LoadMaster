@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { demoBranding } from "../services/demoBranding";
 import {
   Alert,
@@ -19,10 +19,8 @@ import {
 } from "@mui/material";
 
 import DashboardContent from "../components/dashboard/DashboardContent";
-import DashboardHeader from "../components/dashboard/DashboardHeader";
 import UpcomingShipments from "../components/dashboard/UpcomingShipments";
 import { creaDashboardOperativa } from "../services/dashboardService";
-import { importaExcel } from "../services/excelImport";
 
 import type { Commessa } from "../types/excel";
 import type { Camion } from "../models/Camion";
@@ -37,15 +35,9 @@ import { ApiClientError } from "../services/apiClient";
 
 interface DashboardProps {
   commesse: Commessa[];
-  onImported: (commessa: Commessa) => Promise<void>;
+  onImportClick:()=>void;
   onDeleteLoad: (row: Camion, confirmPlanning?: boolean) => Promise<void>;
-  onOpenLabels: () => void;
   onOpenScanning: (row: Camion) => void;
-  onOpenScanningList: () => void;
-  onOpenWarehouse: () => void;
-  onOpenSettings: () => void;
-  onOpenLoading: () => void;
-  onOpenTransports: () => void;
   onOpenShipments: () => void;
   onOpenHistory: (row?: Camion) => void;
   truckLoads: CaricoCamion[];
@@ -67,15 +59,9 @@ interface DashboardProps {
 
 function Dashboard({
   commesse,
-  onImported,
+  onImportClick,
   onDeleteLoad,
-  onOpenLabels,
   onOpenScanning,
-  onOpenScanningList,
-  onOpenWarehouse,
-  onOpenSettings,
-  onOpenLoading,
-  onOpenTransports,
   onOpenShipments,
   onOpenHistory,
   truckLoads,
@@ -100,7 +86,6 @@ function Dashboard({
   const [deletePlanningWarning, setDeletePlanningWarning] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const [reopenRow, setReopenRow] = useState<Camion | null>(null);
   const [reopenOperatorId, setReopenOperatorId] = useState("");
   const [reopenReason, setReopenReason] = useState("");
@@ -111,7 +96,6 @@ function Dashboard({
   const [selectedPackageCodes, setSelectedPackageCodes] = useState<Set<string>>(
     new Set(),
   );
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dashboard = useMemo(
     () => creaDashboardOperativa(commesse, truckLoads),
@@ -183,47 +167,8 @@ function Dashboard({
       setIsDeleting(false);
     }
   };
-  const openFilePicker = () => {
-    if (!isImporting) fileInputRef.current?.click();
-  };
-  const handleFileChange = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setIsImporting(true);
-    try {
-      await onImported(await importaExcel(file));
-    } catch (error) {
-      console.error("Errore durante l'importazione del file Excel", error);
-      alert("Errore durante l'importazione del file.");
-    } finally {
-      event.target.value = "";
-      setIsImporting(false);
-    }
-  };
-
   return (
     <>
-      <DashboardHeader
-        isImporting={isImporting}
-        onImportClick={openFilePicker}
-        onOpenHistory={() => onOpenHistory()}
-        onOpenLabels={onOpenLabels}
-        onOpenLoading={onOpenLoading}
-        onOpenTransports={onOpenTransports}
-        onOpenShipments={onOpenShipments}
-        onOpenScanning={onOpenScanningList}
-        onOpenSettings={onOpenSettings}
-        onOpenWarehouse={onOpenWarehouse}
-      />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".xlsx,.xls"
-        hidden
-        onChange={handleFileChange}
-      />
       <Box sx={{ display: "flex", flexDirection: "column" }}>
         <Box sx={{ order: mobile ? 3 : 1 }}>
           <UpcomingShipments
@@ -267,26 +212,11 @@ function Dashboard({
               setDepartureAt(new Date().toISOString());
             }}
             onOpenHistory={onOpenHistory}
-            onUpdate={openFilePicker}
+            onUpdate={onImportClick}
             rows={activeRows}
             shipments={shipments}
             carriers={carriers}
             transports={transports}
-          />
-        </Box>
-        <Box sx={{ order: mobile ? 1 : 3 }}>
-          <DashboardHeader
-            section="menu"
-            isImporting={isImporting}
-            onImportClick={openFilePicker}
-            onOpenHistory={() => onOpenHistory()}
-            onOpenLabels={onOpenLabels}
-            onOpenLoading={onOpenLoading}
-            onOpenTransports={onOpenTransports}
-            onOpenShipments={onOpenShipments}
-            onOpenScanning={onOpenScanningList}
-            onOpenSettings={onOpenSettings}
-            onOpenWarehouse={onOpenWarehouse}
           />
         </Box>
       </Box>

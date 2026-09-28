@@ -1,16 +1,24 @@
 import { Box, Container, Typography } from "@mui/material";
 import { demoBranding } from "../services/demoBranding";
+import PrimaryNavigation, { type PrimaryNavigationPage } from "../components/navigation/PrimaryNavigation";
+import DashboardHeader from "../components/dashboard/DashboardHeader";
 
 type Props = {
   children: React.ReactNode;
+  activePage:PrimaryNavigationPage;
+  onNavigate:(page:PrimaryNavigationPage)=>void;
 };
 
-export default function MainLayout({ children }: Props) {
+export default function MainLayout({ children,activePage,onNavigate }: Props) {
   return (
     <Box sx={{ minHeight: "100vh" }}>
       {(import.meta.env.VITE_SISLOG_TEST || import.meta.env.VITE_SISLOG_DEMO) && <Box component="header" sx={{ position: "sticky", top: 0, zIndex: 1200, bgcolor: "warning.main", color: "warning.contrastText", py: .5, px: 2, textAlign: "center", fontWeight: 800, fontSize: ".8rem", "@media print": { display: "none" } }}>{import.meta.env.VITE_SISLOG_DEMO ? "AMBIENTE DEMO — DATI FITTIZI" : "AMBIENTE TEST"}</Box>}
       <Box component="main" sx={{ py: { xs: 1.5, md: 2.5 } }}>
-        <Container maxWidth={false} sx={{ px: { xs: 1.5, md: 3 } }}>{children}</Container>
+        <Container maxWidth={false} sx={{ px: { xs: 1.5, md: 3 } }}>
+          <DashboardHeader />
+          <PrimaryNavigation activePage={activePage} onNavigate={onNavigate}/>
+          {children}
+        </Container>
       </Box>
       <Box
         component="footer"
