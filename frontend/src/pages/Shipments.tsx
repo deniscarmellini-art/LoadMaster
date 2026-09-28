@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import {
   Alert,
@@ -61,7 +60,6 @@ interface Props {
   clientVehicleTypes: VoceTrasporto[];
   thirdPartyTransportModes: VoceTrasporto[];
   transports: TransportItem[];
-  onBack: () => void;
   onRefresh: () => Promise<void>;
 }
 const labels: Record<ShipmentStatus, string> = {
@@ -158,7 +156,6 @@ export default function Shipments({
   carriers,
   clientVehicleTypes,
   thirdPartyTransportModes,
-  onBack,
   onRefresh,
 }: Props) {
   const theme = useTheme(),
@@ -475,18 +472,12 @@ export default function Shipments({
             mb: view === "calendar" ? 0.5 : 2,
           }}
         >
-          <Button
-            startIcon={<ArrowBackIcon />}
-            onClick={onBack}
-            sx={{ justifySelf: "start" }}
-          >
-            Dashboard
-          </Button>
           <Typography
             variant={mobile ? "h5" : "h4"}
             sx={{
               fontWeight: 800,
-              textAlign: "center",
+              textAlign: { xs: "left", sm: "center" },
+              gridColumn: { sm: 2 },
             }}
           >
             Spedizioni

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import {
   Alert,
   Box,
@@ -42,7 +41,6 @@ interface Props {
   items: TransportItem[];
   shipments: ShipmentItem[];
   carriers: Trasportatore[];
-  onBack: () => void;
   onRefresh: () => Promise<void>;
 }
 const labels: Record<TransportStatus, string> = {
@@ -71,7 +69,7 @@ const dateTime = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("it-IT");
 };
 
-export default function Transports({ items, shipments, carriers, onBack, onRefresh }: Props) {
+export default function Transports({ items, shipments, carriers, onRefresh }: Props) {
   const plannedCarrier = (item: TransportItem) => {
     if (!item.assignmentId) return null;
     const normalize = (value: string | null) => (value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "");
@@ -212,14 +210,7 @@ export default function Transports({ items, shipments, carriers, onBack, onRefre
   };
   return (
     <Box>
-      <Stack direction={{ xs: "column", sm: "row" }} sx={{ alignItems: { xs: "stretch", sm: "center" }, gap: { xs: 1, sm: 0 }, mb: 2 }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}>
-          Dashboard
-        </Button>
-        <Typography variant="h4" sx={{ fontWeight: 800, mx: { xs: 0, sm: "auto" }, textAlign: "center" }}>
-          Trasporti
-        </Typography>
-      </Stack>
+      <Typography variant="h4" sx={{ fontWeight: 800, mb: 2 }}>Trasporti</Typography>
       <Paper sx={{ p: 2 }}>
         <Box
           sx={{

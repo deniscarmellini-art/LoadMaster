@@ -1,5 +1,4 @@
 import { Fragment, useState } from "react";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -44,7 +43,6 @@ interface Props {
   singles: UnitaSingola[];
   packages: Pacco[];
   drafts: Map<string, Pannello[]>;
-  onBack: () => void;
   onCancelSingle: (unit: UnitaSingola) => void;
   onCancelPackage: (pack: Pacco) => Promise<void>;
   onRemoveDraftPanel: (key: string, panel: Pannello) => void;
@@ -132,7 +130,6 @@ export default function Warehouse({
   singles,
   packages,
   drafts,
-  onBack,
   onCancelSingle,
   onCancelPackage,
   onRemoveDraftPanel,
@@ -411,17 +408,7 @@ export default function Warehouse({
     Array.from(new Set(commesse.map(selector).filter(Boolean)));
   return (
     <Box>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        sx={{ alignItems: { xs: "stretch", sm: "center" }, gap: { xs: 1, sm: 0 }, mb: 2 }}
-      >
-        <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}>
-          Dashboard
-        </Button>
-        <Typography variant="h4" sx={{ fontWeight: 800, mx: { xs: 0, sm: "auto" }, textAlign: "center" }}>
-          Magazzino
-        </Typography>
-      </Stack>
+      <Typography variant="h4" sx={{ fontWeight: 800, mb: 2 }}>Magazzino</Typography>
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box
           sx={{

@@ -24,7 +24,6 @@ import TruckLoading from "./pages/TruckLoading";
 import History from "./pages/History";
 import Transports from "./pages/Transports";
 import Shipments from "./pages/Shipments";
-import MobileDashboardReturn from "./components/navigation/MobileDashboardReturn";
 import type { PrimaryNavigationPage } from "./components/navigation/PrimaryNavigation";
 import theme from "./theme/theme";
 import {
@@ -554,12 +553,10 @@ export default function App() {
           <PrintLabels
             commesse={printableCommesse}
             listeOperative={settings.listeOperative}
-            onBack={() => setPage("dashboard")}
           />
         ) : page === "scanning-list" ? (
           <ActiveLoads
             activeSessions={activeScanningSessions}
-            onBack={() => setPage("dashboard")}
             onOpen={openScanning}
             packages={packages}
             rows={dashboardRows}
@@ -568,7 +565,6 @@ export default function App() {
           <Warehouse
             commesse={commesse}
             drafts={packageDrafts}
-            onBack={() => setPage("dashboard")}
             onCancelPackage={async (pack) => {
               if (!pack.id) throw new Error("Identificativo pacco non disponibile");
               await cancelPackageApi(pack.id, pack.operatoreId);
@@ -615,7 +611,6 @@ export default function App() {
         ) : page === "settings" ? (
           <Settings
             loadErrors={settingsLoadErrors}
-            onBack={() => setPage("dashboard")}
             onChange={changeSettings}
             settings={settings}
             usedOperatorIds={
@@ -632,7 +627,6 @@ export default function App() {
             items={transports}
             shipments={shipmentsWithOperationalStatus}
             carriers={settings.trasportatori}
-            onBack={() => setPage("dashboard")}
             onRefresh={async () => setTransports(await listTransports())}
           />
         ) : page === "shipments" ? (
@@ -643,7 +637,6 @@ export default function App() {
             clientVehicleTypes={settings.tipiMezzoCliente}
             thirdPartyTransportModes={settings.modalitaTerziEssepi}
             transports={transports}
-            onBack={() => setPage("dashboard")}
             onRefresh={refreshScanningData}
           />
         ) : page === "history" ? (
@@ -654,10 +647,6 @@ export default function App() {
             packages={packages}
             settings={settings}
             singles={singles}
-            onBack={() => {
-              setHistoryLoadId(undefined);
-              setPage("dashboard");
-            }}
           />
         ) : page === "loading" ? (
           <TruckLoading
@@ -691,10 +680,6 @@ export default function App() {
             carriers={settings.trasportatori}
             commesse={commesse}
             transports={transports}
-            onBack={() => {
-              setResumeLoad(null);
-              setPage("dashboard");
-            }}
             onComplete={(load, units, destination) => {
               const normalized = {
                 ...load,
@@ -834,7 +819,6 @@ export default function App() {
             suspendedPackages={suspendedPackages.filter(pack=>pack.commessa===scanningTarget.commessa&&pack.camion===scanningTarget.camion)}
             onDraftChange={setDraftForTarget}
             onDataChanged={refreshScanningData}
-            onBack={()=>void leaveScanning()}
             onClosePackage={() => undefined}
             onCloseSingle={() => undefined}
             packages={packages}
@@ -861,17 +845,6 @@ export default function App() {
             target={scanningTarget}
           />
         ) : null}
-        {page !== "dashboard" && !loadsLoading && !loadsError && (
-          <MobileDashboardReturn
-            onBack={() => {
-              if(page==="scanning"){void leaveScanning();return;}
-              setHistoryLoadId(undefined);
-              setResumeLoad(null);
-              setScanningTarget(null);
-              setPage("dashboard");
-            }}
-          />
-        )}
       </MainLayout>
       <Dialog
         open={blockedImport !== null}

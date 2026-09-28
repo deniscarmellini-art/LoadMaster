@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PrintIcon from "@mui/icons-material/Print";
 import { Alert, Box, Button, Checkbox, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
 import LabelPreview from "../components/labels/LabelPreview";
@@ -9,7 +8,7 @@ import type { LabelFields } from "../components/labels/LabelPreview";
 import type { Commessa, Pannello } from "../types/excel";
 import type { ImpostazioneOperativa } from "../models/Settings";
 
-interface Props { commesse:Commessa[]; listeOperative:ImpostazioneOperativa[]; onBack:()=>void; }
+interface Props { commesse:Commessa[]; listeOperative:ImpostazioneOperativa[]; }
 const now = () => new Intl.DateTimeFormat("it-IT", { dateStyle:"short", timeStyle:"medium" }).format(new Date());
 const initialFields=(listeOperative:ImpostazioneOperativa[]):LabelFields => ({ anno:String(new Date().getFullYear()), commessa:"", cliente:"", riferimento:"", dtp:"Jlenia Pedrotti", operatore:"T.T.", autMin:"59/15-CL", codiceEta:"ETA-12/0362", cpr:listeOperative.find(item=>item.chiave==="CPR"&&item.attivo)?.valore??"", dataOra:now(), rotate:false });
 const labelWidthPx=200*96/25.4;
@@ -22,7 +21,7 @@ function MobileLabelPreview({panel,fields,index}:{panel:Pannello;fields:LabelFie
   return <Box ref={containerRef} className="scaled-label-preview" sx={{height:scale?labelHeightPx*scale:0,overflow:"hidden",position:"relative",width:"100%"}}><Box className="scaled-label-preview-inner" sx={{left:"50%",position:"absolute",top:0,transform:`translateX(-50%) scale(${scale})`,transformOrigin:"top center",width:labelWidthPx}}><LabelPreview panel={panel} fields={fields} index={index}/></Box></Box>;
 }
 
-export default function PrintLabels({ commesse, listeOperative, onBack }:Props) {
+export default function PrintLabels({ commesse, listeOperative }:Props) {
   const theme=useTheme();
   const mobile=useMediaQuery(theme.breakpoints.down("sm"));
   const [selectedOrder,setSelectedOrder] = useState(commesse[0]?.ordine ?? "");
@@ -39,7 +38,7 @@ export default function PrintLabels({ commesse, listeOperative, onBack }:Props) 
   const printLabels=()=>{flushSync(()=>setFields(c=>({...c,dataOra:now()})));window.print();};
   return <Box>
 
-    <Stack className="no-print" direction={{xs:"column",sm:"row"}} sx={{alignItems:{xs:"stretch",sm:"center"},justifyContent:"space-between",gap:{xs:1,sm:0},mb:2}}><Button startIcon={<ArrowBackIcon/>} onClick={onBack} sx={{alignSelf:{xs:"flex-start",sm:"auto"}}}>Dashboard</Button><Typography variant={mobile?"h5":"h4"} sx={{fontWeight:800,textAlign:"center"}}>Stampa etichette</Typography><Box sx={{display:{xs:"none",sm:"block"},width:110}}/></Stack>
+    <Box className="no-print" sx={{mb:2}}><Typography variant={mobile?"h5":"h4"} sx={{fontWeight:800}}>Stampa etichette</Typography></Box>
     <Paper className="no-print" sx={{p:{xs:1.5,sm:2.5},mb:2}}><Typography variant="h6" sx={{mb:2}}>1. Commessa e dati etichetta</Typography>
       {commesse.length===0?<Alert severity="info">Importa prima una commessa dalla Dashboard.</Alert>:<Stack sx={{gap:1.5}}>
         <Box sx={{display:"grid",gridTemplateColumns:{xs:"1fr",sm:"repeat(5,minmax(0,1fr))"},gap:1.5}}>

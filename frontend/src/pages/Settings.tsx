@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { Alert,Box,Button,Chip,Dialog,DialogActions,DialogContent,DialogTitle,FormControlLabel,IconButton,Paper,Snackbar,Stack,Switch,Tab,Table,TableBody,TableCell,TableHead,TableRow,Tabs,TextField,Typography,useMediaQuery,useTheme } from "@mui/material";
@@ -12,11 +11,11 @@ type Section="operatori"|"rimorchi"|"trasportatori"|"tipiMezzoCliente"|"modalita
 type MainSection="operatori"|"rimorchi"|"trasporti"|"listeOperative";
 type FormData=Record<string,string|boolean>;
 type RecordItem=Operatore|Rimorchio|Trasportatore|VoceTrasporto|ImpostazioneOperativa;
-interface Props{settings:SettingsData;usedOperatorIds:Set<string>;loadErrors:string[];onChange:(settings:SettingsData)=>Promise<boolean>;onBack:()=>void}
+interface Props{settings:SettingsData;usedOperatorIds:Set<string>;loadErrors:string[];onChange:(settings:SettingsData)=>Promise<boolean>}
 const emptyForms:Record<Section,FormData>={operatori:{id:"",nome:"",cognome:"",sigla:"",attivo:true},rimorchi:{id:"",targa:"",descrizione:"",note:"",prossimaRevisione:"",attivo:true},trasportatori:{id:"",nome:"",note:"",attivo:true},tipiMezzoCliente:{id:"",nome:"",attivo:true},modalitaTerziEssepi:{id:"",nome:"",attivo:true},listeOperative:{chiave:"",valore:"",descrizione:"",attivo:true}};
 const idOf=(record:RecordItem)=>"id" in record?record.id:record.chiave;
 
-export default function Settings({settings,usedOperatorIds,loadErrors,onChange,onBack}:Props){
+export default function Settings({settings,usedOperatorIds,loadErrors,onChange}:Props){
   const theme=useTheme(),mobile=useMediaQuery(theme.breakpoints.down("sm"));
   const [section,setSection]=useState<Section>("operatori");
   const [form,setForm]=useState<FormData|null>(null);
@@ -33,7 +32,7 @@ export default function Settings({settings,usedOperatorIds,loadErrors,onChange,o
   const selectBackup=async(event:React.ChangeEvent<HTMLInputElement>)=>{const file=event.target.files?.[0];event.target.value="";if(!file)return;try{setPendingBackup(parseSettingsBackup(await file.text()));}catch(error){setNotice({text:error instanceof Error?error.message:"Backup non valido",severity:"error"});}};
   const importBackup=()=>{if(!pendingBackup)return;onChange({...settings,operatori:pendingBackup.operatori,rimorchi:pendingBackup.rimorchi,trasportatori:pendingBackup.trasportatori,tipiMezzoCliente:pendingBackup.tipiMezzoCliente,modalitaTerziEssepi:pendingBackup.modalitaTerziEssepi});setPendingBackup(null);setNotice({text:"Anagrafiche importate",severity:"success"});};
   return <Box>
-    <Stack direction={{xs:"column",sm:"row"}} sx={{alignItems:{xs:"stretch",sm:"center"},gap:{xs:1,sm:0},mb:2}}><Button startIcon={<ArrowBackIcon/>} onClick={onBack} sx={{alignSelf:{xs:"flex-start",sm:"auto"}}}>Dashboard</Button><Typography variant={mobile?"h5":"h4"} sx={{fontWeight:800,mx:{xs:0,sm:"auto"},textAlign:"center"}}>Impostazioni</Typography></Stack>
+    <Box sx={{mb:2}}><Typography variant={mobile?"h5":"h4"} sx={{fontWeight:800}}>Impostazioni</Typography></Box>
     {loadErrors.map(message=><Alert key={message} severity="warning" sx={{mb:1}}>{message}</Alert>)}
     <Paper sx={{p:{xs:1.5,sm:2},overflowX:"hidden"}}><Tabs value={mainSection} onChange={(_,value:MainSection)=>setSection(value==="trasporti"?(isTransportSection?section:"trasportatori"):value)} variant={mobile?"scrollable":"standard"} scrollButtons={mobile?"auto":false} allowScrollButtonsMobile={mobile}><Tab value="operatori" label="Operatori"/><Tab value="rimorchi" label="Rimorchi Essepi"/><Tab value="trasporti" label="Trasporti"/><Tab value="listeOperative" label="Liste operative"/></Tabs>
       {isTransportSection&&<Box sx={{display:"grid",gridTemplateColumns:{xs:"1fr",md:"repeat(3,minmax(0,1fr))"},gap:1.5,mt:2}}>{transportSections.map(item=><Paper key={item.section} component="button" type="button" variant="outlined" onClick={()=>setSection(item.section)} sx={{appearance:"none",bgcolor:section===item.section?"action.selected":"background.paper",borderColor:section===item.section?"primary.main":"divider",color:"text.primary",cursor:"pointer",p:2,textAlign:"left"}}><Typography variant="overline" color="primary.main" sx={{fontWeight:900}}>{item.macro}</Typography><Typography sx={{fontWeight:900}}>{item.label}</Typography><Typography variant="body2" color="text.secondary">{item.description}</Typography></Paper>)}</Box>}
