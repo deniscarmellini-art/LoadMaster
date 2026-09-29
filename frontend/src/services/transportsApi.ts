@@ -22,13 +22,14 @@ export interface TransportItem {
   nextInspectionDate: string | null;
   disabledReason: string | null;
   loadingSessionId: string | null;
+  canRelease: boolean;
 }
 
 export const listTransports = (): Promise<TransportItem[]> => apiRequest("/transports");
 export const createTransportReservation = (id:string,input:ManualReservationInput):Promise<TransportItem> => apiRequest(`/trailers/${encodeURIComponent(id)}/reservation`,{method:"POST",body:JSON.stringify(input)});
 export const updateTransportReservation = (id:string,input:ManualReservationInput):Promise<TransportItem> => apiRequest(`/trailers/${encodeURIComponent(id)}/reservation`,{method:"PUT",body:JSON.stringify(input)});
 export const updatePlannedDeparture = (id:string,plannedDepartureDate:string|null):Promise<TransportItem> => apiRequest(`/trailers/${encodeURIComponent(id)}/planned-departure`,{method:"PATCH",body:JSON.stringify({plannedDepartureDate})});
-export const releaseTransportReservation = (id:string):Promise<TransportItem> => apiRequest(`/trailers/${encodeURIComponent(id)}/reservation`,{method:"DELETE"});
+export const releaseTransportReservation = (id:string,assignmentId:string):Promise<TransportItem> => apiRequest(`/trailers/${encodeURIComponent(id)}/reservation?assignmentId=${encodeURIComponent(assignmentId)}`,{method:"DELETE"});
 export const disableTrailer = (id: string, reason: string, notes: string): Promise<TransportItem> =>
   apiRequest(`/trailers/${encodeURIComponent(id)}/disable`, { method: "POST", body: JSON.stringify({ reason, notes }) });
 export const enableTrailer = (id: string): Promise<TransportItem> =>

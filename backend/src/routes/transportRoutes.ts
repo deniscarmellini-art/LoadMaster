@@ -15,7 +15,7 @@ export const transportRoutes:FastifyPluginAsync<Options>=async(app,{service})=>{
   app.post("/trailers/:id/reservation",{schema:{params:idParamsSchema,body:reservationBody}},controller.reserve);
   app.put("/trailers/:id/reservation",{schema:{params:idParamsSchema,body:reservationBody}},controller.updateReservation);
   app.patch("/trailers/:id/planned-departure",{schema:{params:idParamsSchema,body:{type:"object",additionalProperties:false,required:["plannedDepartureDate"],properties:{plannedDepartureDate:optionalDate}}}},controller.plannedDeparture);
-  app.delete("/trailers/:id/reservation",{schema:{params:idParamsSchema}},controller.releaseReservation);
+  app.delete("/trailers/:id/reservation",{schema:{params:idParamsSchema,querystring:{type:"object",additionalProperties:false,properties:{assignmentId:{type:"string",minLength:1,maxLength:100}}}}},controller.releaseReservation);
   app.patch("/trailers/:id/inspection",{schema:{params:idParamsSchema,body:{type:"object",additionalProperties:false,required:["nextInspectionDate"],properties:{nextInspectionDate:optionalDate}}}},controller.inspection);
   app.post("/trailers/:id/disable",{schema:{params:idParamsSchema,body:{type:"object",additionalProperties:false,required:["reason"],properties:{reason:{type:"string"},notes:{type:"string"}}}}},controller.disable);
   app.post("/trailers/:id/enable",{schema:{params:idParamsSchema}},controller.enable);

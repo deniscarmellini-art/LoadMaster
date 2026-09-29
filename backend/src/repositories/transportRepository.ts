@@ -27,6 +27,7 @@ export interface TransportRecord {
   nextInspectionDate: string | null;
   disabledReason: string | null;
   loadingSessionId: string | null;
+  canRelease: boolean;
 }
 
 const nullable = (value: unknown) => (typeof value === "string" ? value : null);
@@ -189,18 +190,48 @@ export class TransportRepository {
       .run(date?.trim() || null, now, current.assignmentId);
     return this.find(trailerId);
   }
-  releaseReservation(trailerId: string): TransportRecord | null {
-    const current = this.find(trailerId);
-    if (!current) return null;
-    if (current.source !== "MANUAL" || !current.assignmentId)
-      throw new Error("RESERVATION_NOT_EDITABLE");
-    const now = new Date().toISOString();
-    this.db
-      .prepare(
-        "UPDATE TransportAssignments SET stato='CONCLUSO',releasedAt=?,updatedAt=? WHERE id=?",
-      )
-      .run(now, now, current.assignmentId);
-    return this.find(trailerId);
+  releaseReservation(trailerId: string, expectedAssignmentId?: string): TransportRecord | null {
+    return this.transaction(() => {
+      if (!this.db.prepare("SELECT 1 FROM Trailers WHERE id=?").get(trailerId)) return null;
+      const assignment = this.db.prepare("SELECT id FROM TransportAssignments WHERE trailerId=? AND releasedAt IS NULL").get(trailerId);
+      const id = assignment ? String(assignment.id) : null;
+      if (!id || (expectedAssignmentId !== undefined && id !== expectedAssignmentId) || !this.canRelease(id))
+        throw new Error("RESERVATION_NOT_RELEASABLE");
+      const now = new Date().toISOString();
+      // Clear only the live trailer link on empty sessions. Keep the assignment's
+      // session reference for history and prevent startup from recreating the link.
+      this.db.prepare("UPDATE LoadingSessions SET trailerId=NULL,updatedAt=? WHERE trailerId=? AND shippedAt IS NULL").run(now, trailerId);
+      this.db.prepare("UPDATE TransportAssignments SET stato='CONCLUSO',releasedAt=?,updatedAt=? WHERE id=? AND releasedAt IS NULL").run(now, now, id);
+      return this.find(trailerId);
+    });
+  }
+  private canRelease(assignmentId: string): boolean {
+    const a = this.db.prepare("SELECT * FROM TransportAssignments WHERE id=?").get(assignmentId);
+    if (!a || a.releasedAt !== null || a.stato !== "IMPEGNATO" || a.departedAt !== null || a.availableFrom !== null) return false;
+    const matches = (commessa: unknown, camion: unknown) =>
+      normalize(String(commessa ?? "")) === normalize(String(a.manualCommessa ?? "")) &&
+      normalize(String(camion ?? "")) === normalize(String(a.manualCarico ?? ""));
+    const loads = this.db.prepare("SELECT id,commessa,camion,stato FROM Loads").all().filter(l =>
+      l.id === a.loadId || (a.loadId === null && matches(l.commessa, l.camion)));
+    const loadIds = new Set(loads.map(l => String(l.id)));
+    const sessions = this.db.prepare("SELECT * FROM LoadingSessions").all().filter(s =>
+      s.id === a.loadingSessionId || loadIds.has(String(s.loadId)) || (s.trailerId === a.trailerId && s.shippedAt === null));
+    for (const s of sessions) {
+      loadIds.add(String(s.loadId));
+      // startedAt records session creation, not the first physical loading.
+      if (s.stato !== "DA_CARICARE" || s.completedAt !== null || s.reopenedAt !== null || s.shippedAt !== null ||
+          this.db.prepare("SELECT 1 FROM LoadingUnits WHERE loadingSessionId=? LIMIT 1").get(String(s.id)) ||
+          this.db.prepare("SELECT 1 FROM OperationalEvents WHERE loadingSessionId=? AND type IN ('UNIT_LOADED','LOADING_COMPLETED','LOADING_REOPENED','PARTENZA_CONFERMATA') LIMIT 1").get(String(s.id))) return false;
+    }
+    for (const id of loadIds) {
+      if (this.db.prepare("SELECT 1 FROM Loads WHERE id=? AND stato IN ('IN_CARICO','ATTESA_SPEDIZIONE','SPEDITO')").get(id) ||
+          this.db.prepare("SELECT 1 FROM Panels WHERE loadId=? AND stato IN ('CARICATO','SPEDITO') LIMIT 1").get(id) ||
+          this.db.prepare("SELECT 1 FROM Packages WHERE loadId=? AND stato IN ('CARICATO','SPEDITO') LIMIT 1").get(id)) return false;
+    }
+    const departed = this.db.prepare("SELECT * FROM ShipmentPlans WHERE actualDepartureDate IS NOT NULL").all().some(p =>
+      loadIds.has(String(p.loadId)) || (p.loadId === null && (matches(p.manualCommessa, p.manualCarico) ||
+        loads.some(l => normalize(String(l.commessa)) === normalize(String(p.manualCommessa ?? "")) && normalize(String(l.camion)) === normalize(String(p.manualCarico ?? ""))))));
+    return !departed;
   }
   assign(trailerId: string, loadId: string, sessionId: string): void {
     const now = new Date().toISOString(),
@@ -354,6 +385,7 @@ export class TransportRepository {
       nextInspectionDate: nullable(row.nextInspectionDate),
       disabledReason: nullable(row.disabledReason),
       loadingSessionId: nullable(row.loadingSessionId),
+      canRelease: status === "IMPEGNATO" && Boolean(row.assignmentId) && this.canRelease(String(row.assignmentId)),
     };
   };
 }

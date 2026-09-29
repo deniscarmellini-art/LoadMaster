@@ -10,7 +10,7 @@ import { openSqliteDatabase } from "./database/sqliteDatabase.js";
 import { ScanningService } from "./services/scanningService.js";
 import { buildApp } from "./app.js";
 import { loadConfig, type AppConfig } from "./config/environment.js";
-import { addBusinessDays } from "./repositories/transportRepository.js";
+import { addBusinessDays, TransportRepository } from "./repositories/transportRepository.js";
 import { assertTestDatabase, productionDatabase, testConfig, testDatabase } from "./config/testEnvironment.js";
 import { migrateLoadingTransport } from "./database/loadingTransportMigration.js";
 
@@ -1163,4 +1163,121 @@ for(const marker of ["event","shippedAt","SPEDITO"])test("blocca storico definit
     assert.equal((await app.inject({method:"DELETE",url:`/api/loads/${load.id}`})).statusCode,409);
     assert.ok(db.prepare("SELECT 1 FROM Loads WHERE id=?").get(load.id));
   }finally{db.close();await app.close();rmSync(directory,{recursive:true,force:true});}
+});
+
+test("Disimpegna: storico, pianificazione, reimpegno e sessione vuota", () => {
+  const { database: db, close } = openSqliteDatabase(":memory:");
+  const repo = new TransportRepository(db);
+  try {
+    db.exec(`INSERT INTO Trailers(id,plate,nextInspectionDate,createdAt,updatedAt) VALUES('T','AE 12345','2027-01-01','now','now');
+      INSERT INTO Loads(id,commessa,cliente,camion,createdAt,updatedAt) VALUES('L','265001','Cliente','C1','now','now');
+      INSERT INTO ShipmentPlans(id,loadId,transportType,plannedDepartureDate,createdAt,updatedAt) VALUES('P','L','BILICO_ESSEPI','2026-12-01','now','now');`);
+    const plan = db.prepare("SELECT * FROM ShipmentPlans").get();
+    const trailer = db.prepare("SELECT * FROM Trailers WHERE id='T'").get();
+    const reserved = repo.reserve('T', {commessa:'265001',cliente:'Cliente',carico:'C1'})!;
+    assert.equal(reserved.status, 'IMPEGNATO'); assert.equal(reserved.canRelease, true);
+    const freed = repo.releaseReservation('T', reserved.assignmentId!)!;
+    assert.equal(freed.status, 'DISPONIBILE'); assert.equal(freed.canRelease, false);
+    for (const key of ['commessa','cliente','camion','plannedDepartureDate','loadingSessionId','assignmentId','loadId'] as const) assert.equal(freed[key], null);
+    assert.deepEqual(db.prepare('SELECT * FROM ShipmentPlans').get(), plan);
+    assert.deepEqual(db.prepare("SELECT * FROM Trailers WHERE id='T'").get(), trailer);
+    const historical = db.prepare('SELECT * FROM TransportAssignments WHERE id=?').get(reserved.assignmentId!)!;
+    assert.equal(historical.stato, 'CONCLUSO'); assert.ok(historical.releasedAt); assert.equal(historical.manualCommessa,'265001');
+    const another = repo.reserve('T',{commessa:'OTHER',cliente:'Altro',carico:'C2'})!;
+    assert.throws(()=>repo.releaseReservation('T',reserved.assignmentId!),/RESERVATION_NOT_RELEASABLE/);
+    assert.equal(repo.find('T')!.assignmentId, another.assignmentId);
+    repo.releaseReservation('T',another.assignmentId!);
+    repo.reserve('T',{commessa:'265001',cliente:'Cliente',carico:'C1'});
+    db.exec("INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,trailerId,startedAt,createdAt,updatedAt) VALUES('S','L','DA_CARICARE','OP','RIMORCHIO_ESSEPI','T','now','now','now')");
+    repo.assign('T','L','S');
+    assert.equal(repo.find('T')!.source,'LOAD'); assert.equal(repo.find('T')!.canRelease,true);
+    repo.releaseReservation('T');
+    assert.equal(db.prepare("SELECT trailerId FROM LoadingSessions WHERE id='S'").get()!.trailerId,null);
+    assert.equal(db.prepare("SELECT loadingSessionId FROM TransportAssignments WHERE source='LOAD'").get()!.loadingSessionId,'S');
+    assert.deepEqual(db.prepare('SELECT * FROM ShipmentPlans').get(),plan);
+    assert.equal(repo.reserve('T',{commessa:'265001',cliente:'Cliente',carico:'C1'})!.canRelease,true);
+  } finally { close(); }
+});
+
+test("Disimpegna: controlli autorevoli e concorrenza dopo lettura pagina", async t => {
+  const cases: Array<[string,string]> = [
+    ['prima unità fisica',"INSERT INTO LoadingUnits(id,loadingSessionId,unitType,panelId,loadedAt,loadedByOperatorId,createdAt,updatedAt) VALUES('U','S','PANEL','X','now','OP','now','now')"],
+    ['unità rimossa conserva inizio fisico',"INSERT INTO LoadingUnits(id,loadingSessionId,unitType,panelId,active,loadedAt,loadedByOperatorId,createdAt,updatedAt) VALUES('U','S','PANEL','X',0,'now','OP','now','now')"],
+    ['caricato',"UPDATE TransportAssignments SET stato='CARICATO'"],
+    ['in viaggio',"UPDATE TransportAssignments SET stato='IN_VIAGGIO'"],
+    ['concluso',"UPDATE TransportAssignments SET stato='CONCLUSO'"],
+    ['partenza assegnazione',"UPDATE TransportAssignments SET departedAt='2026-09-29'"],
+    ['carico in corso',"UPDATE LoadingSessions SET stato='IN_CARICO'"],
+    ['attesa spedizione',"UPDATE LoadingSessions SET stato='ATTESA_SPEDIZIONE'"],
+    ['spedito',"UPDATE LoadingSessions SET shippedAt='2026-09-29'"],
+    ['completamento precedente',"UPDATE LoadingSessions SET completedAt='2026-09-29'"],
+    ['riapertura',"UPDATE LoadingSessions SET reopenedAt='2026-09-29'"],
+    ['stato carico',"UPDATE Loads SET stato='SPEDITO'"],
+    ['pannello fisico',"UPDATE Panels SET stato='CARICATO'"],
+    ['spedizione pianificata partita',"INSERT INTO ShipmentPlans(id,loadId,actualDepartureDate,createdAt,updatedAt) VALUES('P','L','2026-09-29','now','now')"],
+    ['spedizione manuale partita',"INSERT INTO ShipmentPlans(id,manualCommessa,manualCarico,actualDepartureDate,createdAt,updatedAt) VALUES('P',' 265-001 ','C 1-','2026-09-29','now','now')"],
+    ['storico fisico senza unità',"INSERT INTO OperationalEvents(id,loadId,loadingSessionId,type,timestamp) VALUES('E','L','S','UNIT_LOADED','now')"],
+  ];
+  for (const source of ['MANUAL','LOAD']) for (const [name,mutation] of cases) await t.test(`${source}: ${name}`,()=>{
+    const {database:db,close}=openSqliteDatabase(':memory:'); const repo=new TransportRepository(db);
+    try {
+      db.exec(`INSERT INTO Trailers(id,plate,createdAt,updatedAt) VALUES('T','TEST','now','now');
+        INSERT INTO Loads(id,commessa,cliente,camion,createdAt,updatedAt) VALUES('L','265001','Cliente','C1','now','now');
+        INSERT INTO Panels(id,loadId,numeroPannello,camion,peso,volume,createdAt,updatedAt) VALUES('X','L','1','C1',1,1,'now','now');
+        INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,startedAt,createdAt,updatedAt) VALUES('S','L','DA_CARICARE','OP','RIMORCHIO_ESSEPI','now','now','now');`);
+      const before=repo.reserve('T',{commessa:'265-001',cliente:'Cliente',carico:'C 1-'})!;
+      if(source==='LOAD') repo.assign('T','L','S');
+      assert.equal(repo.find('T')!.canRelease,true);
+      db.exec(mutation);
+      assert.equal(repo.find('T')!.canRelease,false);
+      assert.throws(()=>repo.releaseReservation('T',before.assignmentId!),/RESERVATION_NOT_RELEASABLE/);
+      assert.equal(db.prepare('SELECT releasedAt FROM TransportAssignments').get()!.releasedAt,null);
+    } finally { close(); }
+  });
+});
+
+test("Disimpegna API: conferma obsoleta, rilascio e doppia richiesta", async()=>{
+  const app=await buildApp(config);
+  try {
+    const trailer=(await app.inject({method:'GET',url:'/api/trailers'})).json<Array<{id:string}>>()[0]!;
+    const url=`/api/trailers/${trailer.id}/reservation`;
+    const reserved=await app.inject({method:'POST',url,payload:{commessa:'RELEASE',cliente:'Cliente',carico:'C1'}});
+    assert.equal(reserved.statusCode,200); assert.equal(reserved.json().canRelease,true);
+    const rejected=await app.inject({method:'DELETE',url:`${url}?assignmentId=obsolete`});
+    assert.equal(rejected.statusCode,409); assert.equal(rejected.json().error.code,'RESERVATION_NOT_RELEASABLE');
+    const freed=await app.inject({method:'DELETE',url:`${url}?assignmentId=${reserved.json().assignmentId}`});
+    assert.equal(freed.statusCode,200); assert.equal(freed.json().status,'DISPONIBILE');
+    assert.equal((await app.inject({method:'DELETE',url})).statusCode,409);
+  } finally {await app.close();}
+});
+
+test("Disimpegna: seconda connessione, rollback e persistenza al riavvio",()=>{
+  const directory=mkdtempSync(join(tmpdir(),'transport-release-'));
+  const path=join(directory,'test.sqlite');
+  const first=openSqliteDatabase(path), other=new DatabaseSync(path);
+  try {
+    const db=first.database,repo=new TransportRepository(db);
+    db.exec(`INSERT INTO Trailers(id,plate,createdAt,updatedAt) VALUES('T','TEST','now','now');
+      INSERT INTO Loads(id,commessa,cliente,camion,createdAt,updatedAt) VALUES('L','TEST','Cliente','C1','now','now');
+      INSERT INTO Panels(id,loadId,numeroPannello,camion,createdAt,updatedAt) VALUES('X','L','1','C1','now','now');
+      INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,trailerId,startedAt,createdAt,updatedAt) VALUES('S','L','DA_CARICARE','OP','RIMORCHIO_ESSEPI','T','now','now','now');`);
+    repo.assign('T','L','S');
+    const snapshot=repo.find('T')!;assert.equal(snapshot.canRelease,true);
+    other.exec("INSERT INTO LoadingUnits(id,loadingSessionId,unitType,panelId,loadedAt,loadedByOperatorId,createdAt,updatedAt) VALUES('U','S','PANEL','X','now','OP','now','now')");
+    assert.throws(()=>repo.releaseReservation('T',snapshot.assignmentId!),/RESERVATION_NOT_RELEASABLE/);
+    // Reset only this synthetic fixture to check atomic rollback on a write failure.
+    other.exec("DELETE FROM LoadingUnits");
+    db.exec("CREATE TRIGGER reject_release BEFORE UPDATE OF releasedAt ON TransportAssignments BEGIN SELECT RAISE(ABORT,'test failure'); END");
+    assert.throws(()=>repo.releaseReservation('T'),/test failure/);
+    assert.equal(db.prepare("SELECT trailerId FROM LoadingSessions WHERE id='S'").get()!.trailerId,'T');
+    assert.equal(repo.find('T')!.assignmentId,snapshot.assignmentId);
+    db.exec('DROP TRIGGER reject_release');
+    repo.transaction(()=>{assert.throws(()=>other.exec('BEGIN IMMEDIATE'),/locked/);});
+    repo.releaseReservation('T');
+  } finally {other.close();first.close();}
+  const reopened=openSqliteDatabase(path);
+  try {
+    assert.equal(new TransportRepository(reopened.database).find('T')!.status,'DISPONIBILE');
+    assert.equal(reopened.database.prepare('SELECT COUNT(*) n FROM TransportAssignments').get()!.n,1);
+  } finally {reopened.close();rmSync(directory,{recursive:true,force:true});}
 });

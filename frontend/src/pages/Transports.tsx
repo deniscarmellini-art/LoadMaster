@@ -89,6 +89,7 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
     useState<TransportItem | null>(null);
   const [reservation, setReservation] =
     useState<ManualReservationInput>(emptyReservation);
+  const [releasing, setReleasing] = useState(false);
   const [releaseTrailer, setReleaseTrailer] = useState<TransportItem | null>(
     null,
   );
@@ -155,21 +156,21 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
     }
   };
   const releaseReservation = async () => {
-    if (!releaseTrailer) return;
+    if (!releaseTrailer?.assignmentId || releasing) return;
+    setReleasing(true);
     try {
-      await releaseTransportReservation(releaseTrailer.id);
-      await onRefresh();
+      await releaseTransportReservation(releaseTrailer.id, releaseTrailer.assignmentId);
       setReleaseTrailer(null);
-      setNotice({
-        severity: "success",
-        text: "Prenotazione liberata. Rimorchio disponibile.",
-      });
-    } catch {
-      setNotice({
-        severity: "error",
-        text: "La prenotazione non può essere liberata.",
-      });
-    }
+      await onRefresh();
+      setNotice({ severity: "success", text: "Rimorchio disimpegnato e disponibile." });
+    } catch (error) {
+      setReleaseTrailer(null);
+      setNotice({ severity: "error", text: error instanceof ApiClientError
+        ? error.message : "Impossibile completare il disimpegno. Riprova." });
+      try { await onRefresh(); } catch {
+        setNotice({ severity: "error", text: "Impossibile aggiornare i dati. Riprova tra poco." });
+      }
+    } finally { setReleasing(false); }
   };
   const performDisable = async () => {
     if (!disableId || !reason) return;
@@ -366,15 +367,9 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
                               >
                                 Modifica prenotazione
                               </Button>
-                              <Button
-                                size="small"
-                                color="warning"
-                                onClick={() => setReleaseTrailer(item)}
-                              >
-                                Libera
-                              </Button>
                             </>
                           )}
+                        {item.canRelease && <Button size="small" disabled={releasing} onClick={() => setReleaseTrailer(item)}>Disimpegna</Button>}
                         {item.status === "FUORI_SERVIZIO" && (
                           <Button
                             size="small"
@@ -486,9 +481,9 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
                   {item.status === "IMPEGNATO" && item.source === "MANUAL" && (
                     <>
                       <Button fullWidth size="large" variant="outlined" onClick={() => openReservation(item)}>Modifica prenotazione</Button>
-                      <Button fullWidth size="large" color="warning" variant="outlined" onClick={() => setReleaseTrailer(item)}>Libera</Button>
                     </>
                   )}
+                  {item.canRelease && <Button fullWidth size="large" variant="outlined" disabled={releasing} onClick={() => setReleaseTrailer(item)}>Disimpegna</Button>}
                   {item.status === "FUORI_SERVIZIO" && (
                     <Button fullWidth size="large" variant="outlined" onClick={() => void performEnable(item.id)}>Riattiva</Button>
                   )}
@@ -560,23 +555,22 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
       </Dialog>
       <Dialog
         open={releaseTrailer !== null}
-        onClose={() => setReleaseTrailer(null)}
+        onClose={() => { if (!releasing) setReleaseTrailer(null); }}
       >
-        <DialogTitle>Libera rimorchio</DialogTitle>
+        <DialogTitle>Disimpegna rimorchio</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Chiudere la prenotazione di {releaseTrailer?.plate} e riportare il
-            rimorchio a DISPONIBILE?
+            Vuoi liberare il rimorchio {releaseTrailer?.plate} dalla commessa {releaseTrailer?.commessa} / {releaseTrailer?.camion}?
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setReleaseTrailer(null)}>Annulla</Button>
+          <Button disabled={releasing} onClick={() => setReleaseTrailer(null)}>Annulla</Button>
           <Button
             variant="contained"
-            color="warning"
+            disabled={releasing}
             onClick={() => void releaseReservation()}
           >
-            Libera
+            Disimpegna
           </Button>
         </DialogActions>
       </Dialog>
