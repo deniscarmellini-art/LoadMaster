@@ -311,9 +311,12 @@ export default function App() {
             importedTrucks.has(normalizeTruck(load.camion)),
         );
       if (duplicate) setPendingImport(commessa);
-      else setCommesse(await importCommessaToApi(commessa));
+      else {
+        setCommesse(await importCommessaToApi(commessa));
+        await refreshScanningData();
+      }
     },
-    [commesse, truckLoads],
+    [commesse, truckLoads, refreshScanningData],
   );
   const openImportPicker=()=>{if(!isImporting)importInputRef.current?.click();};
   const handleImportFile=async(event:React.ChangeEvent<HTMLInputElement>)=>{
@@ -365,6 +368,7 @@ export default function App() {
     else {
       try {
         setCommesse(await updateCommessaInApi(pendingImport, false));
+        await refreshScanningData();
         setPendingImport(null);
       } catch (error: unknown) {
         alert(error instanceof Error?error.message:"Errore durante l'aggiornamento della distinta.");
@@ -379,6 +383,7 @@ export default function App() {
     }
     try {
       setCommesse(await updateCommessaInApi(pendingImport, removeMissing));
+      await refreshScanningData();
       setConfirmRemoved(false);
       setPendingImport(null);
     } catch (error: unknown) {
@@ -490,11 +495,11 @@ export default function App() {
               );
               if (existing)
                 void reopenLoadingApi(existing.loadId, reason).then(
-                  async () => {
+                  async (session) => {
                     await refreshScanningData();
                     const value = {
                       ...existing,
-                      stato: "IN_CARICO" as const,
+                      stato: session.stato,
                       eventi: [
                         ...existing.eventi,
                         {
@@ -658,6 +663,11 @@ export default function App() {
             onResumeLoad={resumeLoadingSession}
             loads={truckLoads}
             onSessionChange={(load) => {
+              setCommesse((current) => current.map((item) =>
+                item.ordine !== load.commessa || !item.pannelli.some((panel) => panel.numeroCamion === load.camion && panel.loadStatus !== load.stato)
+                  ? item
+                  : {...item, pannelli: item.pannelli.map((panel) => panel.numeroCamion === load.camion ? {...panel, loadStatus: load.stato} : panel)},
+              ));
               const normalized = {
                 ...load,
                 tipoDestinazione:

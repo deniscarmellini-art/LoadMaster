@@ -314,7 +314,7 @@ export default function Shipments({
       });
       return;
     }
-    let target = candidates[0];
+    let target: ShipmentItem | undefined = candidates[0];
     if (candidates.length > 1) {
       const truck = window
         .prompt(
@@ -327,8 +327,10 @@ export default function Shipments({
           (x) =>
             x.camion?.replace(/[\s-]+/g, "").toLocaleUpperCase("it-IT") ===
             truck,
-        ) ?? target;
+        );
+      if (!target) return;
     }
+    if (!target) return;
     if (
       !window.confirm(
         `Collegare la pianificazione ${item.commessa} al carico ${target.camion}?`,
