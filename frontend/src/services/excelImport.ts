@@ -44,7 +44,7 @@ export async function importaExcel(file: File): Promise<Commessa> {
 
       numeroPannello: String(row[1]),
 
-      numeroCliente: String(row[2] ?? ""),
+      numeroCliente: String(row[2] ?? "").trim(),
 
       numeroCamion: String(row[3]),
 

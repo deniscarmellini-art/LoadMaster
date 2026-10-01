@@ -23,6 +23,8 @@ export default function LabelPreview({ panel, fields, index }:Props) {
   }, [panel, fields, index]);
   const number = panel.numeroPannello.match(/\d+/)?.[0] ?? String(index + 1);
   const serial = `${fields.anno}-${fields.commessa}-${number.padStart(3,"0")}`;
+  const numeroCliente = String(panel.numeroCliente ?? "").trim();
+  const quantita = typeof panel.quantita === "number" && Number.isFinite(panel.quantita) ? String(panel.quantita) : "";
   const qr = `C=${fields.commessa}|CL=${fields.cliente}|N=${panel.numeroPannello}|CA=${panel.numeroCamion}|S=${Math.round(panel.spessore)}|L=${Math.round(panel.lunghezza)}|H=${Math.round(panel.altezza)}|P=${Math.round(panel.peso)}`;
   return <Box ref={labelRef} className={`print-label${fields.rotate ? " print-label--rotated" : ""}`}>
     <Box className="label-brand">
@@ -36,9 +38,15 @@ export default function LabelPreview({ panel, fields, index }:Props) {
       <Box className="heading-truck"><small>Camion</small><strong className="heading-value label-fit">{show(panel.numeroCamion)}</strong></Box>
     </Box>
     <Box className="label-details">
-      <Box className="label-field label-field-wide"><small>Matricola</small><b className="label-fit large">{serial}</b></Box>
-      <Box className="label-field"><small>Tipologia</small><b className="label-fit">{show(panel.tipoPannello)}</b></Box>
-      <Box className="label-field"><small>Qualità lato 1 / lato 2</small><b className="label-fit">{show(`${panel.lato1} / ${panel.lato2}`)}</b></Box>
+      <Box className="label-field-row label-serial-row">
+        <Box className="label-field"><small>Matricola</small><b className="label-fit large">{serial}</b></Box>
+        <Box className="label-field label-customer-number"><small>Nr. cliente</small><b className="label-fit">{numeroCliente}</b></Box>
+      </Box>
+      <Box className="label-field-row label-type-row">
+        <Box className="label-field"><small>Tipologia</small><b className="label-fit">{show(panel.tipoPannello)}</b></Box>
+        <Box className="label-field label-quantity"><small>Quantità</small><b className="label-fit">{quantita}</b></Box>
+        <Box className="label-field"><small>Qualità L1/L2</small><b className="label-fit">{show(`${panel.lato1} / ${panel.lato2}`)}</b></Box>
+      </Box>
       <Box className="label-field"><small>S × L × H (mm)</small><b className="label-fit">{Math.round(panel.spessore)} × {Math.round(panel.lunghezza)} × {Math.round(panel.altezza)}</b></Box>
       <Box className="label-field"><small>Peso</small><b className="label-fit large">{Math.round(panel.peso)} KG</b></Box>
       <Box className="label-field label-field-wide"><small>Cliente</small><b className="label-fit">{show(fields.cliente)}</b></Box>

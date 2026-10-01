@@ -1,5 +1,6 @@
 import type {
   ShipmentInput,
+  ShipmentUpdate,
   ShipmentRepository,
 } from "../repositories/shipmentRepository.js";
 import type { LoadingService } from "./loadingService.js";
@@ -21,11 +22,14 @@ export class ShipmentService {
       return this.conflict(e);
     }
   }
-  update(id: string, input: ShipmentInput) {
-    this.validate(input);
+  update(id: string, input: ShipmentUpdate) {
+    if ("expectedUpdatedAt" in input) {
+      const date = input.plannedDepartureDate;
+      if (typeof date !== "string" || Object.keys(input).some(key=>key!=="plannedDepartureDate"&&key!=="expectedUpdatedAt") || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date)
+        throw new ApiError(400,"VALIDATION_ERROR","Data prevista non valida");
+    } else this.validate(input);
     try {
-      this.repo.assertNotDeparted(id);
-      this.repo.validateTransportDetail(input, this.repo.find(id)?.transportDetailId);
+      if (!("expectedUpdatedAt" in input)) this.repo.validateTransportDetail(input, this.repo.find(id, false)?.transportDetailId);
       const value = this.repo.update(id, input);
       if (!value)
         throw new ApiError(404, "RESOURCE_NOT_FOUND", "Spedizione non trovata");
@@ -130,6 +134,7 @@ export class ShipmentService {
   }
   private conflict(error: unknown): never {
     if (error instanceof ApiError) throw error;
+    if (error instanceof Error && error.message === "SHIPMENT_STALE") throw new ApiError(409,"SHIPMENT_STALE","Pianificazione modificata da un altro utente. Aggiornare e riprovare.");
     if (error instanceof Error && error.message === "INVALID_TRANSPORT_DETAIL") throw new ApiError(400,"VALIDATION_ERROR","Dettaglio della modalità di trasporto non disponibile o incoerente");
     if (error instanceof Error && error.message === "SHIPMENT_CONSOLIDATED") throw new ApiError(409,"SHIPMENT_CONSOLIDATED","Spedizione già partita o consolidata");
     if (error instanceof Error && error.message === "SHIPMENT_DUPLICATE")

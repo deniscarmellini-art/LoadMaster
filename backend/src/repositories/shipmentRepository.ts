@@ -19,6 +19,8 @@ export interface ShipmentInput {
   plannedCarrierId?: string | null;
   notes?: string | null;
 }
+export interface ShipmentDateUpdate { plannedDepartureDate: string; expectedUpdatedAt: string }
+export type ShipmentUpdate = ShipmentInput | ShipmentDateUpdate;
 export interface ShipmentRecord {
   id: string;
   persisted: boolean;
@@ -53,8 +55,8 @@ const norm = (v: string) =>
     .replace(/[\s-]+/g, "");
 export class ShipmentRepository {
   constructor(private readonly db: DatabaseSync) {}
-  list(): ShipmentRecord[] {
-    reconcileAllOperationalLoadStatuses(this.db);
+  list(reconcile = true): ShipmentRecord[] {
+    if (reconcile) reconcileAllOperationalLoadStatuses(this.db);
     const plans = this.db
       .prepare(
         `SELECT p.*,
@@ -111,8 +113,8 @@ export class ShipmentRepository {
       .map((v) => this.map(v, false));
     return [...plans, ...virtual];
   }
-  find(id: string): ShipmentRecord | null {
-    return this.list().find((x) => x.id === id) ?? null;
+  find(id: string, reconcile = true): ShipmentRecord | null {
+    return this.list(reconcile).find((x) => x.id === id) ?? null;
   }
   validateTransportDetail(input: ShipmentInput, previous?: string | null): void {
     const detailId=this.detailId(input);
@@ -132,12 +134,13 @@ export class ShipmentRepository {
     const value=input.transportDetailId??input.plannedCarrierId;
     return typeof value==="string"&&value.trim()?value.trim():null;
   }
-  assertNotDeparted(id: string): void {
-    const plan = this.find(id);
+  assertNotDeparted(id: string, reconcile = true): void {
+    const plan = this.find(id, reconcile);
     if (!plan) return;
     const session = plan.loadId && this.db.prepare("SELECT 1 FROM LoadingSessions WHERE loadId=? AND (shippedAt IS NOT NULL OR stato='SPEDITO')").get(plan.loadId);
+    const departureEvent = plan.loadId && this.db.prepare("SELECT 1 FROM OperationalEvents WHERE loadId=? AND type='PARTENZA_CONFERMATA'").get(plan.loadId);
     const movement = this.db.prepare("SELECT 1 FROM TransportAssignments WHERE ((loadId IS NOT NULL AND loadId=?) OR (source='MANUAL' AND UPPER(TRIM(manualCommessa))=UPPER(TRIM(?)) AND UPPER(REPLACE(REPLACE(TRIM(COALESCE(manualCarico,'')),' ',''),'-',''))=?)) AND (departedAt IS NOT NULL OR availableFrom IS NOT NULL OR stato='IN_VIAGGIO')").get(plan.loadId,plan.commessa,norm(plan.camion??""));
-    if (plan.actualDepartureDate || plan.operationalStatus === "SPEDITO" || plan.shipmentStatus === "IN_VIAGGIO" || plan.shipmentStatus === "CONCLUSA" || session || movement)
+    if (plan.actualDepartureDate || plan.operationalStatus === "SPEDITO" || plan.shipmentStatus === "IN_VIAGGIO" || plan.shipmentStatus === "CONCLUSA" || session || movement || departureEvent)
       throw new Error("SHIPMENT_CONSOLIDATED");
   }
   create(input: ShipmentInput): ShipmentRecord {
@@ -177,10 +180,13 @@ export class ShipmentRepository {
     });
     return this.find(id)!;
   }
-  update(id: string, input: ShipmentInput): ShipmentRecord | null {
-    const old = this.find(id);
+  update(id: string, input: ShipmentUpdate): ShipmentRecord | null {
+    return this.transaction(() => {
+    const old = this.find(id, false);
     if (!old || !old.persisted) return null;
-    const now = new Date().toISOString();
+    this.assertNotDeparted(id, false);
+    if ("expectedUpdatedAt" in input && input.expectedUpdatedAt !== old.updatedAt) throw new Error("SHIPMENT_STALE");
+    const now = new Date(Math.max(Date.now(), Date.parse(old.updatedAt ?? "") + 1 || 0)).toISOString();
     const nextPlannedDepartureDate = input.plannedDepartureDate || null;
     const hadOriginalDepartureDate = Boolean(
       old.originalPlannedDepartureDate ?? old.plannedDepartureDate,
@@ -194,7 +200,10 @@ export class ShipmentRepository {
       hadOriginalDepartureDate
         ? now
         : old.plannedDepartureDateChangedAt;
-    this.transaction(() => {
+    if ("expectedUpdatedAt" in input) {
+      if (nextPlannedDepartureDate === old.plannedDepartureDate) return old;
+      this.db.prepare("UPDATE ShipmentPlans SET plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,updatedAt=? WHERE id=?").run(nextPlannedDepartureDate, originalPlannedDepartureDate, plannedDepartureDateChangedAt, now, id);
+    } else {
       this.assertUnique(input, id);
       this.db
         .prepare(
@@ -220,8 +229,9 @@ export class ShipmentRepository {
           id,
         );
       this.audit(old.loadId, "SHIPMENT_PLAN_UPDATED", {before:old,after:input});
+    }
+    return this.find(id, false);
     });
-    return this.find(id);
   }
   link(id: string, loadId: string): ShipmentRecord | null {
     const old = this.find(id);

@@ -38,7 +38,11 @@
 }
 .print-label .label-field { min-width: 0; min-height: 0; padding: 1.5mm 0 1mm; border-bottom: .15mm solid #ccc; display: grid; grid-template-rows: 3mm minmax(0, 1fr); }
 .print-label .label-field-wide { grid-column: 1 / -1; }
-.print-label .label-field:last-child { border-bottom: 0; }
+.print-label .label-details > .label-field:last-child { border-bottom: 0; }
+.print-label .label-field-row { grid-column: 1 / -1; display: grid; min-width: 0; min-height: 0; column-gap: 3mm; }
+.print-label .label-serial-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.print-label .label-type-row { grid-template-columns: minmax(0, 1fr) minmax(0, .65fr) minmax(0, 1fr); }
+.print-label .label-quantity { text-align: center; }
 .print-label .label-field b { font-size: 13pt; line-height: 1.08; }
 .print-label .label-field .large { font-size: 15pt; }
 .print-label .label-codes {

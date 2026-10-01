@@ -19,6 +19,40 @@ import { LoadService } from "./services/loadService.js";
 import { ShipmentRepository, type ShipmentRecord } from "./repositories/shipmentRepository.js";
 import { previewShipmentReconciliation, reconcileManualShipments } from "./repositories/shipmentReconciliation.js";
 
+test("calendario: cambio sola data persistente, nessuna modifica operativa e conflitti multiutente",async()=>{
+  const dir=mkdtempSync(join(tmpdir(),"calendar-move-")),databasePath=join(dir,"test.sqlite");
+  const app=await buildApp({...config,databasePath});
+  const db=new DatabaseSync(databasePath);
+  try {
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("CAL-1","C1-")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+    const op=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:op.id}});
+    const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:op.id,destinationType:"TRASPORTATORE",transportMode:"RITIRA_CLIENTE"}})).json<{id:string}>();
+    await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{operatorId:op.id,unitType:"PANEL",panelId:load.pannelli[0]!.id}});
+    const input={loadId:load.id,commessa:"COMM-TEST",cliente:"Cliente Test",camion:"C1-",transportType:"RITIRA_CLIENTE",notes:"Conservare nota",orderReference:"RIF-MANUALE",plannedLoadingDate:"2026-10-01",plannedDepartureDate:"2026-10-02"};
+    const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json<ShipmentRecord>();
+    assert.equal(plan.operationalStatus,"ATTESA_SPEDIZIONE");
+    const snapshot=()=>Object.fromEntries(["Loads","Panels","Packages","LoadingSessions","LoadingUnits","TransportAssignments","OperationalEvents"].map(table=>[table,db.prepare(`SELECT * FROM ${table} ORDER BY id`).all()]));
+    const before=snapshot(),beforePlan=db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(plan.id)!;
+    const move=(date:string,version:string)=>app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{plannedDepartureDate:date,expectedUpdatedAt:version}});
+    const result=await move("2026-10-06",plan.updatedAt!);assert.equal(result.statusCode,200,result.body);
+    const saved=result.json<ShipmentRecord>();assert.equal(saved.plannedDepartureDate,"2026-10-06");assert.equal(saved.originalPlannedDepartureDate,"2026-10-02");assert.ok(saved.plannedDepartureDateChangedAt);
+    const afterPlan=db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(plan.id)!;
+    for(const key of Object.keys(beforePlan))if(!["plannedDepartureDate","plannedDepartureDateChangedAt","updatedAt"].includes(key))assert.equal(afterPlan[key],beforePlan[key],key);
+    assert.deepEqual(snapshot(),before);
+    assert.equal((await move("2026-10-12",plan.updatedAt!)).statusCode,409);
+    assert.equal((await move("2026-02-30",saved.updatedAt!)).statusCode,400);
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{plannedDepartureDate:null,expectedUpdatedAt:saved.updatedAt}})).statusCode,400);
+    assert.deepEqual(snapshot(),before);
+    assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<ShipmentRecord[]>().find(p=>p.id===plan.id)!.plannedDepartureDate,"2026-10-06");
+    // A different connection/operation confirms departure after the frontend snapshot.
+    assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{}})).statusCode,200);
+    const departed=snapshot(),departedPlan=db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(plan.id);
+    const rejected=await move("2026-10-12",saved.updatedAt!);assert.equal(rejected.statusCode,409);assert.equal(rejected.json().error.code,"SHIPMENT_CONSOLIDATED");
+    assert.deepEqual(snapshot(),departed);assert.deepEqual(db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(plan.id),departedPlan);
+  } finally {db.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+});
+
 test("pianificazione manuale prima dell'import: stessa entita, dati preservati e aggiornamenti idempotenti",async()=>{
   const app=await buildApp(config);
   try {

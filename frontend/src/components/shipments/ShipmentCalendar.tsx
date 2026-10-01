@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Box, Button, ButtonBase, IconButton, Stack, Typography } from "@mui/material";
+import { useMemo, useRef, useState } from "react";
+import { Alert, Box, Button, ButtonBase, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -7,17 +7,37 @@ import dayjs from "dayjs";
 import "dayjs/locale/it";
 import type { ShipmentItem } from "../../services/shipmentsApi";
 import { shipmentTransportPresentation } from "../../services/shipmentTransportPresentation";
+import { ApiClientError } from "../../services/apiClient";
+
+export const shipmentHasDeparted = (item: ShipmentItem) => Boolean(item.actualDepartureDate || item.operationalStatus === "SPEDITO" || item.shipmentStatus === "IN_VIAGGIO" || item.shipmentStatus === "CONCLUSA");
 
 interface Props {
   items: ShipmentItem[];
   onSelectShipment: (item: ShipmentItem) => void;
   onSelectDate: (date: string) => void;
+  onReschedule?: (item: ShipmentItem, date: string) => Promise<void>;
 }
 
 const weekdays = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
 
-export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate }: Props) {
+export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate, onReschedule }: Props) {
   const [month, setMonth] = useState(() => dayjs().startOf("month"));
+  const [dragId, setDragId] = useState<string | null>(null);
+  const dragging = useRef<string | null>(null);
+  const suppressClickUntil = useRef(0);
+  const [targetDate, setTargetDate] = useState<string | null>(null);
+  const [move, setMove] = useState<{item:ShipmentItem;date:string} | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canDrag = (item: ShipmentItem) => Boolean(onReschedule && item.persisted && item.updatedAt && !shipmentHasDeparted(item) && !saving && !move);
+  const finishDrag = () => {dragging.current=null;setDragId(null);setTargetDate(null);suppressClickUntil.current=Date.now()+400;};
+  const confirmMove = async () => {
+    if (!move || !onReschedule || saving) return;
+    setSaving(true);setError(null);
+    try {await onReschedule(move.item,move.date);setMove(null);}
+    catch (cause) {setError(cause instanceof ApiClientError ? cause.message : "Impossibile spostare la spedizione. La data precedente resta invariata.");}
+    finally {setSaving(false);}
+  };
   const today = dayjs().format("YYYY-MM-DD");
   const events = useMemo(() => {
     const result = new Map<string, ShipmentItem[]>();
@@ -56,7 +76,12 @@ export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate
         {days.map((day) => {
           const date = day.format("YYYY-MM-DD");
           const current = date === today;
-          return <Box key={date} data-calendar-date={date} onClick={() => onSelectDate(date)} sx={{ position: "relative", minHeight: { xs: 155, md: `max(120px, calc((100dvh - 300px) / ${weekCount}))` }, p: 0.75, borderRight: 1, borderBottom: 1, borderColor: "divider", bgcolor: current ? "action.selected" : day.month() === month.month() ? "background.paper" : "action.hover", cursor: "pointer" }}>
+          return <Box key={date} data-calendar-date={date}
+            onDragOver={event=>{const item=items.find(item=>item.id===dragging.current);if(!item||!canDrag(item))return;event.preventDefault();event.dataTransfer.dropEffect="move";setTargetDate(date);}}
+            onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setTargetDate(null);}}
+            onDrop={event=>{event.preventDefault();event.stopPropagation();const item=items.find(item=>item.id===dragging.current);finishDrag();if(!item||!canDrag(item)||dayjs(item.plannedDepartureDate).format("YYYY-MM-DD")===date)return;setError(null);setMove({item,date});}}
+            onClick={() => {if(Date.now()>=suppressClickUntil.current)onSelectDate(date);}}
+            sx={{ position: "relative", outline:targetDate===date?"2px solid":"none",outlineColor:"primary.main",outlineOffset:-2,minHeight: { xs: 155, md: `max(120px, calc((100dvh - 300px) / ${weekCount}))` }, p: 0.75, borderRight: 1, borderBottom: 1, borderColor: "divider", bgcolor: targetDate===date?"action.selected":current ? "action.selected" : day.month() === month.month() ? "background.paper" : "action.hover", cursor: "pointer" }}>
             <Button size="small" aria-label={`Pianifica spedizione il ${day.format("DD/MM/YYYY")}`} aria-current={current ? "date" : undefined} onClick={(event) => { event.stopPropagation(); onSelectDate(date); }} sx={{ minWidth: 30, mb: 0.5, borderRadius: "50%", color: current ? "primary.contrastText" : day.month() === month.month() ? "text.primary" : "text.secondary", bgcolor: current ? "primary.main" : undefined }}>{day.date()}</Button>
             <Stack sx={{ gap: 0.75 }}>
               {(events.get(date) ?? []).map((item) => {
@@ -67,8 +92,13 @@ export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate
                 const note=item.notes?.trim();
                 const fullText=[heading,reference?`Rif. ${reference}`:null,transportText,note?`Nota: ${note}`:null].filter(Boolean).join("\n");
                 const compactText={overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"} as const;
-                return <ButtonBase key={item.id} title={fullText} onClick={(event) => { event.stopPropagation(); onSelectShipment(item); }} sx={{ display: "block", width: "100%", textAlign: "left", p: 0.75, borderRadius: 1, borderLeft: `3px solid ${presentation.color}`, bgcolor: alpha(presentation.color, 0.13), "&:hover": { bgcolor: alpha(presentation.color, 0.24) }, "&.Mui-focusVisible": { outline: `2px solid ${presentation.color}` }, minWidth:0 }}>
-                  <Typography variant="body2" sx={{fontWeight:800,...compactText}}>{heading}</Typography>
+                const departed=shipmentHasDeparted(item);
+                return <ButtonBase key={item.id} data-shipment-id={item.id} draggable={canDrag(item)} title={fullText+(departed?"\nSPEDITA":canDrag(item)?"\nTrascina per cambiare la data prevista":"")}
+                  onDragStart={event=>{if(!canDrag(item)){event.preventDefault();return;}dragging.current=item.id;setDragId(item.id);event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",item.id);}}
+                  onDragEnd={finishDrag}
+                  onClick={(event) => { event.stopPropagation();if(Date.now()<suppressClickUntil.current)return;onSelectShipment(item); }}
+                  sx={{ display: "block", cursor:dragId===item.id?"grabbing":canDrag(item)?"grab":"pointer",opacity:dragId===item.id?.65:1,width: "100%", textAlign: "left", p: 0.75, borderRadius: 1, borderLeft: `3px solid ${presentation.color}`, bgcolor: alpha(presentation.color, 0.13), "&:hover": { bgcolor: alpha(presentation.color, 0.24) }, "&.Mui-focusVisible": { outline: `2px solid ${presentation.color}` }, minWidth:0 }}>
+                  <Box sx={{display:"flex",alignItems:"center",gap:.5}}><Typography variant="body2" sx={{fontWeight:800,flex:1,minWidth:0,...compactText}}>{heading}</Typography>{departed&&<Box component="span" sx={{flexShrink:0,fontSize:"0.65rem",fontWeight:800,lineHeight:1.5,px:.5,border:1,borderColor:"text.secondary",borderRadius:.5,color:"text.primary"}}>✓ SPEDITA</Box>}</Box>
                   {reference&&<Typography variant="caption" component="div" sx={compactText}>Rif. {reference}</Typography>}
                   <Typography variant="caption" component="div" sx={{color:"text.secondary",...compactText}}>{transportText}</Typography>
                   {note&&<Typography variant="caption" component="div" sx={compactText}>Nota: <Box component="span" sx={{fontStyle:"italic"}}>{note}</Box></Typography>}
@@ -79,5 +109,10 @@ export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate
         })}
       </Box>
     </Box>
+    <Dialog open={move!==null} onClose={()=>{if(!saving)setMove(null);}} fullWidth maxWidth="xs">
+      <DialogTitle>Spostare la spedizione?</DialogTitle>
+      <DialogContent><Typography>{move?.item.commessa}{move?.item.camion?` / ${move.item.camion}`:""}<br/>dal {move?dayjs(move.item.plannedDepartureDate).format("DD/MM/YYYY"):""} al {move?dayjs(move.date).format("DD/MM/YYYY"):""}?</Typography>{error&&<Alert severity="error" sx={{mt:2}}>{error}</Alert>}</DialogContent>
+      <DialogActions><Button disabled={saving} onClick={()=>setMove(null)}>Annulla</Button><Button variant="contained" disabled={saving} onClick={()=>void confirmMove()}>Conferma spostamento</Button></DialogActions>
+    </Dialog>
   </Box>;
 }

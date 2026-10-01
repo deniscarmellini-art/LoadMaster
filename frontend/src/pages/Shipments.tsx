@@ -169,6 +169,15 @@ export default function Shipments({
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [view, setView] = useState<"list" | "calendar">("calendar");
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
+  const [movedItems,setMovedItems]=useState<Record<string,ShipmentItem>>({});
+  const visibleItems=useMemo(()=>items.map(item=>{const moved=movedItems[item.id];return moved&&(moved.updatedAt??"")>(item.updatedAt??"")?moved:item;}),[items,movedItems]);
+  const reschedule=async(item:ShipmentItem,date:string)=>{
+    if(!item.updatedAt)throw new Error("Pianificazione non aggiornata");
+    const saved=await updateShipment(item.id,{plannedDepartureDate:date,expectedUpdatedAt:item.updatedAt});
+    setMovedItems(current=>({...current,[saved.id]:saved}));
+    try {await onRefresh();setNotice({severity:"success",text:"Data prevista aggiornata."});}
+    catch {setNotice({severity:"error",text:"Data salvata. Impossibile aggiornare gli altri dati: ricaricare la pagina."});}
+  };
   const [editing, setEditing] = useState<ShipmentItem | null | "new">(null),
     [form, setForm] = useState<ShipmentInput>(empty),
     [deleteItem, setDeleteItem] = useState<ShipmentItem | null>(null),
@@ -179,8 +188,8 @@ export default function Shipments({
       text: string;
     } | null>(null);
   const operationalItems = useMemo(
-    () => items.filter(remainsInOperationalView),
-    [items],
+    () => visibleItems.filter(remainsInOperationalView),
+    [visibleItems],
   );
   const legacyCount = useMemo(
     () =>
@@ -579,7 +588,7 @@ export default function Shipments({
             />
           </Box>}
           {view === "calendar" ? (
-            <ShipmentCalendar items={operationalItems} onSelectShipment={(item) => open(item)} onSelectDate={(date) => open(undefined, date)} />
+            <ShipmentCalendar items={visibleItems} onReschedule={reschedule} onSelectShipment={(item) => open(item)} onSelectDate={(date) => open(undefined, date)} />
           ) : mobile ? (
             <Stack sx={{ gap: 1 }}>
               {filtered.map((item) => (
