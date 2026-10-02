@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import {
   Alert,
@@ -49,7 +49,7 @@ import {
 import type { TransportItem } from "../services/transportsApi";
 import PlannedDepartureDate from "../components/shipments/PlannedDepartureDate";
 import { demoBranding } from "../services/demoBranding";
-import ShipmentCalendar from "../components/shipments/ShipmentCalendar";
+import ShipmentCalendar, { shipmentHasDeparted } from "../components/shipments/ShipmentCalendar";
 import { operationalStatusPresentation } from "../services/dashboardService";
 import { ApiClientError } from "../services/apiClient";
 import { shipmentTransportLabel } from "../services/shipmentTransportPresentation";
@@ -171,7 +171,9 @@ export default function Shipments({
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
   const [movedItems,setMovedItems]=useState<Record<string,ShipmentItem>>({});
   const visibleItems=useMemo(()=>items.map(item=>{const moved=movedItems[item.id];return moved&&(moved.updatedAt??"")>(item.updatedAt??"")?moved:item;}),[items,movedItems]);
+  const hasDeparted = (item: ShipmentItem) => shipmentHasDeparted(item) || shipmentHasDeparted(items.find(current=>current.id===item.id) ?? item) || shipmentHasDeparted(visibleItems.find(current=>current.id===item.id) ?? item);
   const reschedule=async(item:ShipmentItem,date:string)=>{
+    if(hasDeparted(item))throw new Error("La spedizione è già partita.");
     if(!item.updatedAt)throw new Error("Pianificazione non aggiornata");
     const saved=await updateShipment(item.id,{plannedDepartureDate:date,expectedUpdatedAt:item.updatedAt});
     setMovedItems(current=>({...current,[saved.id]:saved}));
@@ -187,6 +189,11 @@ export default function Shipments({
       severity: "success" | "error";
       text: string;
     } | null>(null);
+  useEffect(() => {
+    const departed = (item: ShipmentItem) => shipmentHasDeparted(item) || items.some(current=>current.id===item.id&&shipmentHasDeparted(current));
+    if(editing && editing!=="new" && departed(editing))setEditing(null);
+    if(deleteItem && departed(deleteItem))setDeleteItem(null);
+  }, [items, editing, deleteItem]);
   const operationalItems = useMemo(
     () => visibleItems.filter(remainsInOperationalView),
     [visibleItems],
@@ -223,6 +230,7 @@ export default function Shipments({
     [operationalItems, search, status, type, from, to],
   );
   const open = (item?: ShipmentItem, date?: string) => {
+    if(item && hasDeparted(item))return;
     setCalendarDate(date ?? null);
     setEditing(item ?? "new");
     setForm(
@@ -250,6 +258,7 @@ export default function Shipments({
   );
   const save = async () => {
     if (!valid) return;
+    if(editing && editing!=="new" && hasDeparted(editing))return;
     try {
       if (editing === "new" || (editing && !editing.persisted))
         await createShipment({
@@ -275,6 +284,7 @@ export default function Shipments({
     }
   };
   const remove = async (item: ShipmentItem) => {
+    if(hasDeparted(item))return;
     try {
       await deleteShipment(item.id);
       await onRefresh();
@@ -306,6 +316,7 @@ export default function Shipments({
     }
   };
   const connect = async (item: ShipmentItem) => {
+    if(hasDeparted(item))return;
     const candidates = items.filter(
       (x) =>
         !x.persisted &&
@@ -361,7 +372,7 @@ export default function Shipments({
     }
   };
   const action = (item: ShipmentItem) =>
-    item.persisted && item.shipmentStatus === "PRONTA" ? (
+    hasDeparted(item) ? null : item.persisted && item.shipmentStatus === "PRONTA" ? (
       <Stack direction="row" spacing={1}>
       <Button size="small" onClick={()=>open(item)}>Modifica pianificazione</Button>
       <Button
@@ -379,8 +390,7 @@ export default function Shipments({
         Conferma partenza
       </Button>
       </Stack>
-    ) : item.shipmentStatus === "IN_VIAGGIO" ||
-      item.shipmentStatus === "CONCLUSA" ? null : (
+    ) : (
       <Stack direction="row">
         <Button size="small" onClick={() => open(item)}>
           {item.persisted ? "Modifica pianificazione" : "Pianifica"}
@@ -729,7 +739,7 @@ export default function Shipments({
           <DialogContent>
             <Box sx={{ display: "grid", gap: 1.5, pt: 1 }}>
               {calendarDate && <Autocomplete
-                options={items.filter((item) => !item.persisted && item.loadId && !item.plannedDepartureDate)}
+                options={items.filter((item) => !item.persisted && item.loadId && !item.plannedDepartureDate && !shipmentHasDeparted(item))}
                 value={editing && editing !== "new" ? editing : null}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 getOptionLabel={(item) => [item.commessa, item.camion, item.cliente].filter(Boolean).join(" · ")}

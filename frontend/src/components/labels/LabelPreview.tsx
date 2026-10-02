@@ -43,12 +43,16 @@ export default function LabelPreview({ panel, fields, index }:Props) {
         <Box className="label-field label-customer-number"><small>Nr. cliente</small><b className="label-fit">{numeroCliente}</b></Box>
       </Box>
       <Box className="label-field-row label-type-row">
+        <Box className="label-type-fields">
         <Box className="label-field"><small>Tipologia</small><b className="label-fit">{show(panel.tipoPannello)}</b></Box>
         <Box className="label-field label-quantity"><small>Quantità</small><b className="label-fit">{quantita}</b></Box>
+        </Box>
         <Box className="label-field"><small>Qualità L1/L2</small><b className="label-fit">{show(`${panel.lato1} / ${panel.lato2}`)}</b></Box>
       </Box>
+      <Box className="label-field-row label-dimensions-row">
       <Box className="label-field"><small>S × L × H (mm)</small><b className="label-fit">{Math.round(panel.spessore)} × {Math.round(panel.lunghezza)} × {Math.round(panel.altezza)}</b></Box>
-      <Box className="label-field"><small>Peso</small><b className="label-fit large">{Math.round(panel.peso)} KG</b></Box>
+      <Box className="label-field label-weight"><small>Peso</small><b className="label-fit large">{Math.round(panel.peso)} KG</b></Box>
+      </Box>
       <Box className="label-field label-field-wide"><small>Cliente</small><b className="label-fit">{show(fields.cliente)}</b></Box>
       <Box className="label-field label-field-wide"><small>Rif. ordine</small><b className="label-fit">{show(fields.riferimento)}</b></Box>
     </Box>

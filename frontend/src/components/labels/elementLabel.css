@@ -33,18 +33,21 @@
 .print-label .label-heading span { font-size: 7.5pt; line-height: 1.1; }
 .print-label .label-fit { display: block; min-width: 0; min-height: 0; overflow-wrap: anywhere; overflow: hidden; }
 .print-label .label-details {
+  --label-column-gap: 3mm;
   display: grid; grid-template-columns: 1.4fr 1fr;
-  grid-template-rows: 12mm 12mm 12mm 16mm minmax(0, 1fr); column-gap: 3mm;
+  grid-template-rows: 12mm 12mm 12mm 16mm minmax(0, 1fr); column-gap: var(--label-column-gap);
 }
-.print-label .label-field { min-width: 0; min-height: 0; padding: 1.5mm 0 1mm; border-bottom: .15mm solid #ccc; display: grid; grid-template-rows: 3mm minmax(0, 1fr); }
+.print-label .label-field { min-width: 0; min-height: 0; padding: 1.5mm 0 1mm; display: grid; grid-template-rows: 3mm minmax(0, 1fr); }
+.print-label .label-details > * { border-bottom: .15mm solid #ccc; }
 .print-label .label-field-wide { grid-column: 1 / -1; }
 .print-label .label-details > .label-field:last-child { border-bottom: 0; }
-.print-label .label-field-row { grid-column: 1 / -1; display: grid; min-width: 0; min-height: 0; column-gap: 3mm; }
-.print-label .label-serial-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
-.print-label .label-type-row { grid-template-columns: minmax(0, 1fr) minmax(0, .65fr) minmax(0, 1fr); }
+.print-label .label-field-row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; min-width: 0; min-height: 0; }
+.print-label .label-type-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .65fr); min-width: 0; min-height: 0; column-gap: var(--label-column-gap); }
 .print-label .label-quantity { text-align: center; }
+.print-label .label-quantity > * { transform: translateX(-10px); }
 .print-label .label-field b { font-size: 13pt; line-height: 1.08; }
 .print-label .label-field .large { font-size: 15pt; }
+.print-label .label-weight .large { font-size: 13.5pt; }
 .print-label .label-codes {
   border-left: .2mm solid #777; padding-left: 3mm;
   display: grid; grid-template-rows: 48mm 14mm 13mm minmax(0, 1fr);
