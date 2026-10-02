@@ -3,6 +3,8 @@ import { useLayoutEffect, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import type { Pannello } from "../../types/excel";
 import { isDemoEnvironment } from "../../services/demoBranding";
+import essepiLogoUrl from "../../assets/essepi-logo-print.png";
+import ceMarkUrl from "../../assets/ce-mark-official.png";
 
 export interface LabelFields { anno:string; commessa:string; cliente:string; riferimento:string; dtp:string; operatore:string; autMin:string; codiceEta:string; cpr:string; dataOra:string; rotate:boolean; }
 interface Props { panel:Pannello; fields:LabelFields; index:number; }
@@ -28,7 +30,7 @@ export default function LabelPreview({ panel, fields, index }:Props) {
   const qr = `C=${fields.commessa}|CL=${fields.cliente}|N=${panel.numeroPannello}|CA=${panel.numeroCamion}|S=${Math.round(panel.spessore)}|L=${Math.round(panel.lunghezza)}|H=${Math.round(panel.altezza)}|P=${Math.round(panel.peso)}`;
   return <Box ref={labelRef} className={`print-label${fields.rotate ? " print-label--rotated" : ""}`}>
     <Box className="label-brand">
-      {isDemoEnvironment ? <Box className="label-logo label-demo-logo">SisLog DEMO</Box> : <img className="label-logo" src="/essepi-logo-print.png" alt="ESSEPI finestre & xlam" />}
+      {isDemoEnvironment ? <Box className="label-logo label-demo-logo">SisLog DEMO</Box> : <img className="label-logo" src={essepiLogoUrl} alt="ESSEPI finestre & xlam" />}
       <Box className="label-qr"><QRCodeSVG value={qr} size={128} level="M" marginSize={1} /></Box>
     </Box>
     <Box className="label-main">
@@ -58,7 +60,7 @@ export default function LabelPreview({ panel, fields, index }:Props) {
     </Box>
     </Box>
     <Box className="label-codes">
-      <Box className="heading-ce"><img className="heading-ce-mark" src="/ce-mark-official.png" alt="Marcatura CE" /><Box className="heading-certification"><small>C. TRAF. AUT_MIN</small><b className="label-fit">{fields.autMin}</b></Box><Box className="heading-certification"><small>CODICE ETA</small><b className="label-fit">{fields.codiceEta}</b></Box><Box className="heading-certification"><small>CODICE CPR</small><b className="label-fit">{fields.cpr}</b></Box></Box>
+      <Box className="heading-ce"><img className="heading-ce-mark" src={ceMarkUrl} alt="Marcatura CE" /><Box className="heading-certification"><small>C. TRAF. AUT_MIN</small><b className="label-fit">{fields.autMin}</b></Box><Box className="heading-certification"><small>CODICE ETA</small><b className="label-fit">{fields.codiceEta}</b></Box><Box className="heading-certification"><small>CODICE CPR</small><b className="label-fit">{fields.cpr}</b></Box></Box>
       <Box className="label-meta"><small>DTP</small><b className="label-fit">{show(fields.dtp)}</b></Box><Box className="label-meta"><small>Operatore</small><b className="label-fit">{show(fields.operatore)}</b></Box><Box className="label-meta"><small>Data / Ora</small><b className="label-fit">{show(fields.dataOra)}</b></Box>
     </Box>
     <Box className="preview-caption">Elemento {panel.numeroPannello} · {serial}</Box>
