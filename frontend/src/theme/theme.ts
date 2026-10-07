@@ -4,7 +4,6 @@ export const dashboardColors = {
   card: "#131b25",
   surface: "#121922",
   grid: "#10161e",
-  search: "#1a2430",
   header: "#24313f",
   stripe: "rgba(255,255,255,0.018)",
   rowHover: "rgba(72,137,201,0.075)",

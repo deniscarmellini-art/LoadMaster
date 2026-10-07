@@ -66,9 +66,7 @@ import { listTransports, type TransportItem } from "./services/transportsApi";
 import { departShipment, listShipments, type ShipmentItem } from "./services/shipmentsApi";
 import useAutoRefresh from "./hooks/useAutoRefresh";
 import { importaExcel } from "./services/excelImport";
-
-const panelKey = (panel: Pannello) =>
-  `${normalizeTruck(panel.numeroCamion)}\u0000${String(panel.numeroPannello).trim()}`;
+import { findRemovedOperationalPanels } from "./utils/importManifest";
 
 export default function App() {
   const [commesse, setCommesse] = useState<Commessa[]>([]);
@@ -278,38 +276,7 @@ export default function App() {
 
   const handleImported = useCallback(
     async (commessa: Commessa): Promise<void> => {
-      const importedTrucks = new Map(
-        commessa.pannelli.map((panel) => [
-          normalizeTruck(panel.numeroCamion),
-          panel.numeroCamion,
-        ]),
-      );
-      const shipped = truckLoads.find(
-        (load) =>
-          load.stato === "SPEDITO" &&
-          importedTrucks.has(normalizeTruck(load.camion)) &&
-          normalizeOrder(load.commessa) === normalizeOrder(commessa.ordine),
-      );
-      if (shipped) {
-        setPendingImport(null);
-        setBlockedImport({ commessa: commessa.ordine, camion: shipped.camion });
-        return;
-      }
-      const duplicate =
-        commesse.some(
-          (existing) =>
-            normalizeOrder(existing.ordine) ===
-              normalizeOrder(commessa.ordine) &&
-            existing.pannelli.some((panel) =>
-              importedTrucks.has(normalizeTruck(panel.numeroCamion)),
-            ),
-        ) ||
-        truckLoads.some(
-          (load) =>
-            load.stato !== "SPEDITO" &&
-            normalizeOrder(load.commessa) === normalizeOrder(commessa.ordine) &&
-            importedTrucks.has(normalizeTruck(load.camion)),
-        );
+      const duplicate = commesse.some(existing => normalizeOrder(existing.ordine) === normalizeOrder(commessa.ordine));
       if (duplicate) setPendingImport(commessa);
       else {
         setCommesse(await importCommessaToApi(commessa));
@@ -329,17 +296,11 @@ export default function App() {
   };
 
   const removedPanels = pendingImport
-    ? (() => {
-        const incomingKeys = new Set(pendingImport.pannelli.map(panelKey));
-        return commesse.flatMap((item) =>
+    ? commesse.flatMap((item) =>
           normalizeOrder(item.ordine) === normalizeOrder(pendingImport.ordine)
-            ? item.pannelli.filter(
-                (panel) =>
-                  !incomingKeys.has(panelKey(panel)),
-              )
+            ? findRemovedOperationalPanels(item.pannelli, pendingImport.pannelli)
             : [],
-        );
-      })()
+        )
     : [];
   const removedLoadedPanels = removedPanels.filter((panel) => panel.caricato);
   const shippedLoadKeys = new Set(
@@ -535,23 +496,24 @@ export default function App() {
               setLoadingInstance((value) => value + 1);
               setPage("loading");
             }}
-            onConfirmDeparture={(row, carrierId) => {
+            onConfirmDeparture={async (row, carrierId, operatorId) => {
               const load = truckLoads.find(
                 (item) =>
                   item.commessa === row.commessa &&
                   item.camion === row.camion &&
                   item.stato === "ATTESA_SPEDIZIONE",
               );
-              if (!load) return;
+              if (!load) throw new Error("Carico non più pronto alla partenza. Aggiornare e riprovare.");
               const shipment = shipments.find(
                 (item) =>
                   item.persisted &&
                   item.loadId === load.backendLoadId,
               );
-              void (shipment
-                ? departShipment(shipment.id, carrierId)
-                : shipLoadingApi(load.loadId, carrierId)
-              ).then(refreshScanningData);
+              await (shipment
+                ? departShipment(shipment.id, carrierId, operatorId)
+                : shipLoadingApi(load.loadId, carrierId, operatorId)
+              );
+              await refreshScanningData();
             }}
           />
         ) : page === "labels" ? (
@@ -655,6 +617,10 @@ export default function App() {
           />
         ) : page === "loading" ? (
           <TruckLoading
+            onRefresh={async () => {
+              await scanningRefreshRef.current;
+              await refreshScanningData();
+            }}
             key={`${resumeLoad?.loadId ?? "loading-list"}:${loadingInstance}`}
             initialLoad={resumeLoad}
             shipments={shipmentsWithOperationalStatus}
@@ -904,7 +870,7 @@ export default function App() {
                 <br />
                 <b>
                   Attenzione: {removedLoadedPanels.length} risultano già
-                  caricati. Confermando verranno scaricati e rimossi dalla
+                  caricati o spediti. La rimozione viene bloccata per proteggere la
                   commessa.
                 </b>
               </>
@@ -921,7 +887,7 @@ export default function App() {
           <Button
             color="error"
             variant="contained"
-            onClick={() => completeUpdate(true)}
+            disabled={removedLoadedPanels.length > 0} onClick={() => completeUpdate(true)}
           >
             Elimina elementi rimossi
           </Button>

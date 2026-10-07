@@ -428,15 +428,17 @@ test("carico: effettivi separati dal previsto, rimorchio da Trasporti e riapertu
     assert.equal((await app.inject({method:"PATCH",url:`/api/loading-sessions/${session.id}`,payload:{...base,carrierId:carriers[1]!.id}})).statusCode,200,"saved inactive carrier remains valid");
     const third=(await app.inject({method:"POST",url:"/api/third-party-transport-modes",payload:{name:"Terzi effettivo",active:true,sortOrder:0}})).json<{id:string}>();
     const switched=await app.inject({method:"PATCH",url:`/api/loading-sessions/${session.id}`,payload:{...base,transportMode:"TERZI_PER_ESSEPI",transportDetailId:third.id}});
-    assert.equal(switched.statusCode,200);assert.equal(switched.json().carrierId,null);assert.equal(switched.json().trailerId,null);
+    assert.equal(switched.statusCode,409);assert.equal(switched.json().error.code,"TRAILER_RELEASE_REQUIRED");
+    const protectedSession=(await app.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`})).json();
+    assert.equal(protectedSession.carrierId,carriers[1]!.id);assert.equal(protectedSession.trailerId,trailer.id);
     const plans=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;transportType:string;transportDetailId:string}>>();
     assert.equal(plans.find(p=>p.id===planned.id)!.transportDetailId,carriers[0]!.id);assert.equal(plans.find(p=>p.id===planned.id)!.transportType,"BILICO_ESSEPI");
     const inconsistent=await app.inject({method:"PATCH",url:`/api/loading-sessions/${session.id}`,payload:{...base,transportMode:"RITIRA_CLIENTE",transportDetailId:carriers[0]!.id}});
     assert.equal(inconsistent.statusCode,400);
     const inactiveNew=await app.inject({method:"PATCH",url:`/api/loading-sessions/${session.id}`,payload:{...base,carrierId:carriers[1]!.id}});
-    assert.equal(inactiveNew.statusCode,400);
+    assert.equal(inactiveNew.statusCode,200,"saved inactive carrier remains valid after blocked mode change");
     const shipped=await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{}});
-    assert.equal(shipped.statusCode,200);assert.equal(shipped.json().transportDetailId,third.id);assert.equal(shipped.json().carrierId,null);
+    assert.equal(shipped.statusCode,200);assert.equal(shipped.json().transportDetailId,null);assert.equal(shipped.json().carrierId,carriers[1]!.id);
   }finally{await app.close();rmSync(directory,{recursive:true,force:true});}
 });
 
@@ -862,6 +864,178 @@ test("il preflight CORS consente PATCH dal frontend Vite",async()=>{
 const importedPanel=(numeroPannello:string,camion:string,peso=10)=>({numeroPannello,numeroCliente:"NC",numeroMasterPanel:"MP",camion,lato1:"A",lato2:"B",tipoPannello:"X",quantita:1,spessore:100,lunghezza:1200,altezza:2400,superficie:2.88,volume:0.288,peso});
 const importedLoad=(panels:ReturnType<typeof importedPanel>[],removeMissing?:boolean)=>({commessa:"COMM-TEST",cliente:"Cliente Test",numeroCliente:"C-01",riferimentoOrdine:"RIF-01",...(removeMissing===undefined?{}:{removeMissing}),pannelli:panels});
 
+test("rimorchio da Carico camion: stessa reservation, unicità multiutente, disimpegno e cambio modalità protetto",async()=>{
+  const dir=mkdtempSync(join(tmpdir(),"loading-reserve-")),databasePath=join(dir,"test.sqlite");
+  const app=await buildApp({...config,databasePath}),other=await buildApp({...config,databasePath});
+  const db=new DatabaseSync(databasePath);
+  const call=(method:"GET"|"POST"|"PATCH"|"DELETE",url:string,payload?:object)=>app.inject({method,url,...(payload?{payload}:{})});
+  try{
+    const loads=(await call("POST","/api/loads/import",importedLoad([importedPanel("RS1","C1"),importedPanel("RS2","C2")]))).json<Array<{id:string;camion:string;pannelli:Array<{id:string}>}>>();
+    const first=loads.find(l=>l.camion==="C1")!,second=loads.find(l=>l.camion==="C2")!;
+    const trailers=(await call("GET","/api/transports")).json<Array<{id:string;status:string;active:boolean}>>().filter(t=>t.status==="DISPONIBILE"&&t.active);
+    const a=trailers[0]!,b=trailers[1]!;
+    const operator=(await call("GET","/api/operators")).json<Array<{id:string}>>()[0]!;
+    const base={operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",transportMode:"BILICO_ESSEPI"};
+    const session=(await call("POST",`/api/loads/${first.id}/loading-session`,base)).json<{id:string;carrierId:null;trailerId:null}>();
+    assert.equal(session.carrierId,null);assert.equal(session.trailerId,null);
+    const reservation=(load:typeof first)=>({loadId:load.id,commessa:"COMM-TEST",cliente:"Cliente Test",carico:load.camion});
+    const snapshot=()=>JSON.stringify(Object.fromEntries(["Loads","Panels","LoadingSessions","LoadingUnits","OperationalEvents","ShipmentPlans","TransportAssignments"].map(t=>[t,db.prepare(`SELECT * FROM ${t} ORDER BY id`).all()])));
+    const before=snapshot();assert.equal((await call("GET","/api/transports")).json<Array<{id:string;status:string}>>().find(t=>t.id===a.id)!.status,"DISPONIBILE");assert.equal(snapshot(),before,"list and selection do not assign");
+    const result=await call("POST",`/api/trailers/${a.id}/reservation`,reservation(first));assert.equal(result.statusCode,200,result.body);
+    const assigned=result.json<{assignmentId:string;source:string;loadId:string;status:string;canRelease:boolean}>();assert.equal(assigned.source,"LOAD");assert.equal(assigned.loadId,first.id);assert.equal(assigned.status,"IMPEGNATO");assert.equal(assigned.canRelease,true);
+    const saved=(await call("GET",`/api/loads/${first.id}/loading-session`)).json();assert.equal(saved.trailerId,a.id);assert.equal(saved.carrierId,null);
+    const same=(await call("GET","/api/transports")).json<Array<{id:string;assignmentId:string}>>().find(t=>t.id===a.id)!;assert.equal(same.assignmentId,assigned.assignmentId);
+    const occupied=snapshot();
+    assert.equal((await other.inject({method:"POST",url:`/api/trailers/${a.id}/reservation`,payload:reservation(second)})).statusCode,409);
+    assert.equal((await call("POST",`/api/trailers/${b.id}/reservation`,reservation(first))).json().error.code,"LOAD_ALREADY_ASSIGNED");assert.equal(snapshot(),occupied);
+    for(const transportMode of ["RITIRA_CLIENTE","TERZI_PER_ESSEPI",null]){
+      const switched=await call("PATCH",`/api/loading-sessions/${session.id}`,{...base,transportMode});assert.equal(switched.statusCode,409);assert.equal(switched.json().error.code,"TRAILER_RELEASE_REQUIRED");assert.equal(snapshot(),occupied);
+    }
+    const release=await call("DELETE",`/api/trailers/${a.id}/reservation?assignmentId=${assigned.assignmentId}`);assert.equal(release.statusCode,200);assert.equal(release.json().status,"DISPONIBILE");
+    assert.equal((await call("PATCH",`/api/loading-sessions/${session.id}`,{...base,transportMode:"RITIRA_CLIENTE"})).statusCode,200);
+    const customer=snapshot();assert.equal((await call("POST",`/api/trailers/${a.id}/reservation`,reservation(first))).statusCode,409);assert.equal(snapshot(),customer);
+    assert.equal((await call("PATCH",`/api/loading-sessions/${session.id}`,base)).statusCode,200);
+    // Reservation also precedes session creation; subsequent adoption keeps its ID.
+    const noSession=await call("POST",`/api/trailers/${b.id}/reservation`,reservation(second));assert.equal(noSession.statusCode,200);
+    const adopted=(await call("POST",`/api/loads/${second.id}/loading-session`,base)).json<{id:string;trailerId:string}>();assert.equal(adopted.trailerId,b.id);
+    assert.equal(db.prepare("SELECT id FROM TransportAssignments WHERE trailerId=? AND releasedAt IS NULL").get(b.id)!.id,noSession.json().assignmentId);
+    assert.equal((await call("DELETE",`/api/trailers/${b.id}/reservation?assignmentId=${noSession.json().assignmentId}`)).statusCode,200);
+    // Both clients loaded the same availability list before competing.
+    const races=await Promise.all([call("POST",`/api/trailers/${a.id}/reservation`,reservation(first)),other.inject({method:"POST",url:`/api/trailers/${a.id}/reservation`,payload:reservation(second)})]);
+    assert.deepEqual(races.map(r=>r.statusCode).sort(),[200,409]);
+    const winner=races[0]!.statusCode===200?first:second;
+    const active=db.prepare("SELECT * FROM TransportAssignments WHERE trailerId=? AND releasedAt IS NULL").all(a.id);assert.equal(active.length,1);assert.equal(active[0]!.loadId,winner.id);
+    // A released empty session can adopt a new assignment without requiring a carrier.
+    const winningSession=winner.id===first.id?session:(await call("POST",`/api/loads/${winner.id}/loading-session`,base)).json<{id:string}>();
+    await call("PATCH",`/api/panels/${winner.pannelli[0]!.id}/close-single`,{operatorId:operator.id});
+    assert.equal((await call("POST",`/api/loading-sessions/${winningSession.id}/units`,{operatorId:operator.id,unitType:"PANEL",panelId:winner.pannelli[0]!.id})).statusCode,200);
+    const physical=snapshot();assert.equal((await call("DELETE",`/api/trailers/${a.id}/reservation?assignmentId=${String(active[0]!.id)}`)).statusCode,409);
+    assert.equal((await call("PATCH",`/api/loading-sessions/${winningSession.id}`,{...base,transportMode:"RITIRA_CLIENTE"})).statusCode,409);assert.equal(snapshot(),physical);
+    assert.equal(db.prepare("PRAGMA foreign_key_check").all().length,0);
+  }finally{db.close();await other.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+for(const mode of ["RITIRA_CLIENTE","RITIRA_CLIENTE_EMPTY","BILICO_ESSEPI","TERZI_PER_ESSEPI"] as const)test(`partenza Dashboard: ${mode}, 24/24, dati effettivi, storico e rollback`,async()=>{
+ const dir=mkdtempSync(join(tmpdir(),"dashboard-departure-")),databasePath=join(dir,"test.sqlite"),app=await buildApp({...config,databasePath}),db=new DatabaseSync(databasePath);
+ try{
+  const call=async(method:"GET"|"POST"|"PATCH",url:string,payload?:unknown)=>app.inject({method,url,...(payload===undefined?{}:{payload:payload as Record<string,unknown>})});
+  const operator=(await call("GET","/api/operators")).json<Array<{id:string}>>()[0]!,carriers=(await call("GET","/api/carriers")).json<Array<{id:string}>>(),trailer=(await call("GET","/api/trailers")).json<Array<{id:string}>>()[0]!;
+  const confirmOperator=(await call("POST","/api/operators",{code:"CONFIRM",name:"Operatore partenza",active:true,sortOrder:0})).json<{id:string}>();
+  const detail=(await call("POST",mode==="TERZI_PER_ESSEPI"?"/api/third-party-transport-modes":"/api/client-vehicle-types",{name:"Dettaglio effettivo",active:true,sortOrder:0})).json<{id:string}>();
+  const loads=(await call("POST","/api/loads/import",importedLoad([importedPanel("C1","C1"),...Array.from({length:24},(_,i)=>importedPanel(String(200+i),"C2")),importedPanel("C3","C3")]))).json<Array<{id:string;camion:string;pannelli:Array<{id:string}>}>>();
+  const c1=loads.find(l=>l.camion==="C1")!,c2=loads.find(l=>l.camion==="C2")!,c3=loads.find(l=>l.camion==="C3")!;
+  db.prepare("UPDATE Loads SET stato='SPEDITO' WHERE id=?").run(c1.id);db.prepare("UPDATE Panels SET stato='SPEDITO' WHERE loadId=?").run(c1.id);
+  const transportMode=mode==="RITIRA_CLIENTE_EMPTY"?"RITIRA_CLIENTE":mode;
+  const plan=(await call("POST","/api/shipments",{commessa:"COMM-TEST",cliente:"Cliente Test",loadId:c2.id,camion:"C2",plannedDepartureDate:"2026-10-06",transportType:mode==="BILICO_ESSEPI"?"BILICO_ESSEPI":"TERZI_PER_ESSEPI",...(mode==="BILICO_ESSEPI"?{plannedCarrierId:carriers[0]!.id}:{})})).json<{id:string}>();
+  if(mode==="BILICO_ESSEPI")assert.equal((await call("POST",`/api/trailers/${trailer.id}/reservation`,{commessa:"COMM-TEST",cliente:"Cliente Test",carico:"C2"})).statusCode,200);
+  const settings={operatorId:operator.id,destinationType:mode==="BILICO_ESSEPI"?"RIMORCHIO_ESSEPI":"TRASPORTATORE",transportMode,...(mode==="BILICO_ESSEPI"?{carrierId:carriers[1]!.id}:mode==="RITIRA_CLIENTE_EMPTY"?{}:{transportDetailId:detail.id})};
+  const sessionResponse=await call("POST",`/api/loads/${c2.id}/loading-session`,settings);assert.equal(sessionResponse.statusCode,201,sessionResponse.body);const session=sessionResponse.json<{id:string}>();
+  for(const p of c2.pannelli){db.prepare("UPDATE Panels SET stato='CARICATO' WHERE id=?").run(p.id);db.prepare("INSERT INTO LoadingUnits(id,loadingSessionId,unitType,panelId,loadedAt,loadedByOperatorId,createdAt,updatedAt) VALUES(?,?,'PANEL',?,'now',?,'now','now')").run(crypto.randomUUID(),session.id,p.id,operator.id);}
+  const ready=await call("GET",`/api/loads/${c2.id}/loading-session`);assert.equal(ready.json().stato,"ATTESA_SPEDIZIONE");
+  const tables=["Loads","Panels","Packages","LoadingSessions","LoadingUnits","OperationalEvents","ShipmentPlans","TransportAssignments"] as const;
+  const snapshot=()=>Object.fromEntries(tables.map(t=>[t,db.prepare(`SELECT * FROM ${t} ORDER BY id`).all()])) as Record<typeof tables[number],Array<Record<string,string|number|null>>>;
+  const before=snapshot(),planned=before.ShipmentPlans.find(p=>p.id===plan.id)!;
+  const depart=(input:Record<string,unknown>={operatorId:confirmOperator.id})=>call("POST",`/api/shipments/${plan.id}/depart`,input);
+  assert.equal((await depart({operatorId:"missing"})).statusCode,400);assert.deepEqual(snapshot(),before);
+  if(mode!=="BILICO_ESSEPI"){assert.equal((await depart({operatorId:confirmOperator.id,carrierId:carriers[0]!.id})).statusCode,400);assert.deepEqual(snapshot(),before);}
+  db.exec("CREATE TRIGGER reject_departure BEFORE UPDATE OF actualDepartureDate ON ShipmentPlans BEGIN SELECT RAISE(ABORT,'departure rollback'); END");
+  assert.equal((await depart()).statusCode,500);assert.deepEqual(snapshot(),before);db.exec("DROP TRIGGER reject_departure");
+  const unit=before.LoadingUnits.find(u=>u.loadingSessionId===session.id)!;db.prepare("UPDATE LoadingUnits SET active=0 WHERE id=?").run(unit.id!);db.prepare("UPDATE Panels SET stato='DISPONIBILE' WHERE id=?").run(unit.panelId!);
+  assert.equal((await call("POST",`/api/loading-sessions/${session.id}/ship`,{operatorId:confirmOperator.id})).statusCode,409);
+  db.prepare("UPDATE LoadingUnits SET active=1 WHERE id=?").run(unit.id!);db.prepare("UPDATE Panels SET stato='CARICATO' WHERE id=?").run(unit.panelId!);
+  const result=await depart();assert.equal(result.statusCode,200,result.body);assert.equal(result.json().operationalStatus,"SPEDITO");assert.equal(result.json().shipmentStatus,mode==="BILICO_ESSEPI"?"IN_VIAGGIO":"CONCLUSA");
+  const after=snapshot(),saved=after.LoadingSessions.find(s=>s.id===session.id)!;assert.equal(saved.stato,"SPEDITO");assert.ok(saved.shippedAt);assert.equal(saved.transportMode,transportMode);assert.equal(saved.transportDetailId,mode==="RITIRA_CLIENTE_EMPTY"||mode==="BILICO_ESSEPI"?null:detail.id);assert.equal(saved.carrierId,mode==="BILICO_ESSEPI"?carriers[1]!.id:null);assert.equal(saved.trailerId,mode==="BILICO_ESSEPI"?trailer.id:null);
+  const events=after.OperationalEvents.filter(e=>e.loadId===c2.id&&e.type==="PARTENZA_CONFERMATA");assert.equal(events.length,1);assert.equal(events[0]!.operatorId,confirmOperator.id);assert.equal(events[0]!.timestamp,saved.shippedAt);
+  const departedPlan=after.ShipmentPlans.find(p=>p.id===plan.id)!;assert.equal(departedPlan.actualDepartureDate,saved.shippedAt);for(const key of Object.keys(planned))if(!["actualDepartureDate","carrierId","updatedAt"].includes(key))assert.deepEqual(departedPlan[key],planned[key],key);
+  assert.equal(after.Panels.filter(p=>p.loadId===c2.id&&p.stato==="SPEDITO").length,24);assert.deepEqual(after.LoadingUnits,before.LoadingUnits);
+  for(const t of tables){const others=(rows:typeof before.Loads)=>rows.filter(r=>r.id===c1.id||r.id===c3.id||r.loadId===c1.id||r.loadId===c3.id);assert.deepEqual(others(after[t]),others(before[t]));}
+  assert.equal((await depart()).statusCode,409);assert.deepEqual(snapshot(),after);
+  assert.equal((await call("GET","/api/loading-sessions")).json<Array<{id:string;stato:string}>>().find(s=>s.id===session.id)!.stato,"SPEDITO");
+  assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(),[]);
+ }finally{db.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test("distinta: riassegnazione disponibile, protezioni operative, idempotenza e rollback",async()=>{
+ const {database:db}=openSqliteDatabase(":memory:"),repository=new LoadRepository(db),service=new LoadService(repository);
+ const original=importedLoad([importedPanel("S","C1"),importedPanel("L","C2"),importedPanel("A","C2"),importedPanel("B","C3"),importedPanel("R","C3")]);
+ try{
+  const loads=service.import(original),c1=loads.find(l=>l.camion==="C1")!,c2=loads.find(l=>l.camion==="C2")!,c3=loads.find(l=>l.camion==="C3")!;
+  const a=c2.pannelli.find(p=>p.numeroPannello==="A")!,l=c2.pannelli.find(p=>p.numeroPannello==="L")!;
+  db.prepare("UPDATE Loads SET stato='SPEDITO' WHERE id=?").run(c1.id);
+  db.prepare("UPDATE Panels SET stato='SPEDITO' WHERE loadId=?").run(c1.id);
+  db.prepare("UPDATE Panels SET stato='DISPONIBILE',scannedAt='original-scan' WHERE id=?").run(a.id);
+  db.prepare("UPDATE Panels SET stato='CARICATO' WHERE id=?").run(l.id);
+  db.prepare("INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,carrierId,startedAt,createdAt,updatedAt) VALUES('session',?,'IN_CARICO','OP','TRASPORTATORE','CARRIER','now','now','now')").run(c2.id);
+  db.prepare("INSERT INTO LoadingUnits(id,loadingSessionId,unitType,panelId,loadedAt,loadedByOperatorId,createdAt,updatedAt) VALUES('unit','session','PANEL',?,'now','OP','now','now')").run(l.id);
+  const snapshot=()=>Object.fromEntries(["Loads","Panels","LoadingSessions","LoadingUnits","OperationalEvents"].map(t=>[t,db.prepare(`SELECT * FROM ${t} ORDER BY id`).all()]));
+  const shippedBefore=db.prepare("SELECT * FROM Loads WHERE id=?").get(c1.id),loadedBefore=db.prepare("SELECT * FROM Panels WHERE id=?").get(l.id),unitBefore=db.prepare("SELECT * FROM LoadingUnits").all();
+  const updated={...original,pannelli:original.pannelli.map(p=>p.numeroPannello==="A"?{...p,camion:"C3"}:p)};
+  // Legacy import already inserted a pristine copy on the destination truck.
+  db.prepare(`INSERT INTO Panels(id,loadId,numeroPannello,numeroCliente,numeroMasterPanel,camion,lato1,lato2,tipoPannello,quantita,spessore,lunghezza,altezza,superficie,volume,peso,stato,createdAt,updatedAt)
+    SELECT 'ghost',?,numeroPannello,numeroCliente,numeroMasterPanel,'C3',lato1,lato2,tipoPannello,quantita,spessore,lunghezza,altezza,superficie,volume,peso,'MANCANTE',createdAt,updatedAt FROM Panels WHERE id=?`).run(c3.id,a.id);
+  const before=snapshot();
+  db.exec("CREATE TRIGGER fail_move BEFORE UPDATE OF loadId ON Panels WHEN NEW.numeroPannello='A' BEGIN SELECT RAISE(ABORT,'forced rollback'); END");
+  assert.throws(()=>service.updateOrderImport(original.commessa,updated),/forced rollback/);assert.deepEqual(snapshot(),before);db.exec("DROP TRIGGER fail_move");
+  const result=service.updateOrderImport(original.commessa,updated),moved=result.find(x=>x.id===c3.id)!.pannelli.find(p=>p.id===a.id)!;
+  assert.equal(moved.stato,"DISPONIBILE");assert.equal(moved.scannedAt,"original-scan");assert.equal(moved.loadId,c3.id);
+  assert.ok(!repository.panels(c2.id).some(p=>p.id===a.id));assert.equal(repository.panels(c3.id).length,3);
+  assert.equal(db.prepare("SELECT 1 FROM Panels WHERE id='ghost'").get(),undefined);
+  assert.deepEqual(db.prepare("SELECT * FROM Loads WHERE id=?").get(c1.id),shippedBefore);assert.deepEqual(db.prepare("SELECT * FROM Panels WHERE id=?").get(l.id),loadedBefore);assert.deepEqual(db.prepare("SELECT * FROM LoadingUnits").all(),unitBefore);
+  const stable=snapshot();service.updateOrderImport(original.commessa,updated);assert.deepEqual(snapshot(),stable);
+  for(const number of ["S","L"]){
+   assert.throws(()=>service.updateOrderImport(original.commessa,{...updated,pannelli:updated.pannelli.map(p=>p.numeroPannello===number?{...p,camion:"C3"}:p)}),/spedito|caricato/);assert.deepEqual(snapshot(),stable);
+   const omitted={...updated,removeMissing:true,pannelli:updated.pannelli.filter(p=>p.numeroPannello!==number)};
+   if(number==="S")service.updateOrderImport(original.commessa,omitted);
+   else assert.throws(()=>service.updateOrderImport(original.commessa,omitted),/caricat|partita/);
+   assert.deepEqual(snapshot(),stable);
+  }
+  service.updateOrderImport(original.commessa,{...updated,pannelli:updated.pannelli.filter(p=>p.numeroPannello!=="S")});assert.deepEqual(snapshot(),stable);
+  const removed=service.updateOrderImport(original.commessa,{...updated,removeMissing:true,pannelli:updated.pannelli.filter(p=>p.numeroPannello!=="R")});assert.equal(removed.find(x=>x.id===c3.id)!.pannelli.length,2);
+  const direct={...updated,removeMissing:true,pannelli:updated.pannelli.filter(p=>p.numeroPannello!=="R").map(p=>p.numeroPannello==="A"?{...p,camion:"C2"}:p)};
+  service.updateOrderImport(original.commessa,direct);
+  assert.equal(repository.panels(c2.id).find(p=>p.id===a.id)?.stato,"DISPONIBILE");
+  assert.equal(repository.panels(c2.id).find(p=>p.id===a.id)?.scannedAt,"original-scan");
+  const directStable=snapshot();service.updateOrderImport(original.commessa,direct);assert.deepEqual(snapshot(),directStable);
+  assert.throws(()=>service.updateOrderImport(original.commessa,{...direct,pannelli:[...direct.pannelli,importedPanel("A","C3")]}),/duplicato/);assert.deepEqual(snapshot(),directStable);
+  assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(),[]);
+ }finally{db.close();}
+});
+
+test("distinta operativa C2/C3 omette 45 spediti C1: storico immutabile e conflitti espliciti atomici",async()=>{
+ const directory=mkdtempSync(join(tmpdir(),"manifest-shipped-")),databasePath=join(directory,"case.sqlite");
+ const app=await buildApp({...config,databasePath}),db=new DatabaseSync(databasePath);
+ try{
+  const shipped=Array.from({length:45},(_,i)=>importedPanel(`S${i+1}`,"C1"));
+  const active=[importedPanel("L","C2"),importedPanel("205","C2"),importedPanel("B","C3")];
+  const original={...importedLoad([...shipped,...active]),commessa:"SHIPPED-MANIFEST"};
+  const creation=await app.inject({method:"POST",url:"/api/loads/import",payload:original});assert.equal(creation.statusCode,201,creation.body);
+  const loads=creation.json<Array<{id:string;camion:string;pannelli:Array<{id:string;numeroPannello:string}>}>>(),c1=loads.find(l=>l.camion==="C1")!,c2=loads.find(l=>l.camion==="C2")!,c3=loads.find(l=>l.camion==="C3")!;
+  db.prepare("UPDATE Loads SET stato='SPEDITO' WHERE id=?").run(c1.id);
+  db.prepare("UPDATE Panels SET stato='SPEDITO' WHERE loadId=?").run(c1.id);
+  db.prepare("INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,carrierId,startedAt,shippedAt,createdAt,updatedAt) VALUES('shipped-session',?,'SPEDITO','OP','TRASPORTATORE','CARRIER','start','departure','start','departure')").run(c1.id);
+  for(const panel of c1.pannelli)db.prepare("INSERT INTO LoadingUnits(id,loadingSessionId,unitType,panelId,loadedAt,loadedByOperatorId,createdAt,updatedAt) VALUES(?,'shipped-session','PANEL',?,'start','OP','start','start')").run(`unit-${panel.id}`,panel.id);
+  db.prepare("INSERT INTO OperationalEvents(id,loadId,loadingSessionId,type,timestamp) VALUES('departure',?,'shipped-session','PARTENZA_CONFERMATA','departure')").run(c1.id);
+  db.prepare("UPDATE Panels SET stato=CASE WHEN numeroPannello='L' THEN 'CARICATO' ELSE 'DISPONIBILE' END,scannedAt='scan-original' WHERE loadId=?").run(c2.id);
+  db.prepare("INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,carrierId,startedAt,createdAt,updatedAt) VALUES('active-session',?,'IN_CARICO','OP','TRASPORTATORE','CARRIER','start','start','start')").run(c2.id);
+  db.prepare("INSERT INTO LoadingUnits(id,loadingSessionId,unitType,panelId,loadedAt,loadedByOperatorId,createdAt,updatedAt) VALUES('loaded-unit','active-session','PANEL',?,'start','OP','start','start')").run(c2.pannelli.find(p=>p.numeroPannello==="L")!.id);
+  const snapshot=()=>Object.fromEntries(["Loads","Panels","Packages","LoadingSessions","LoadingUnits","OperationalEvents","ShipmentPlans","TransportAssignments"].map(t=>[t,db.prepare(`SELECT * FROM ${t} ORDER BY id`).all()]));
+  const before=snapshot(),shippedRows=(state:ReturnType<typeof snapshot>)=>Object.fromEntries(Object.entries(state).map(([t,rows])=>[t,rows.filter(r=>r.id===c1.id||r.loadId===c1.id||r.loadingSessionId==="shipped-session")]));
+  const payload={...original,pannelli:active.map(p=>p.numeroPannello==="205"?{...p,camion:"C3"}:p.numeroPannello==="B"?{...p,peso:20}:p)};
+  const update=(value:typeof payload)=>app.inject({method:"PUT",url:"/api/orders/SHIPPED-MANIFEST/import",payload:value});
+  const first=await update(payload);assert.equal(first.statusCode,200,first.body);assert.deepEqual(shippedRows(snapshot()),shippedRows(before));
+  const saved=first.json<Array<{id:string;stato:string;pannelli:Array<{id:string;stato:string;numeroPannello:string;scannedAt:string;peso:number}>}>>();
+  assert.equal(saved.find(l=>l.id===c1.id)!.pannelli.length,45);assert.equal(saved.find(l=>l.id===c2.id)!.stato,"ATTESA_SPEDIZIONE");
+  const moved=saved.find(l=>l.id===c3.id)!.pannelli.find(p=>p.numeroPannello==="205")!;assert.equal(moved.id,c2.pannelli.find(p=>p.numeroPannello==="205")!.id);assert.equal(moved.stato,"DISPONIBILE");assert.equal(moved.scannedAt,"scan-original");assert.equal(saved.find(l=>l.id===c3.id)!.pannelli.find(p=>p.numeroPannello==="B")!.peso,20);
+  const stable=snapshot();
+  for(const removeMissing of [false,true]){const repeat=await update({...payload,removeMissing} as typeof payload);assert.equal(repeat.statusCode,200,repeat.body);assert.deepEqual(snapshot(),stable);}
+  for(const panel of [{...shipped[0]!,camion:"C3"},{...shipped[0]!,peso:999},{...shipped[0]!,numeroMasterPanel:"CHANGED"}]){
+   const conflict=await update({...payload,pannelli:[...payload.pannelli,panel]});assert.equal(conflict.statusCode,409,conflict.body);assert.equal(conflict.json().error.code,"MANIFEST_CONFLICT");assert.deepEqual(snapshot(),stable);
+  }
+  const explicit=await update({...payload,pannelli:[...payload.pannelli,...shipped]});assert.equal(explicit.statusCode,200,explicit.body);assert.deepEqual(snapshot(),stable);
+  assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(),[]);
+ }finally{db.close();await app.close();rmSync(directory,{recursive:true,force:true});}
+});
+
 test("importa una distinta multi-camion in transazione e legge i pannelli",async()=>{
   const app=await buildApp(config);
   const response=await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("102","C1"),importedPanel("102","C2")])});
@@ -882,7 +1056,7 @@ test("aggiorna la distinta senza duplicare pannelli e consente l'eliminazione",a
   const app=await buildApp(config);
   const created=await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("1","C1"),importedPanel("2","C1")])});
   const load=created.json<Array<{id:string}>>()[0];assert.ok(load);
-  const updated=await app.inject({method:"PUT",url:`/api/loads/${load.id}/import`,payload:importedLoad([importedPanel("1","C1",99),importedPanel("1","C1",99),importedPanel("3","C1")],true)});
+  const updated=await app.inject({method:"PUT",url:`/api/loads/${load.id}/import`,payload:importedLoad([importedPanel("1","C1",99),importedPanel("3","C1")],true)});
   assert.equal(updated.statusCode,200);
   const updatedPanels=updated.json<{pannelli:Array<{numeroPannello:string;peso:number}>}>().pannelli;
   assert.deepEqual(updatedPanels.map(panel=>panel.numeroPannello).sort(),["1","3"]);
@@ -1278,15 +1452,15 @@ test("il ritiro diretto salva la partenza effettiva e conclude la spedizione",as
   try{const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!,carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string}>>()[0]!,load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("DIRECT-1","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"TRASPORTATORE",carrierId:carrier.id}})).json<{id:string}>();await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});const shipment=(await app.inject({method:"POST",url:"/api/shipments",payload:{loadId:load.id,commessa:"COMM-TEST",cliente:"Cliente Test",camion:"C1",plannedDepartureDate:"2026-09-15",transportType:"RITIRA_CLIENTE",trailerId:null,carrierId:null}})).json<{id:string}>();assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}})).json<{stato:string}>().stato,"SPEDITO");const departed=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;shipmentStatus:string;actualDepartureDate:string|null}>>().find(item=>item.id===shipment.id)!;assert.equal(departed.shipmentStatus,"CONCLUSA");assert.ok(departed.actualDepartureDate);}finally{await app.close();}
 });
 
-test("aggiornare la distinta può scaricare e rimuovere un pannello già caricato",async()=>{
+test("aggiornare la distinta blocca la rimozione di un pannello già caricato",async()=>{
   const app=await buildApp(config);const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;const trailer=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
   const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("R1","C1"),importedPanel("R2","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
   for(const panel of load.pannelli)await app.inject({method:"PATCH",url:`/api/panels/${panel.id}/close-single`,payload:{operatorId:operator.id}});
   const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",trailerId:trailer.id}})).json<{id:string}>();
   await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[1]!.id,operatorId:operator.id}});
   const update=await app.inject({method:"PUT",url:`/api/loads/${load.id}/import`,payload:importedLoad([importedPanel("R1","C1")],true)});
-  assert.equal(update.statusCode,200);assert.deepEqual(update.json<{pannelli:Array<{numeroPannello:string}>}>().pannelli.map(panel=>panel.numeroPannello),["R1"]);
-  const restored=await app.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(restored.json<{units:unknown[]}>().units.length,0);
+  assert.equal(update.statusCode,409);assert.equal(update.json().error.code,"MANIFEST_CONFLICT");
+  const restored=await app.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(restored.json<{units:unknown[]}>().units.length,1);
   await app.close();
 });
 

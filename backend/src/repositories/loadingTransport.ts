@@ -34,5 +34,7 @@ export function resolveLoadingTransport(db:DatabaseSync,loadId:string,input:Load
     if(!row||(!row.active&&!saved))throw new ApiError(400,"INVALID_TRANSPORT_DETAIL","Voce non attiva o incompatibile con la modalità di trasporto");
     label=saved?(previous?.transportDetailLabel??row.name):row.name;
   }
+  if(mode!=="BILICO_ESSEPI" && assignedTrailer(db,loadId))
+    throw new ApiError(409,"TRAILER_RELEASE_REQUIRED","Disimpegnare esplicitamente il rimorchio prima di cambiare modalit\u00e0. Il disimpegno non \u00e8 consentito dopo l'inizio del carico fisico.");
   return {...input,transportMode:mode,destinationType:mode==="BILICO_ESSEPI"?"RIMORCHIO_ESSEPI":"TRASPORTATORE",trailerId:mode==="BILICO_ESSEPI"?assignedTrailer(db,loadId):undefined,carrierId:mode==="BILICO_ESSEPI"?detail||undefined:undefined,transportDetailId:mode==="BILICO_ESSEPI"?null:detail||null,transportDetailLabel:label};
 }

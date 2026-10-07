@@ -6,7 +6,7 @@ import { idParamsSchema } from "./routeSchemas.js";
 interface Options { service: TransportService }
 const optionalDate={anyOf:[{type:"string"},{type:"null"}]} as const;
 const trailerParamsSchema={type:"object",additionalProperties:false,required:["trailerId"],properties:{trailerId:{type:"string",minLength:1,maxLength:100}}} as const;
-const reservationBody={type:"object",additionalProperties:false,required:["commessa","cliente","carico"],properties:{commessa:{type:"string",minLength:1},cliente:{type:"string",minLength:1},carico:{type:"string",minLength:1},plannedDepartureDate:optionalDate}} as const;
+const reservationBody={type:"object",additionalProperties:false,required:["commessa","cliente","carico"],properties:{loadId:{type:"string",minLength:1,maxLength:100},commessa:{type:"string",minLength:1},cliente:{type:"string",minLength:1},carico:{type:"string",minLength:1},plannedDepartureDate:optionalDate}} as const;
 
 export const transportRoutes:FastifyPluginAsync<Options>=async(app,{service})=>{
   const controller=new TransportController(service);

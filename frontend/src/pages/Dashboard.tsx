@@ -32,6 +32,8 @@ import type { TransportItem } from "../services/transportsApi";
 import { operatorLabel } from "../models/Settings";
 import PackagePrintPreview from "../components/scanning/PackagePrintPreview";
 import { ApiClientError } from "../services/apiClient";
+import { confirmDeparture, departureTransport, departureTrailerId } from "../services/departureConfirmation";
+import { shipmentTransportLabel } from "../services/shipmentTransportPresentation";
 
 interface DashboardProps {
   commesse: Commessa[];
@@ -52,9 +54,9 @@ interface DashboardProps {
   onStartLoad: (row: Camion) => void;
   onConfirmDeparture: (
     row: Camion,
-    carrierId: string,
-    departedAt: string,
-  ) => void;
+    carrierId: string | undefined,
+    operatorId: string,
+  ) => Promise<void>;
 }
 
 function Dashboard({
@@ -92,6 +94,9 @@ function Dashboard({
   const [departureRow, setDepartureRow] = useState<Camion | null>(null);
   const [departureCarrierId, setDepartureCarrierId] = useState("");
   const [departureAt, setDepartureAt] = useState("");
+  const [departureOperatorId, setDepartureOperatorId] = useState("");
+  const [departureError, setDepartureError] = useState<string | null>(null);
+  const [isDeparting, setIsDeparting] = useState(false);
   const [packagePrintRow, setPackagePrintRow] = useState<Camion | null>(null);
   const [selectedPackageCodes, setSelectedPackageCodes] = useState<Set<string>>(
     new Set(),
@@ -129,7 +134,6 @@ function Dashboard({
   const selectedPackages = printablePackages.filter((pack) =>
     selectedPackageCodes.has(pack.codice),
   );
-  const activeCarriers = carriers.filter((carrier) => carrier.attivo);
   const departureLoad = departureRow
     ? truckLoads.find(
         (load) =>
@@ -139,8 +143,12 @@ function Dashboard({
       )
     : undefined;
   const departureTrailer = trailers.find(
-    (trailer) => trailer.id === departureLoad?.rimorchioId,
+    (trailer) => trailer.id === departureTrailerId(departureLoad, transports),
   );
+  const departurePlan = shipments.find(plan => plan.loadId === departureLoad?.backendLoadId);
+  const transport = departureTransport(departureLoad, departurePlan);
+  const activeCarriers = carriers.filter(carrier => carrier.attivo || carrier.id === departureLoad?.trasportatoreId);
+  const activeOperators = operators.filter(operator => operator.attivo);
   const openPackagePrint = (row: Camion) => {
     const codes = packages
       .filter(
@@ -208,7 +216,11 @@ function Dashboard({
             onConfirmDeparture={(row) => {
               setDepartureRow(row);
               const plan = shipments.find(item=>item.loadId===row.id);
-              setDepartureCarrierId(carriers.some(c=>c.attivo&&c.id===plan?.plannedCarrierId) ? plan!.plannedCarrierId! : "");
+              const load = truckLoads.find(item => item.commessa === row.commessa && item.camion === row.camion);
+              const selected = departureTransport(load, plan).carrierId;
+              setDepartureCarrierId(carriers.some(c=>c.id===selected&&(c.attivo||c.id===load?.trasportatoreId)) ? selected : "");
+              setDepartureOperatorId(activeOperators.some(op => op.id === load?.operatoreId) ? load!.operatoreId : "");
+              setDepartureError(null);
               setDepartureAt(new Date().toISOString());
             }}
             onOpenHistory={onOpenHistory}
@@ -305,7 +317,7 @@ function Dashboard({
       </Dialog>
       <Dialog
         open={departureRow !== null}
-        onClose={() => setDepartureRow(null)}
+        onClose={() => { if (!isDeparting) setDepartureRow(null); }}
         fullWidth
         maxWidth="sm"
       >
@@ -335,6 +347,12 @@ function Dashboard({
               slotProps={{ input: { readOnly: true } }}
             />
             <TextField
+              label="Modalità di trasporto"
+              value={transport.mode ? shipmentTransportLabel(transport.mode) : "—"}
+              slotProps={{ input: { readOnly: true } }}
+              sx={{ gridColumn: "1 / -1" }}
+            />
+            {transport.mode === "BILICO_ESSEPI" && <TextField
               label={demoBranding.rimorchio}
               value={
                 departureTrailer
@@ -342,13 +360,14 @@ function Dashboard({
                   : "—"
               }
               slotProps={{ input: { readOnly: true } }}
-            />
-            <TextField
+            />}
+            {transport.requiresCarrier ? <TextField
               select
               required
               label="Trasportatore"
               value={departureCarrierId}
               onChange={(event) => setDepartureCarrierId(event.target.value)}
+              disabled={isDeparting}
               sx={{ gridColumn: "1 / -1" }}
             >
               <MenuItem value="" disabled>
@@ -359,6 +378,15 @@ function Dashboard({
                   {carrier.nome}
                 </MenuItem>
               ))}
+            </TextField> : <TextField
+              label={transport.mode === "TERZI_PER_ESSEPI" ? "Modalità Terzi per Essepi" : "Tipo di mezzo (facoltativo)"}
+              value={transport.detailLabel || "—"}
+              slotProps={{ input: { readOnly: true } }}
+              sx={{ gridColumn: "1 / -1" }}
+            />}
+            <TextField select required label="Operatore partenza" value={departureOperatorId}
+              disabled={isDeparting} onChange={event => setDepartureOperatorId(event.target.value)} sx={{ gridColumn: "1 / -1" }}>
+              {activeOperators.map(operator => <MenuItem key={operator.id} value={operator.id}>{operatorLabel(operator)}</MenuItem>)}
             </TextField>
             <TextField
               label="Data e ora partenza"
@@ -369,26 +397,30 @@ function Dashboard({
               sx={{ gridColumn: "1 / -1" }}
             />
           </Box>
-          {!activeCarriers.length && (
+          {transport.requiresCarrier && !activeCarriers.length && (
             <Alert severity="warning" sx={{ mt: 2 }}>
               Nessun trasportatore attivo disponibile. Configurarlo nelle
               Impostazioni.
             </Alert>
           )}
+          {departureError && <Alert severity="error" sx={{ mt: 2 }}>{departureError}</Alert>}
+          {!transport.mode && <Alert severity="warning" sx={{ mt: 2 }}>Salvare la modalità effettiva in Carico camion prima di confermare la partenza.</Alert>}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDepartureRow(null)}>Annulla</Button>
+          <Button disabled={isDeparting} onClick={() => setDepartureRow(null)}>Annulla</Button>
           <Button
-            disabled={!departureCarrierId || !activeCarriers.length}
+            disabled={isDeparting || !departureOperatorId || !transport.mode || (transport.requiresCarrier && !departureCarrierId)}
             variant="contained"
-            onClick={() => {
-              if (departureRow && departureCarrierId)
-                onConfirmDeparture(
-                  departureRow,
-                  departureCarrierId,
-                  departureAt,
-                );
-              setDepartureRow(null);
+            onClick={async () => {
+              if (!departureRow || isDeparting) return;
+              setIsDeparting(true);
+              setDepartureError(null);
+              await confirmDeparture(
+                () => onConfirmDeparture(departureRow, transport.requiresCarrier ? departureCarrierId : undefined, departureOperatorId),
+                () => setDepartureRow(null),
+                setDepartureError,
+              );
+              setIsDeparting(false);
             }}
           >
             Conferma partenza

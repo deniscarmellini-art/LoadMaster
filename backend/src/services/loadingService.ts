@@ -3,23 +3,44 @@ import { ApiError } from "../utils/apiError.js";
 import type { TransportRepository } from "../repositories/transportRepository.js";
 
 import type { LoadingSettings as Settings } from "../repositories/loadingTransport.js";
+import type { LoadingSessionRecord } from "../models/operational.js";
 export class LoadingService{
  constructor(private readonly repo:LoadingRepository,private readonly transports?:TransportRepository){}
  list(){return this.repo.list();}
  get(id:string){const value=this.repo.find(id);if(!value)throw new ApiError(404,"RESOURCE_NOT_FOUND","Sessione non trovata");return value;}
  byLoad(loadId:string){const value=this.repo.findByLoad(loadId);if(!value)throw new ApiError(404,"RESOURCE_NOT_FOUND","Sessione non trovata");return value;}
- create(loadId:string,input:Settings){if(input.transportMode!==undefined)input=this.repo.resolveTransport(loadId,input);else this.validateDestination(input);const existing=this.repo.findByLoad(loadId);if(existing)return existing;this.validateTrailer(input,loadId);return this.repo.transaction(()=>this.repo.create(loadId,input));}
- update(id:string,input:Settings){const session=this.get(id);if(session.shippedAt||session.stato==="SPEDITO")throw new ApiError(409,"SESSION_CLOSED","Carico già spedito");if(input.transportMode===undefined&&session.transportMode)input={...input,transportMode:session.transportMode,transportDetailId:session.transportDetailId,carrierId:input.carrierId??session.carrierId??undefined};if(input.transportMode!==undefined)input=this.repo.resolveTransport(session.loadId,input,session);else this.validateDestination(input);this.validateTrailer(input,session.loadId);return this.repo.transaction(()=>this.repo.update(id,input));}
+ create(loadId:string,input:Settings){return this.repo.transaction(()=>{if(input.transportMode!==undefined)input=this.repo.resolveTransport(loadId,input);else this.validateDestination(input);const existing=this.repo.findByLoad(loadId);if(existing)return existing;this.validateTrailer(input,loadId);return this.repo.create(loadId,input);});}
+ update(id:string,input:Settings){return this.repo.transaction(()=>{const session=this.get(id);if(session.shippedAt||session.stato==="SPEDITO")throw new ApiError(409,"SESSION_CLOSED","Carico già spedito");if(input.transportMode===undefined&&session.transportMode)input={...input,transportMode:session.transportMode,transportDetailId:session.transportDetailId,carrierId:input.carrierId??session.carrierId??undefined};if(input.transportMode!==undefined)input=this.repo.resolveTransport(session.loadId,input,session);else this.validateDestination(input);this.validateTrailer(input,session.loadId);return this.repo.update(id,input);});}
  addUnit(id:string,input:{unitType:"PANEL"|"PACKAGE";panelId?:string;packageId?:string;operatorId:string}){const session=this.get(id);if(!["DA_COMPLETARE","DA_CARICARE","IN_CARICO"].includes(session.stato))throw new ApiError(409,"SESSION_CLOSED","Carico già chiuso");const unitId=input.unitType==="PANEL"?input.panelId:input.packageId;if(!unitId)throw new ApiError(400,"VALIDATION_ERROR","Unità non valida");const info=this.repo.unitInfo(input.unitType,unitId);if(!info||info.loadId!==session.loadId||info.stato!=="DISPONIBILE"||info.packageId)throw new ApiError(409,"UNIT_NOT_AVAILABLE","Unità non disponibile");return this.repo.transaction(()=>this.repo.addUnit(id,input));}
  removeUnit(id:string,unitId:string,input:{operatorId:string}){const session=this.get(id);if(!["IN_CARICO","ATTESA_SPEDIZIONE"].includes(session.stato))throw new ApiError(409,"SESSION_CLOSED","Carico non modificabile");return this.repo.transaction(()=>this.repo.removeUnit(id,unitId,input.operatorId));}
  complete(id:string){const session=this.get(id);if(session.stato==="SPEDITO")throw new ApiError(409,"SESSION_CLOSED","Carico già spedito");this.validateCompletion(session);if(session.destinationType!=="RIMORCHIO_ESSEPI"||!session.trailerId)throw new ApiError(409,"INVALID_DESTINATION","Rimorchio obbligatorio");if(!this.repo.isComplete(id,session.loadId))throw new ApiError(409,"LOADING_INCOMPLETE","Carico incompleto");return this.repo.transaction(()=>this.repo.complete(id));}
  reopen(id:string,input:{note?:string}){const session=this.get(id);if(session.stato!=="ATTESA_SPEDIZIONE")throw new ApiError(409,"INVALID_STATUS","Solo un carico in attesa può essere riaperto");return this.repo.transaction(()=>this.repo.reopen(id,input.note));}
- ship(id:string,input:{carrierId?:string}){const session=this.get(id),carrierId=input.carrierId??session.carrierId;if(!["IN_CARICO","ATTESA_SPEDIZIONE"].includes(session.stato))throw new ApiError(409,"INVALID_STATUS","Carico non spedibile");if(session.transportMode){this.validateCompletion(session);if(input.carrierId)this.repo.resolveTransport(session.loadId,{operatorId:session.operatorId,destinationType:session.destinationType,transportMode:session.transportMode,carrierId:input.carrierId,transportDetailId:session.transportDetailId},session);if(session.transportMode!=="BILICO_ESSEPI"&&input.carrierId)throw new ApiError(400,"INVALID_TRANSPORT_DETAIL","Trasportatore incompatibile");}else if(!carrierId)throw new ApiError(400,"VALIDATION_ERROR","Trasportatore obbligatorio");if(!this.repo.isComplete(id,session.loadId))throw new ApiError(409,"LOADING_INCOMPLETE","Carico incompleto");return this.repo.transaction(()=>{if(session.transportMode&&input.carrierId){const resolved=this.repo.resolveTransport(session.loadId,{operatorId:session.operatorId,destinationType:session.destinationType,transportMode:session.transportMode,carrierId:input.carrierId,transportDetailId:session.transportDetailId},session);this.repo.update(id,resolved);}return this.repo.ship(id,carrierId??undefined);});}
+ ship(id:string,input:{carrierId?:string;operatorId?:string;transportMode?:LoadingSessionRecord["transportMode"];transportDetailId?:string|null}){
+  return this.repo.transaction(()=>{
+   let session=this.get(id);
+   if(!["IN_CARICO","ATTESA_SPEDIZIONE"].includes(session.stato))throw new ApiError(409,"INVALID_STATUS","Carico non spedibile oppure spedito");
+   if(input.operatorId&&!this.repo.isActiveOperator(input.operatorId))throw new ApiError(400,"INVALID_OPERATOR","Selezionare un operatore attivo per la partenza");
+   if(!session.transportMode&&input.transportMode){
+    const settings=this.repo.resolveTransport(session.loadId,{operatorId:session.operatorId,destinationType:session.destinationType,transportMode:input.transportMode,transportDetailId:input.transportDetailId??null,carrierId:input.carrierId},session);
+    session=this.repo.update(id,settings);
+   }
+   const carrierId=input.carrierId??session.carrierId;
+   if(session.transportMode){
+    this.validateCompletion(session);
+    if(input.carrierId)this.repo.resolveTransport(session.loadId,{operatorId:session.operatorId,destinationType:session.destinationType,transportMode:session.transportMode,carrierId:input.carrierId,transportDetailId:session.transportDetailId},session);
+    if(session.transportMode!=="BILICO_ESSEPI"&&input.carrierId)throw new ApiError(400,"INVALID_TRANSPORT_DETAIL","Trasportatore incompatibile");
+   }else if(!carrierId)throw new ApiError(400,"VALIDATION_ERROR","Trasportatore obbligatorio");
+   if(!this.repo.isComplete(id,session.loadId))throw new ApiError(409,"LOADING_INCOMPLETE","Carico incompleto");
+   if(session.transportMode&&input.carrierId){const resolved=this.repo.resolveTransport(session.loadId,{operatorId:session.operatorId,destinationType:session.destinationType,transportMode:session.transportMode,carrierId:input.carrierId,transportDetailId:session.transportDetailId},session);this.repo.update(id,resolved);}
+   return this.repo.ship(id,carrierId??undefined,input.operatorId??session.operatorId);
+  });
+ }
+
  private validateCompletion(session:ReturnType<LoadingService["get"]>){
   if(!session.transportMode)return; // Existing sessions retain their legacy completion rules.
   if(session.transportMode==="BILICO_ESSEPI"){
     if(!session.carrierId)throw new ApiError(400,"VALIDATION_ERROR","Trasportatore Essepi effettivo obbligatorio");
-    if(!session.trailerId||this.repo.assignedTrailer(session.loadId)!==session.trailerId)throw new ApiError(409,"INVALID_DESTINATION","Assegnare il Rimorchio Essepi nella pagina Trasporti");
+    if(!session.trailerId||this.repo.assignedTrailer(session.loadId)!==session.trailerId)throw new ApiError(409,"INVALID_DESTINATION","Assegnare il Rimorchio Essepi da Carico camion o Trasporti");
   }
   if(session.transportMode==="TERZI_PER_ESSEPI"&&!session.transportDetailId)throw new ApiError(400,"VALIDATION_ERROR","Modalità Terzi per Essepi obbligatoria");
   this.repo.resolveTransport(session.loadId,{operatorId:session.operatorId,destinationType:session.destinationType,transportMode:session.transportMode,carrierId:session.carrierId??undefined,transportDetailId:session.transportDetailId},session);

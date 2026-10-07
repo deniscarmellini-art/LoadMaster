@@ -4,6 +4,7 @@ export type TransportStatus =
   "DISPONIBILE" | "IMPEGNATO" | "CARICATO" | "IN_VIAGGIO" | "FUORI_SERVIZIO";
 export type AssignmentSource = "MANUAL" | "LOAD";
 export interface ManualReservationInput {
+  loadId?: string;
   commessa: string;
   cliente: string;
   carico: string;
@@ -128,26 +129,45 @@ export class TransportRepository {
     trailerId: string,
     input: ManualReservationInput,
   ): TransportRecord | null {
-    const current = this.find(trailerId);
-    if (!current) return null;
-    if (current.status !== "DISPONIBILE")
-      throw new Error("TRAILER_NOT_AVAILABLE");
-    const now = new Date().toISOString();
-    this.db
-      .prepare(
-        "INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,source,manualCommessa,manualCliente,manualCarico,plannedDepartureDate,stato,assignedAt,createdAt,updatedAt)VALUES(?,?,NULL,NULL,'MANUAL',?,?,?,NULL,'IMPEGNATO',?,?,?)",
-      )
-      .run(
-        crypto.randomUUID(),
-        trailerId,
-        input.commessa.trim(),
-        input.cliente.trim(),
-        input.carico.trim(),
-        now,
-        now,
-        now,
-      );
-    return this.find(trailerId);
+    return this.transaction(() => {
+      const current = this.find(trailerId);
+      if (!current) return null;
+      if (!current.active || current.status !== "DISPONIBILE")
+        throw new Error("TRAILER_NOT_AVAILABLE");
+      const load = input.loadId ? this.db.prepare("SELECT * FROM Loads WHERE id=?").get(input.loadId) : undefined;
+      if (input.loadId && (!load || normalize(String(load.commessa)) !== normalize(input.commessa) || normalize(String(load.camion)) !== normalize(input.carico)))
+        throw new Error("INVALID_RESERVATION_LOAD");
+      const session = load ? this.db.prepare("SELECT * FROM LoadingSessions WHERE loadId=?").get(input.loadId!) : undefined;
+      if (load && (load.stato === "SPEDITO" || (session?.transportMode && session.transportMode !== "BILICO_ESSEPI")))
+        throw new Error("INVALID_RESERVATION_LOAD");
+      // Include manual reservations for this order/truck: their Load link may not
+      // have been adopted by a loading session yet.
+      if (this.list().some(item => item.assignmentId && ((input.loadId !== undefined && item.loadId === input.loadId) ||
+          normalize(item.commessa ?? "") === normalize(input.commessa) && normalize(item.camion ?? "") === normalize(input.carico))))
+        throw new Error("LOAD_ALREADY_ASSIGNED");
+      const now = new Date().toISOString();
+      if (load) {
+        this.db.prepare("INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,source,stato,assignedAt,createdAt,updatedAt) VALUES(?,?,?,?,'LOAD','IMPEGNATO',?,?,?)")
+          .run(crypto.randomUUID(),trailerId,input.loadId!,session?.id ?? null,now,now,now);
+        if (session) this.db.prepare("UPDATE LoadingSessions SET trailerId=?,updatedAt=? WHERE id=?").run(trailerId,now,String(session.id));
+        return this.find(trailerId);
+      }
+      this.db
+        .prepare(
+          "INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,source,manualCommessa,manualCliente,manualCarico,plannedDepartureDate,stato,assignedAt,createdAt,updatedAt)VALUES(?,?,NULL,NULL,'MANUAL',?,?,?,NULL,'IMPEGNATO',?,?,?)",
+        )
+        .run(
+          crypto.randomUUID(),
+          trailerId,
+          input.commessa.trim(),
+          input.cliente.trim(),
+          input.carico.trim(),
+          now,
+          now,
+          now,
+        );
+      return this.find(trailerId);
+    });
   }
   updateReservation(
     trailerId: string,

@@ -11,4 +11,4 @@ export const loadUnitApi=(id:string,input:{unitType:"PANEL"|"PACKAGE";panelId?:s
 export const unloadUnitApi=(id:string,unitId:string,operatorId:string)=>apiRequest<ApiSession>(`/loading-sessions/${id}/units/${unitId}`,{method:"DELETE",body:JSON.stringify({operatorId})});
 export const completeLoadingApi=(id:string)=>apiRequest<ApiSession>(`/loading-sessions/${id}/complete`,{method:"POST"});
 export const reopenLoadingApi=(id:string,note?:string)=>apiRequest<ApiSession>(`/loading-sessions/${id}/reopen`,{method:"POST",body:JSON.stringify({note})});
-export const shipLoadingApi=(id:string,carrierId?:string)=>apiRequest<ApiSession>(`/loading-sessions/${id}/ship`,{method:"POST",body:JSON.stringify({carrierId})});
+export const shipLoadingApi=(id:string,carrierId?:string,operatorId?:string)=>apiRequest<ApiSession>(`/loading-sessions/${id}/ship`,{method:"POST",body:JSON.stringify({carrierId,operatorId})});

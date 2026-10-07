@@ -8,5 +8,5 @@ export const listShipments=():Promise<ShipmentItem[]>=>apiRequest("/shipments");
 export const createShipment=(input:ShipmentInput):Promise<ShipmentItem>=>apiRequest("/shipments",{method:"POST",body:JSON.stringify(input)});
 export const updateShipment=(id:string,input:ShipmentInput|{plannedDepartureDate:string;expectedUpdatedAt:string}):Promise<ShipmentItem>=>apiRequest(`/shipments/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify(input)});
 export const linkShipment=(id:string,loadId:string):Promise<ShipmentItem>=>apiRequest(`/shipments/${encodeURIComponent(id)}/link`,{method:"PATCH",body:JSON.stringify({loadId})});
-export const departShipment=(id:string,carrierId?:string):Promise<ShipmentItem>=>apiRequest(`/shipments/${encodeURIComponent(id)}/depart`,{method:"POST",...(carrierId?{body:JSON.stringify({carrierId})}:{})});
+export const departShipment=(id:string,carrierId?:string,operatorId?:string):Promise<ShipmentItem>=>apiRequest(`/shipments/${encodeURIComponent(id)}/depart`,{method:"POST",body:JSON.stringify({carrierId,operatorId})});
 export const deleteShipment=(id:string):Promise<{success:boolean}>=>apiRequest(`/shipments/${encodeURIComponent(id)}`,{method:"DELETE"});

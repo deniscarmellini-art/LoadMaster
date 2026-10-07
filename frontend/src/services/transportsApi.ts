@@ -2,7 +2,7 @@ import { apiRequest } from "./apiClient";
 
 export type TransportStatus = "DISPONIBILE" | "IMPEGNATO" | "CARICATO" | "IN_VIAGGIO" | "FUORI_SERVIZIO";
 export type AssignmentSource = "MANUAL" | "LOAD";
-export interface ManualReservationInput { commessa:string; cliente:string; carico:string; plannedDepartureDate?:string|null; }
+export interface ManualReservationInput { loadId?:string; commessa:string; cliente:string; carico:string; plannedDepartureDate?:string|null; }
 
 export interface TransportItem {
   id: string;

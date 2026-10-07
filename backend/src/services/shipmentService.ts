@@ -48,20 +48,20 @@ export class ShipmentService {
       return this.conflict(e);
     }
   }
-  depart(id: string, input: { carrierId?: string } = {}) {
+  depart(id: string, input: { carrierId?: string; operatorId?: string } = {}) {
     const plan = this.repo.find(id);
     if (!plan)
       throw new ApiError(404, "RESOURCE_NOT_FOUND", "Spedizione non trovata");
     if (plan.shipmentStatus !== "PRONTA")
       throw new ApiError(409, "INVALID_STATUS", "La spedizione non è pronta");
-    if (!plan.transportType)
+    if (!plan.loadId && !plan.transportType)
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
         "Tipo trasporto obbligatorio",
       );
     if (
-      plan.transportType === "BILICO_ESSEPI" &&
+      !plan.loadId && plan.transportType === "BILICO_ESSEPI" &&
       !input.carrierId &&
       !plan.carrierId
     )
@@ -81,14 +81,17 @@ export class ShipmentService {
           "LOADING_SESSION_NOT_FOUND",
           "Sessione di carico non trovata",
         );
+      const mode = session.transportMode ?? plan.transportType;
+      const carrierId = input.carrierId ??
+        (mode === "BILICO_ESSEPI" ? session.carrierId ?? plan.carrierId ?? plan.plannedCarrierId : undefined);
       this.loading.ship(
         session.id,
-        input.carrierId
-          ? { carrierId: input.carrierId }
-          : plan.carrierId
-            ? { carrierId: plan.carrierId }
-            : {},
+        { ...(carrierId ? { carrierId } : {}), ...(input.operatorId ? { operatorId: input.operatorId } : {}),
+          ...(!session.transportMode && mode ? { transportMode: mode, transportDetailId: mode === "BILICO_ESSEPI" ? null : plan.transportDetailId } : {}) },
       );
+      // The loading transaction records the real departure on the linked plan.
+      // Do not overwrite it in a second, independently committed operation.
+      return this.repo.find(id)!;
     }
     return this.repo.depart(id, now, input.carrierId)!;
   }
