@@ -484,26 +484,6 @@ export default function Shipments({
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="it">
       <Box>
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: { xs: "1fr", sm: "1fr auto 1fr" },
-            alignItems: "center",
-            gap: { xs: 1, sm: 0 },
-            mb: view === "calendar" ? 0.5 : 2,
-          }}
-        >
-          <Typography
-            variant={mobile ? "h5" : "h4"}
-            sx={{
-              fontWeight: 800,
-              textAlign: { xs: "left", sm: "center" },
-              gridColumn: { sm: 2 },
-            }}
-          >
-            Spedizioni
-          </Typography>
-        </Box>
         {view === "list" && <Box
           sx={{
             display: "grid",

@@ -38,7 +38,6 @@ export default function PrintLabels({ commesse, listeOperative }:Props) {
   const printLabels=()=>{flushSync(()=>setFields(c=>({...c,dataOra:now()})));window.print();};
   return <Box>
 
-    <Box className="no-print" sx={{mb:2}}><Typography variant={mobile?"h5":"h4"} sx={{fontWeight:800}}>Stampa etichette</Typography></Box>
     <Paper className="no-print" sx={{p:{xs:1.5,sm:2.5},mb:2}}><Typography variant="h6" sx={{mb:2}}>1. Commessa e dati etichetta</Typography>
       {commesse.length===0?<Alert severity="info">Importa prima una commessa dalla Dashboard.</Alert>:<Stack sx={{gap:1.5}}>
         <Box sx={{display:"grid",gridTemplateColumns:{xs:"1fr",sm:"repeat(5,minmax(0,1fr))"},gap:1.5}}>

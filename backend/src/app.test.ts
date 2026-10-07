@@ -724,9 +724,10 @@ test("PATCH disattiva e riattiva tutte le anagrafiche", async()=>{
     const enabled=await app.inject({method:"PATCH",url:`/api/${path}/${record.id}`,payload:{active:true}});
     assert.equal(enabled.statusCode,200);
     assert.equal(enabled.json<{active:boolean}>().active,true);
-    const logicallyDeleted=await app.inject({method:"DELETE",url:`/api/${path}/${record.id}`});
-    assert.equal(logicallyDeleted.statusCode,200);
-    assert.equal(logicallyDeleted.json<{active:boolean}>().active,false);
+    const deleted=await app.inject({method:"DELETE",url:`/api/${path}/${record.id}`});
+    assert.equal(deleted.statusCode,200);
+    if(path==="trailers"){const scrapped=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string;active:boolean;archived:boolean}>>().find(item=>item.id===record.id);assert.ok(scrapped);assert.equal(scrapped.active,false);assert.equal(scrapped.archived,true);assert.equal((await app.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string}>>().some(item=>item.id===record.id),false);}
+    else assert.equal(deleted.json<{active:boolean}>().active,false);
   }
   const invalid=await app.inject({method:"PATCH",url:"/api/carriers/id-inesistente",payload:{active:false}});
   assert.equal(invalid.statusCode,404);

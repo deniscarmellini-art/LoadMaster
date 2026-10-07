@@ -408,7 +408,6 @@ export default function Warehouse({
     Array.from(new Set(commesse.map(selector).filter(Boolean)));
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: 800, mb: 2 }}>Magazzino</Typography>
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box
           sx={{

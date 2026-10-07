@@ -3,14 +3,14 @@ import { apiRequest } from "./apiClient";
 
 interface ApiBase { id:string;active:boolean;sortOrder:number;createdAt:string;updatedAt:string }
 interface ApiOperator extends ApiBase { code:string;name:string }
-interface ApiTrailer extends ApiBase { plate:string;description:string;nextInspectionDate:string|null }
+interface ApiTrailer extends ApiBase { plate:string;description:string;notes:string;archived:boolean;hasHistory:boolean;nextInspectionDate:string|null }
 interface ApiCarrier extends ApiBase { name:string }
 interface ApiTransportRegistryEntry extends ApiBase { name:string }
 interface ApiOperationalSetting { key:string;value:string;description:string;active:boolean;sortOrder:number;createdAt:string;updatedAt:string }
 
 const splitName=(fullName:string):Pick<Operatore,"nome"|"cognome">=>{const [nome="",...rest]=fullName.trim().split(/\s+/);return{nome,cognome:rest.join(" ")};};
 const fromOperator=(item:ApiOperator):Operatore=>({id:item.id,sigla:item.code,...splitName(item.name),attivo:item.active});
-const fromTrailer=(item:ApiTrailer):Rimorchio=>({id:item.id,targa:item.plate,descrizione:item.description,note:"",attivo:item.active,...(item.nextInspectionDate?{prossimaRevisione:item.nextInspectionDate}:{})});
+const fromTrailer=(item:ApiTrailer):Rimorchio=>({id:item.id,targa:item.plate,descrizione:item.description,note:item.notes,attivo:item.active,archiviato:item.archived,haStorico:item.hasHistory,...(item.nextInspectionDate?{prossimaRevisione:item.nextInspectionDate}:{})});
 const fromCarrier=(item:ApiCarrier):Trasportatore=>({id:item.id,nome:item.name,note:"",attivo:item.active});
 const fromTransportRegistryEntry=(item:ApiTransportRegistryEntry):VoceTrasporto=>({id:item.id,nome:item.name,attivo:item.active});
 const fromOperationalSetting=(item:ApiOperationalSetting):ImpostazioneOperativa=>({chiave:item.key,valore:item.value,descrizione:item.description,attivo:item.active});
@@ -28,6 +28,14 @@ const syncRegistry=async<T extends {id:string;attivo:boolean},A>(current:T[],nex
   await Promise.all(next.map((item,index)=>{const previous=currentById.get(item.id);if(!previous)return apiRequest(path,{method:"POST",body:body(toApi(item,index))});if(JSON.stringify(previous)===JSON.stringify(item))return Promise.resolve();const {attivo:previousActive,...previousData}=previous;const {attivo:nextActive,...nextData}=item;const onlyActiveChanged=JSON.stringify(previousData)===JSON.stringify(nextData)&&previousActive!==nextActive;return onlyActiveChanged?apiRequest(`${path}/${encodeURIComponent(item.id)}`,{method:"PATCH",body:body({active:item.attivo})}):apiRequest(`${path}/${encodeURIComponent(item.id)}`,{method:"PUT",body:body(toApi(item,index))});}));
 };
 
+const syncTrailers=async(current:Rimorchio[],next:Rimorchio[]):Promise<void>=>{
+  const currentById=new Map(current.map(item=>[item.id,item]));
+  const nextIds=new Set(next.map(item=>item.id));
+  const payload=(item:Rimorchio,index:number)=>({id:item.id,plate:item.targa.trim(),description:item.descrizione.trim(),notes:item.note.trim(),active:item.attivo,sortOrder:index,nextInspectionDate:item.prossimaRevisione||null});
+  await Promise.all(current.filter(item=>!nextIds.has(item.id)).map(item=>apiRequest(`/trailers/${encodeURIComponent(item.id)}`,{method:"DELETE"})));
+  await Promise.all(next.map((item,index)=>{const previous=currentById.get(item.id);if(!previous)return apiRequest("/trailers",{method:"POST",body:body(payload(item,index))});if(item.archiviato&&!previous.archiviato)return apiRequest(`/trailers/${encodeURIComponent(item.id)}`,{method:"DELETE"});if(previous.archiviato)return Promise.resolve();if(JSON.stringify(previous)===JSON.stringify(item))return Promise.resolve();const {attivo:previousActive,...previousData}=previous;const {attivo:nextActive,...nextData}=item;const onlyActiveChanged=JSON.stringify(previousData)===JSON.stringify(nextData)&&previousActive!==nextActive;return onlyActiveChanged?apiRequest(`/trailers/${encodeURIComponent(item.id)}`,{method:"PATCH",body:body({active:item.attivo})}):apiRequest(`/trailers/${encodeURIComponent(item.id)}`,{method:"PUT",body:body(payload(item,index))});}));
+};
+
 const syncOperationalSettings=async(current:ImpostazioneOperativa[],next:ImpostazioneOperativa[]):Promise<void>=>{
   const currentByKey=new Map(current.map(item=>[item.chiave,item]));
   const nextKeys=new Set(next.map(item=>item.chiave));
@@ -38,7 +46,7 @@ const syncOperationalSettings=async(current:ImpostazioneOperativa[],next:Imposta
 export const saveSettingsToApi=async(next:SettingsData,previous:SettingsData):Promise<SettingsData>=>{
   await Promise.all([
     syncRegistry(previous.operatori,next.operatori,"/operators",(item,index)=>({id:item.id,code:item.sigla.trim(),name:`${item.nome} ${item.cognome}`.trim(),active:item.attivo,sortOrder:index})),
-    syncRegistry(previous.rimorchi,next.rimorchi,"/trailers",(item,index)=>({id:item.id,plate:item.targa.trim(),description:item.descrizione.trim(),active:item.attivo,sortOrder:index,nextInspectionDate:item.prossimaRevisione||null})),
+    syncTrailers(previous.rimorchi,next.rimorchi),
     syncRegistry(previous.trasportatori,next.trasportatori,"/carriers",(item,index)=>({id:item.id,name:item.nome.trim(),active:item.attivo,sortOrder:index})),
     syncRegistry(previous.tipiMezzoCliente,next.tipiMezzoCliente,"/client-vehicle-types",(item,index)=>({id:item.id,name:item.nome.trim(),active:item.attivo,sortOrder:index})),
     syncRegistry(previous.modalitaTerziEssepi,next.modalitaTerziEssepi,"/third-party-transport-modes",(item,index)=>({id:item.id,name:item.nome.trim(),active:item.attivo,sortOrder:index})),

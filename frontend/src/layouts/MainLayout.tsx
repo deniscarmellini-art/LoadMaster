@@ -2,6 +2,7 @@ import { Box, Container, Typography } from "@mui/material";
 import { demoBranding } from "../services/demoBranding";
 import PrimaryNavigation, { type PrimaryNavigationPage } from "../components/navigation/PrimaryNavigation";
 import DashboardHeader from "../components/dashboard/DashboardHeader";
+import { sectionTitleFor } from "../components/layout/SectionTitle";
 
 type Props = {
   children: React.ReactNode;
@@ -15,9 +16,17 @@ export default function MainLayout({ children,activePage,onNavigate }: Props) {
       {(import.meta.env.VITE_SISLOG_TEST || import.meta.env.VITE_SISLOG_DEMO) && <Box component="header" sx={{ position: "sticky", top: 0, zIndex: 1200, bgcolor: "warning.main", color: "warning.contrastText", py: .5, px: 2, textAlign: "center", fontWeight: 800, fontSize: ".8rem", "@media print": { display: "none" } }}>{import.meta.env.VITE_SISLOG_DEMO ? "AMBIENTE DEMO — DATI FITTIZI" : "AMBIENTE TEST"}</Box>}
       <Box component="main" sx={{ py: { xs: 1.5, md: 2.5 } }}>
         <Container maxWidth={false} sx={{ px: { xs: 1.5, md: 3 } }}>
-          <DashboardHeader />
+          <DashboardHeader title={sectionTitleFor(activePage)} />
           <PrimaryNavigation activePage={activePage} onNavigate={onNavigate}/>
-          {children}
+          <Box
+            sx={activePage === "loading" ? {
+              "& > div > h4:first-child, & > div > h5:first-child, & > div > div:first-child > h6:first-child": {
+                display: "none",
+              },
+            } : undefined}
+          >
+            {children}
+          </Box>
         </Container>
       </Box>
       <Box

@@ -211,7 +211,6 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
   };
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: 800, mb: 2 }}>Trasporti</Typography>
       <Paper sx={{ p: 2 }}>
         <Box
           sx={{

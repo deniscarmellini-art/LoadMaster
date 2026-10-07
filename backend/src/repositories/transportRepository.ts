@@ -85,6 +85,7 @@ export class TransportRepository {
           AND UPPER(TRIM(manualLoad.commessa))=UPPER(TRIM(a.manualCommessa))
           AND UPPER(REPLACE(REPLACE(TRIM(manualLoad.camion),' ',''),'-',''))=
               UPPER(REPLACE(REPLACE(TRIM(a.manualCarico),' ',''),'-',''))
+        WHERE t.archived=0
         ORDER BY t.sortOrder,t.plate`,
       )
       .all()
@@ -259,6 +260,8 @@ export class TransportRepository {
         .prepare("SELECT commessa,camion FROM Loads WHERE id=?")
         .get(loadId) as { commessa: string; camion: string } | undefined;
     if (!load) throw new Error("LOAD_NOT_FOUND");
+    const trailer = this.db.prepare("SELECT active,archived FROM Trailers WHERE id=?").get(trailerId) as {active:number;archived:number}|undefined;
+    if (!trailer || !trailer.active || trailer.archived) throw new Error("TRAILER_NOT_AVAILABLE");
     const trailerAssignment = this.db
       .prepare(
         "SELECT id,source,loadId,manualCommessa,manualCarico FROM TransportAssignments WHERE trailerId=? AND releasedAt IS NULL",
