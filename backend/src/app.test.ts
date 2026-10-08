@@ -1725,4 +1725,5 @@ test("Disimpegna: seconda connessione, rollback e persistenza al riavvio",()=>{
 });
 import "./history.test.js";
 import "./planningHistory.test.js";
+import "./offlineLoading.test.js";
 import "./shipmentDocument.test.js";

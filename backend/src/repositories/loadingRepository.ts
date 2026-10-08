@@ -7,6 +7,11 @@ const str=(r:Record<string,unknown>,k:string)=>String(r[k]??"");const nullable=(
 import { assignedTrailer, resolveLoadingTransport, type LoadingSettings } from "./loadingTransport.js";
 import { shipmentHistoryMetrics } from "./shipmentHistoryMetrics.js";
 export class LoadingRepository{
+ offlineSession(id:string){return this.db.prepare('SELECT s.loadId,s.stato,s.shippedAt,l.commessa,l.camion FROM LoadingSessions s JOIN Loads l ON l.id=s.loadId WHERE s.id=?').get(id) as {loadId:string;stato:string;shippedAt:string|null;commessa:string;camion:string}|undefined;}
+ offlineResultSession(id:string){const row=this.db.prepare('SELECT s.*,l.commessa,l.cliente,l.camion FROM LoadingSessions s JOIN Loads l ON l.id=s.loadId WHERE s.id=?').get(id);return row?this.mapSession(row):null;}
+ offlineUnit(type:'PANEL'|'PACKAGE',code:string,loadId:string){
+  return (type==='PANEL'?this.db.prepare(`SELECT p.id,p.loadId,p.stato,p.packageId,1 elements FROM Panels p WHERE p.numeroPannello=? AND p.loadId=?`):this.db.prepare(`SELECT p.id,p.loadId,p.stato,NULL packageId,(SELECT COUNT(*) FROM Panels c WHERE c.packageId=p.id) elements FROM Packages p WHERE p.codicePacco=? AND p.loadId=?`)).get(code,loadId) as {id:string;loadId:string;stato:string;packageId:string|null;elements:number}|undefined;
+ }
  resolveTransport(loadId:string,input:LoadingSettings,previous?:LoadingSessionRecord){return resolveLoadingTransport(this.db,loadId,input,previous);}
  assignedTrailer(loadId:string){return assignedTrailer(this.db,loadId);}
  private saveTransport(id:string,input:LoadingSettings){if(input.transportMode!==undefined)this.db.prepare("UPDATE LoadingSessions SET transportMode=?,transportDetailId=?,transportDetailLabel=? WHERE id=?").run(input.transportMode,input.transportDetailId??null,input.transportDetailLabel??null,id);}

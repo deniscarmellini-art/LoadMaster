@@ -28,7 +28,7 @@ import { ScanningService } from "./services/scanningService.js";
 import { scanningRoutes } from "./routes/scanningRoutes.js";
 import { LoadingRepository } from "./repositories/loadingRepository.js";
 import { LoadingService } from "./services/loadingService.js";
-import { loadingRoutes } from "./routes/loadingRoutes.js";
+import { loadingRoutes, offlineLoadingRoutes } from "./routes/loadingRoutes.js";
 import { TransportRepository } from "./repositories/transportRepository.js";
 import { TransportService } from "./services/transportService.js";
 import { transportRoutes } from "./routes/transportRoutes.js";
@@ -88,6 +88,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(orderRoutes, { prefix: "/api/orders", service: loadService });
   await app.register(scanningRoutes, { prefix: "/api", service: scanningService });
   await app.register(loadingRoutes, { prefix: "/api", service: loadingService });
+  await app.register(offlineLoadingRoutes, { prefix: "/api", service: loadingService });
   await app.register(transportRoutes, { prefix: "/api", service: transportService });
   await app.register(shipmentRoutes, { prefix: "/api/shipments", service: shipmentService });
   if(config.environment==="production"){
