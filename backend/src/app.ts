@@ -2,6 +2,8 @@ import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { historyPage } from "./repositories/historyRepository.js";
+import { shipmentDocument } from "./repositories/shipmentDocumentRepository.js";
 import { join } from "node:path";
 
 import type { AppConfig } from "./config/environment.js";
@@ -73,6 +75,8 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
       methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     });
   registerErrorHandlers(app);
+  app.get<{Params:{id:string}}>("/api/history/:id/document",async request=>shipmentDocument(connection.database,request.params.id));
+  app.get<{Querystring:{search?:string;from?:string;to?:string;client?:string;sort?:string;asc?:boolean;page?:number;pageSize?:number}}>("/api/history",{schema:{querystring:{type:"object",additionalProperties:false,properties:{search:{type:"string"},from:{type:"string",pattern:"^\\d{4}-\\d{2}-\\d{2}$"},to:{type:"string",pattern:"^\\d{4}-\\d{2}-\\d{2}$"},client:{type:"string"},sort:{enum:["date","commessa","cliente","camion","panels","packs","weight","volume"]},asc:{type:"boolean"},page:{type:"integer",minimum:0},pageSize:{type:"integer",minimum:1,maximum:100}}}}},async request=>historyPage(connection.database,request.query));
   await app.register(systemRoutes, { prefix: "/api", config });
   await app.register(operatorRoutes, { prefix: "/api/operators", service: operatorService });
   await app.register(trailerRoutes, { prefix: "/api/trailers", service: trailerService });

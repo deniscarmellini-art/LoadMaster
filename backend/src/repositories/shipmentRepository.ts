@@ -176,7 +176,7 @@ export class ShipmentRepository {
             ? ((input.loadId ? this.db.prepare("SELECT riferimentoOrdine FROM Loads WHERE id=?").get(input.loadId) as {riferimentoOrdine:string}|undefined : undefined)?.riferimentoOrdine?.trim() || null)
             : input.orderReference?.trim() || null,
         );
-      this.audit(input.loadId,"SHIPMENT_PLAN_CREATED",{id,...input});
+      this.audit(input.loadId,"SHIPMENT_PLAN_CREATED",{id,...input,planningAuditVersion:1});
     });
     return this.find(id)!;
   }
@@ -203,6 +203,7 @@ export class ShipmentRepository {
     if ("expectedUpdatedAt" in input) {
       if (nextPlannedDepartureDate === old.plannedDepartureDate) return old;
       this.db.prepare("UPDATE ShipmentPlans SET plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,updatedAt=? WHERE id=?").run(nextPlannedDepartureDate, originalPlannedDepartureDate, plannedDepartureDateChangedAt, now, id);
+      this.audit(old.loadId, "SHIPMENT_PLAN_UPDATED", {before:old,after:{plannedDepartureDate:nextPlannedDepartureDate}}, now);
     } else {
       this.assertUnique(input, id);
       this.db
@@ -228,7 +229,7 @@ export class ShipmentRepository {
           input.orderReference === undefined ? old.orderReference : input.orderReference?.trim() || null,
           id,
         );
-      this.audit(old.loadId, "SHIPMENT_PLAN_UPDATED", {before:old,after:input});
+      this.audit(old.loadId, "SHIPMENT_PLAN_UPDATED", {before:old,after:input}, now);
     }
     return this.find(id, false);
     });
@@ -290,8 +291,8 @@ export class ShipmentRepository {
       );
     });
   }
-  private audit(loadId:string|null|undefined,type:string,details:unknown):void {
-    if(loadId)this.db.prepare("INSERT INTO OperationalEvents(id,loadId,type,timestamp,note) VALUES(?,?,?,?,?)").run(crypto.randomUUID(),loadId,type,new Date().toISOString(),JSON.stringify(details));
+  private audit(loadId:string|null|undefined,type:string,details:unknown,timestamp=new Date().toISOString()):void {
+    if(loadId)this.db.prepare("INSERT INTO OperationalEvents(id,loadId,type,timestamp,note) VALUES(?,?,?,?,?)").run(crypto.randomUUID(),loadId,type,timestamp,JSON.stringify(details));
   }
   private assertUnique(input: ShipmentInput, exclude?: string) {
     if (

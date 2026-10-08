@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./materialAvailability.test.js";
 import test from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +19,93 @@ import { LoadRepository } from "./repositories/loadRepository.js";
 import { LoadService } from "./services/loadService.js";
 import { ShipmentRepository, type ShipmentRecord } from "./repositories/shipmentRepository.js";
 import { previewShipmentReconciliation, reconcileManualShipments } from "./repositories/shipmentReconciliation.js";
+import { shipmentHistoryMetrics } from "./repositories/shipmentHistoryMetrics.js";
+
+test("storico: prima pianificazione certificata, nessuna data magazzino inventata, proiezione read-only",()=>{
+  const db=new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE OperationalEvents(id TEXT,type TEXT,loadId TEXT,timestamp TEXT,note TEXT)");
+  const event=(id:string,loadId:string,type:string,timestamp:string,note:unknown)=>db.prepare("INSERT INTO OperationalEvents VALUES(?,?,?,?,?)").run(id,type,loadId,timestamp,JSON.stringify(note));
+  try {
+    event("PLAN","A","SHIPMENT_PLAN_CREATED","2026-09-01T10:00:00Z",{id:"P",loadId:"A",plannedDepartureDate:"2026-10-07"});
+    event("UPDATE","A","SHIPMENT_PLAN_UPDATED","2026-09-02T10:00:00Z",{before:{id:"P",loadId:"A",plannedDepartureDate:"2026-10-07"},after:{plannedDepartureDate:"2026-10-08"}});
+    // Physical completion is explicitly NOT material availability.
+    event("COMPLETE","A","LOADING_COMPLETED","2026-10-07T10:00:00Z",null);
+    event("REOPEN","A","LOADING_REOPENED","2026-10-07T11:00:00Z",null);
+    event("MOVE","A","PANEL_REASSIGNED","2026-10-07T11:05:00Z",null);
+    event("CANCEL","A","SCAN_CANCELLED","2026-10-07T11:10:00Z",null);
+    const before=db.prepare("SELECT * FROM OperationalEvents ORDER BY id").all();
+    assert.deepEqual(shipmentHistoryMetrics(db,"A","2026-10-08T12:00:00Z"),{originalPlannedDepartureDate:"2026-10-07",warehouseDays:null});
+    assert.deepEqual(shipmentHistoryMetrics(db,"OTHER-TRUCK","2026-10-08T12:00:00Z"),{originalPlannedDepartureDate:null,warehouseDays:null});
+    assert.deepEqual(shipmentHistoryMetrics(db,"A",null),{originalPlannedDepartureDate:null,warehouseDays:null});
+    assert.deepEqual(shipmentHistoryMetrics(db,"A","2026-08-01T12:00:00Z"),{originalPlannedDepartureDate:null,warehouseDays:null});
+    event("EMPTY","B","SHIPMENT_PLAN_CREATED","2026-09-01T10:00:00Z",{id:"P2",loadId:"B",plannedDepartureDate:null});
+    event("FIRST","B","SHIPMENT_PLAN_UPDATED","2026-09-02T10:00:00Z",{before:{id:"P2",loadId:"B",plannedDepartureDate:null},after:{plannedDepartureDate:"2026-10-06"}});
+    assert.equal(shipmentHistoryMetrics(db,"B","2026-10-08T12:00:00Z").originalPlannedDepartureDate,"2026-10-06");
+    event("MANUAL","C","SHIPMENT_PLAN_UPDATED","2026-09-02T10:00:00Z",{before:{id:"P3",loadId:"C",plannedDepartureDate:"2026-10-01",originalPlannedDepartureDate:"2026-10-01"},after:{plannedDepartureDate:"2026-10-06"}});
+    assert.equal(shipmentHistoryMetrics(db,"C","2026-10-08T12:00:00Z").originalPlannedDepartureDate,null);
+    event("BAD","D","SHIPMENT_PLAN_CREATED","2026-09-01T10:00:00Z",{id:"P4",loadId:"D",plannedDepartureDate:"2026-02-30"});
+    assert.equal(shipmentHistoryMetrics(db,"D","2026-10-08T12:00:00Z").originalPlannedDepartureDate,null);
+    assert.deepEqual(db.prepare("SELECT * FROM OperationalEvents WHERE loadId='A' ORDER BY id").all(),before);
+  }finally{db.close();}
+});
+
+test("operator registry: immutable code, deactivate/reactivate, safe delete and historical archive",async()=>{
+  const dir=mkdtempSync(join(tmpdir(),"operator-registry-"));
+  const databasePath=join(dir,"test.sqlite"),app=await buildApp({...config,databasePath});
+  const db=new DatabaseSync(databasePath);
+  try {
+    const create=async(id:string)=>(await app.inject({method:"POST",url:"/api/operators",payload:{id,code:"GT",name:"Giorgio Tamburini"}}));
+    assert.equal((await create("UNUSED")).statusCode,201);
+    assert.equal((await app.inject({method:"PUT",url:"/api/operators/UNUSED",payload:{code:"XX",name:"Giorgio Tamburini"}})).statusCode,409);
+    assert.equal((await app.inject({method:"PUT",url:"/api/operators/UNUSED",payload:{code:"GT",name:"Giorgio Nuovo"}})).statusCode,200);
+    assert.equal((await app.inject({method:"PATCH",url:"/api/operators/UNUSED",payload:{active:false}})).json().active,false);
+    assert.equal((await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string;active:boolean}>>().find(item=>item.id==="UNUSED")?.active,false);
+    assert.equal((await app.inject({method:"PATCH",url:"/api/operators/UNUSED",payload:{active:true}})).json().active,true);
+    assert.equal((await app.inject({method:"DELETE",url:"/api/operators/UNUSED"})).statusCode,200);
+    assert.equal(db.prepare("SELECT 1 FROM Operators WHERE id='UNUSED'").get(),undefined);
+    await create("HISTORY");
+    const now=new Date().toISOString();
+    db.prepare("INSERT INTO Loads(id,commessa,cliente,camion,createdAt,updatedAt) VALUES('OP-LOAD','TEST','Cliente','C1',?,?)").run(now,now);
+    db.prepare("INSERT INTO OperationalEvents(id,loadId,type,operatorId,timestamp,note) VALUES('OP-EVENT','OP-LOAD','PANEL_SCANNED','HISTORY',?,'preserve')").run(now);
+    const event=db.prepare("SELECT * FROM OperationalEvents WHERE id='OP-EVENT'").get();
+    assert.equal((await app.inject({method:"DELETE",url:"/api/operators/HISTORY"})).statusCode,200);
+    const archived=db.prepare("SELECT * FROM Operators WHERE id='HISTORY'").get()!;
+    assert.equal(archived.archived,1);assert.equal(archived.active,0);assert.equal(archived.code,"GT");assert.equal(archived.name,"Giorgio Tamburini");
+    assert.deepEqual(db.prepare("SELECT * FROM OperationalEvents WHERE id='OP-EVENT'").get(),event);
+    assert.equal((await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string;archived:boolean}>>().find(item=>item.id==="HISTORY")?.archived,true);
+    assert.equal((await app.inject({method:"PATCH",url:"/api/operators/HISTORY",payload:{active:true}})).statusCode,409);
+    assert.throws(()=>db.prepare("UPDATE Operators SET code='XX' WHERE id='HISTORY'").run(),/OPERATOR_CODE_IMMUTABLE/);
+    assert.throws(()=>db.prepare("INSERT INTO OperationalEvents(id,loadId,type,operatorId,timestamp) VALUES('NEW','OP-LOAD','PANEL_SCANNED','HISTORY',?)").run(now),/OPERATOR_INACTIVE/);
+    await create("OPEN");
+    const carrier=String(db.prepare("SELECT id FROM Carriers LIMIT 1").get()!.id);
+    db.prepare("INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,carrierId,startedAt,createdAt,updatedAt) VALUES('OP-SESSION','OP-LOAD','IN_CARICO','OPEN','TRASPORTATORE',?,?,?,?)").run(carrier,now,now,now);
+    const session=db.prepare("SELECT * FROM LoadingSessions WHERE id='OP-SESSION'").get();
+    assert.equal((await app.inject({method:"DELETE",url:"/api/operators/OPEN"})).statusCode,409);
+    assert.deepEqual(db.prepare("SELECT * FROM LoadingSessions WHERE id='OP-SESSION'").get(),session);
+    assert.equal(db.prepare("SELECT archived FROM Operators WHERE id='OPEN'").get()!.archived,0);
+    await create("PACKAGE-OPEN");
+    db.prepare("INSERT INTO Packages(id,codicePacco,loadId,commessa,cliente,camion,stato,operatoreId,openedAt,createdAt,updatedAt) VALUES('OP-PACK','OP-PACK','OP-LOAD','TEST','Cliente','C1','APERTO','PACKAGE-OPEN',?,?,?)").run(now,now,now);
+    assert.equal((await app.inject({method:"DELETE",url:"/api/operators/PACKAGE-OPEN"})).statusCode,409);
+    assert.equal(db.prepare("SELECT stato FROM Packages WHERE id='OP-PACK'").get()!.stato,"APERTO");
+    db.prepare("UPDATE Packages SET stato='DISPONIBILE',closedAt=? WHERE id='OP-PACK'").run(now);
+    assert.equal((await app.inject({method:"DELETE",url:"/api/operators/PACKAGE-OPEN"})).statusCode,200);
+    assert.equal(db.prepare("SELECT archived FROM Operators WHERE id='PACKAGE-OPEN'").get()!.archived,1);
+    await create("AUDIT-ONLY");
+    db.prepare("INSERT INTO DeletedLoadAudit(eventId,loadId,commessa,camion,eventJson,archivedAt) VALUES('OP-AUDIT','OLD','TEST','C1',?,?)").run(JSON.stringify({operatorId:"AUDIT-ONLY",type:"PANEL_SCANNED"}),now);
+    assert.equal((await app.inject({method:"DELETE",url:"/api/operators/AUDIT-ONLY"})).statusCode,200);
+    assert.equal(db.prepare("SELECT archived FROM Operators WHERE id='AUDIT-ONLY'").get()!.archived,1);
+    await create("INACTIVE");
+    await app.inject({method:"PATCH",url:"/api/operators/INACTIVE",payload:{active:false}});
+    assert.throws(()=>db.prepare("INSERT INTO OperationalEvents(id,loadId,type,operatorId,timestamp) VALUES('INACTIVE-EVENT','OP-LOAD','PANEL_SCANNED','INACTIVE',?)").run(now),/OPERATOR_INACTIVE/);
+    await app.inject({method:"PATCH",url:"/api/operators/INACTIVE",payload:{active:true}});
+    db.prepare("INSERT INTO OperationalEvents(id,loadId,type,operatorId,timestamp) VALUES('ACTIVE-EVENT','OP-LOAD','PANEL_SCANNED','INACTIVE',?)").run(now);
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(),[]);
+    const reopened=openSqliteDatabase(databasePath);
+    assert.equal(reopened.database.prepare("SELECT code,archived FROM Operators WHERE id='HISTORY'").get()!.code,"GT");
+    assert.equal(reopened.database.prepare("SELECT archived FROM Operators WHERE id='HISTORY'").get()!.archived,1);
+    reopened.close();
+  }finally{db.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+});
 
 test("calendario: cambio sola data persistente, nessuna modifica operativa e conflitti multiutente",async()=>{
   const dir=mkdtempSync(join(tmpdir(),"calendar-move-")),databasePath=join(dir,"test.sqlite");
@@ -39,11 +127,17 @@ test("calendario: cambio sola data persistente, nessuna modifica operativa e con
     const saved=result.json<ShipmentRecord>();assert.equal(saved.plannedDepartureDate,"2026-10-06");assert.equal(saved.originalPlannedDepartureDate,"2026-10-02");assert.ok(saved.plannedDepartureDateChangedAt);
     const afterPlan=db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(plan.id)!;
     for(const key of Object.keys(beforePlan))if(!["plannedDepartureDate","plannedDepartureDateChangedAt","updatedAt"].includes(key))assert.equal(afterPlan[key],beforePlan[key],key);
-    assert.deepEqual(snapshot(),before);
+    const afterMove=snapshot();
+    assert.deepEqual({...afterMove,OperationalEvents:before.OperationalEvents},before);
+    const changes=db.prepare("SELECT note FROM OperationalEvents WHERE loadId=? AND type='SHIPMENT_PLAN_UPDATED'").all(load.id);
+    assert.equal(changes.length,1);
+    const change=JSON.parse(String(changes[0]!.note));assert.equal(change.before.plannedDepartureDate,'2026-10-02');assert.equal(change.after.plannedDepartureDate,'2026-10-06');
+    assert.equal((await move('2026-10-06',saved.updatedAt!)).statusCode,200);
+    assert.deepEqual(snapshot(),afterMove);
     assert.equal((await move("2026-10-12",plan.updatedAt!)).statusCode,409);
     assert.equal((await move("2026-02-30",saved.updatedAt!)).statusCode,400);
     assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{plannedDepartureDate:null,expectedUpdatedAt:saved.updatedAt}})).statusCode,400);
-    assert.deepEqual(snapshot(),before);
+    assert.deepEqual(snapshot(),afterMove);
     assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<ShipmentRecord[]>().find(p=>p.id===plan.id)!.plannedDepartureDate,"2026-10-06");
     // A different connection/operation confirms departure after the frontend snapshot.
     assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{}})).statusCode,200);
@@ -691,7 +785,7 @@ test("una route sconosciuta usa il formato errore comune", async () => {
   assert.equal(result.json<{ error: { code: string } }>().error.code, "RESOURCE_NOT_FOUND");
 });
 
-test("le anagrafiche sono inizializzate e supportano CRUD con DELETE logica", async () => {
+test("le anagrafiche sono inizializzate e consentono la rimozione di operatori mai utilizzati", async () => {
   const app = await buildApp(config);
   for (const path of ["operators","trailers","carriers"]) {
     const list = await app.inject({ method:"GET", url:`/api/${path}` });
@@ -708,7 +802,7 @@ test("le anagrafiche sono inizializzate e supportano CRUD con DELETE logica", as
   assert.equal(deleted.statusCode,200);
   assert.equal(deleted.json<{active:boolean}>().active,false);
   const list=await app.inject({method:"GET",url:"/api/operators"});
-  assert.equal(list.json<Array<{id:string;active:boolean}>>().find(item=>item.id===operator.id)?.active,false);
+  assert.equal(list.json<Array<{id:string;active:boolean}>>().find(item=>item.id===operator.id),undefined);
   await app.close();
 });
 
@@ -1629,3 +1723,6 @@ test("Disimpegna: seconda connessione, rollback e persistenza al riavvio",()=>{
     assert.equal(reopened.database.prepare('SELECT COUNT(*) n FROM TransportAssignments').get()!.n,1);
   } finally {reopened.close();rmSync(directory,{recursive:true,force:true});}
 });
+import "./history.test.js";
+import "./planningHistory.test.js";
+import "./shipmentDocument.test.js";

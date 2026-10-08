@@ -2,14 +2,14 @@ import type { ImpostazioneOperativa, Operatore, Rimorchio, SettingsData, Traspor
 import { apiRequest } from "./apiClient";
 
 interface ApiBase { id:string;active:boolean;sortOrder:number;createdAt:string;updatedAt:string }
-interface ApiOperator extends ApiBase { code:string;name:string }
+interface ApiOperator extends ApiBase { code:string;name:string;archived:boolean }
 interface ApiTrailer extends ApiBase { plate:string;description:string;notes:string;archived:boolean;hasHistory:boolean;nextInspectionDate:string|null }
 interface ApiCarrier extends ApiBase { name:string }
 interface ApiTransportRegistryEntry extends ApiBase { name:string }
 interface ApiOperationalSetting { key:string;value:string;description:string;active:boolean;sortOrder:number;createdAt:string;updatedAt:string }
 
 const splitName=(fullName:string):Pick<Operatore,"nome"|"cognome">=>{const [nome="",...rest]=fullName.trim().split(/\s+/);return{nome,cognome:rest.join(" ")};};
-const fromOperator=(item:ApiOperator):Operatore=>({id:item.id,sigla:item.code,...splitName(item.name),attivo:item.active});
+const fromOperator=(item:ApiOperator):Operatore=>({id:item.id,sigla:item.code,...splitName(item.name),attivo:item.active,archiviato:item.archived});
 const fromTrailer=(item:ApiTrailer):Rimorchio=>({id:item.id,targa:item.plate,descrizione:item.description,note:item.notes,attivo:item.active,archiviato:item.archived,haStorico:item.hasHistory,...(item.nextInspectionDate?{prossimaRevisione:item.nextInspectionDate}:{})});
 const fromCarrier=(item:ApiCarrier):Trasportatore=>({id:item.id,nome:item.name,note:"",attivo:item.active});
 const fromTransportRegistryEntry=(item:ApiTransportRegistryEntry):VoceTrasporto=>({id:item.id,nome:item.name,attivo:item.active});

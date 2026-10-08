@@ -1,3 +1,4 @@
+import { trackMaterialAvailability, materialAvailabilityDetails } from "./materialAvailability.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { LoadImport,LoadRecord,LoadStatus,PanelImport,PanelRecord,PanelStatus } from "../models/operational.js";
 import { requiredNumber,requiredString } from "./repositoryUtils.js";
@@ -123,10 +124,10 @@ export class LoadRepository{
  }
  deleteOrderRelations(assessment:OrderDeletionAssessment):void{const remove=(table:string,ids:string[]):void=>{if(ids.length)this.database.prepare(`DELETE FROM ${table} WHERE id IN (${ids.map(()=>"?").join(",")})`).run(...ids);};remove("TransportAssignments",assessment.preventiveTransportAssignmentIds);remove("ShipmentPlans",assessment.shipmentPlanIds);remove("LoadingSessions",assessment.reversibleLoadingSessionIds);remove("Loads",assessment.loads.map(load=>load.id));}
  panels(id:string):PanelRecord[]{return this.database.prepare("SELECT * FROM Panels WHERE loadId=? ORDER BY numeroPannello").all(id).map(panelFromRow);}
- transaction<T>(operation:()=>T):T{this.database.exec("BEGIN IMMEDIATE");try{const result=operation();this.database.exec("COMMIT");return result;}catch(error:unknown){this.database.exec("ROLLBACK");throw error;}}
+ transaction<T>(operation:()=>T):T{this.database.exec("BEGIN IMMEDIATE");try{const result=trackMaterialAvailability(this.database,operation);this.database.exec("COMMIT");return result;}catch(error:unknown){this.database.exec("ROLLBACK");throw error;}}
  createLoad(input:LoadImport,camion:string):LoadRecord{const id=crypto.randomUUID();const now=new Date().toISOString();this.database.prepare("INSERT INTO Loads (id,commessa,cliente,numeroCliente,riferimentoOrdine,camion,stato,createdAt,updatedAt) VALUES (?,?,?,?,?,?,'DA_COMPLETARE',?,?)").run(id,input.commessa.trim(),input.cliente,input.numeroCliente,input.riferimentoOrdine,camion.trim(),now,now);for(const panel of input.pannelli.filter(item=>normalizedTruck(item.camion)===normalizedTruck(camion)))this.insertPanel(id,panel,now);return this.find(id)!;}
 
  delete(id:string):boolean{return this.database.prepare("DELETE FROM Loads WHERE id=?").run(id).changes>0;}
- private withPanels(load:Omit<LoadRecord,"pannelli">):LoadRecord{return{...load,pannelli:this.panels(load.id)};}
+ private withPanels(load:Omit<LoadRecord,"pannelli">):LoadRecord{return{...load,pannelli:this.panels(load.id),materialAvailability:materialAvailabilityDetails(this.database,load.id)};}
  private insertPanel(loadId:string,panel:PanelImport,now:string):void{this.database.prepare("INSERT OR IGNORE INTO Panels (id,loadId,numeroPannello,numeroCliente,numeroMasterPanel,camion,lato1,lato2,tipoPannello,quantita,spessore,lunghezza,altezza,superficie,volume,peso,stato,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'MANCANTE',?,?)").run(crypto.randomUUID(),loadId,panel.numeroPannello.trim(),panel.numeroCliente,panel.numeroMasterPanel,panel.camion.trim(),panel.lato1,panel.lato2,panel.tipoPannello,panel.quantita,panel.spessore,panel.lunghezza,panel.altezza,panel.superficie,panel.volume,panel.peso,now,now);}
 }

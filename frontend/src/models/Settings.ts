@@ -1,4 +1,4 @@
-export interface Operatore { id:string; nome:string; cognome:string; sigla:string; attivo:boolean; }
+export interface Operatore { id:string; nome:string; cognome:string; sigla:string; attivo:boolean; archiviato?:boolean; }
 export interface Rimorchio { id:string;targa:string;descrizione:string;attivo:boolean;note:string;archiviato?:boolean;haStorico?:boolean;prossimaRevisione?:string; }
 export interface Trasportatore { id:string; nome:string; attivo:boolean; note:string; }
 export interface VoceTrasporto { id:string; nome:string; attivo:boolean; }

@@ -220,7 +220,9 @@ export default function App() {
     } catch (error: unknown) {
       setSettings(previous);
       const message =
-        error instanceof ApiClientError && error.code === "RESOURCE_IN_USE"
+        error instanceof ApiClientError && ["OPERATOR_IN_USE","OPERATOR_CODE_IMMUTABLE","OPERATOR_ARCHIVED"].includes(error.code)
+          ? error.message
+          : error instanceof ApiClientError && error.code === "RESOURCE_IN_USE"
           ? "Il record è già utilizzato e non può essere eliminato."
           : "Errore durante il salvataggio.";
       setSettingsLoadErrors([message]);
@@ -580,14 +582,6 @@ export default function App() {
             loadErrors={settingsLoadErrors}
             onChange={changeSettings}
             settings={settings}
-            usedOperatorIds={
-              new Set(
-                [
-                  ...singles.map((item) => item.operatoreId),
-                  ...packages.map((item) => item.operatoreId),
-                ].filter((id): id is string => Boolean(id)),
-              )
-            }
           />
         ) : page === "transports" ? (
           <Transports

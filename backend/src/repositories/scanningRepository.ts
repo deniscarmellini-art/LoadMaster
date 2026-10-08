@@ -1,3 +1,4 @@
+import { trackMaterialAvailability } from "./materialAvailability.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { PackageRecord,PackageStatus,PanelRecord,PanelStatus,WarehouseRecord } from "../models/operational.js";
 import { requiredNumber,requiredString } from "./repositoryUtils.js";
@@ -10,7 +11,7 @@ const packageBase=(value:unknown):Omit<PackageRecord,"pannelli">=>{const row=val
 
 export class ScanningRepository{
  constructor(private readonly database:DatabaseSync){}
- transaction<T>(fn:()=>T):T{this.database.exec("BEGIN IMMEDIATE");try{const result=fn();this.database.exec("COMMIT");return result;}catch(error:unknown){this.database.exec("ROLLBACK");throw error;}}
+ transaction<T>(fn:()=>T):T{this.database.exec("BEGIN IMMEDIATE");try{const result=trackMaterialAvailability(this.database,fn);this.database.exec("COMMIT");return result;}catch(error:unknown){this.database.exec("ROLLBACK");throw error;}}
  findPanel(id:string):PanelRecord|null{const row=this.database.prepare("SELECT * FROM Panels WHERE id=?").get(id);return row?panel(row):null;}
  findPackage(id:string):PackageRecord|null{const row=this.database.prepare("SELECT * FROM Packages WHERE id=?").get(id);return row?this.withPanels(packageBase(row)):null;}
  findActivePackageForLoad(loadId:string,exceptId?:string):PackageRecord|null{const row=exceptId?this.database.prepare("SELECT * FROM Packages WHERE loadId=? AND stato='APERTO' AND workflowState='ATTIVO' AND id<>? LIMIT 1").get(loadId,exceptId):this.database.prepare("SELECT * FROM Packages WHERE loadId=? AND stato='APERTO' AND workflowState='ATTIVO' LIMIT 1").get(loadId);return row?this.withPanels(packageBase(row)):null;}

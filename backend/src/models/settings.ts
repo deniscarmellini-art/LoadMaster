@@ -6,7 +6,7 @@ export interface SettingsEntity {
   updatedAt: string;
 }
 
-export interface Operator extends SettingsEntity { code: string; name: string }
+export interface Operator extends SettingsEntity { code: string; name: string; archived: boolean }
 export interface Trailer extends SettingsEntity { plate:string;description:string;notes:string;archived:boolean;hasHistory:boolean;nextInspectionDate:string|null;disabled:boolean;disabledReason:string|null;disabledAt:string|null }
 export interface Carrier extends SettingsEntity { name: string }
 export interface TransportRegistryEntry extends SettingsEntity { name: string }

@@ -30,6 +30,11 @@ export const registerErrorHandlers = (app: FastifyInstance): void => {
       return;
     }
 
+    if (error.message === "OPERATOR_INACTIVE") {
+      await reply.status(409).send(response("OPERATOR_INACTIVE", "Operatore disattivato o rimosso: scegliere un operatore attivo"));
+      return;
+    }
+
     if ("code" in error && typeof error.code === "string" && error.code === "ERR_SQLITE_ERROR" && /FOREIGN KEY constraint failed/i.test(error.message)) {
       await reply.status(409).send(response("RESOURCE_IN_USE", "La risorsa è collegata a dati operativi o storici e non può essere eliminata"));
       return;

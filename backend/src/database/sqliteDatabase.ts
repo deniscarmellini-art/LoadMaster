@@ -1,4 +1,5 @@
 import { migrateLoadingTransport } from "./loadingTransportMigration.js";
+import { migrateMaterialAvailability } from "./materialAvailabilityMigration.js";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -202,6 +203,8 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
   migrateLoadingTransport(database);
   migrateShipmentTransportModel(database);
   migrateTransportAssignments(database);
+  migrateOperatorRegistry(database);
+  migrateMaterialAvailability(database);
   seedSettings(database);
   return {
     database,
@@ -303,6 +306,16 @@ const migrateLegacyUniqueConstraints = (database: DatabaseSync): void => {
   } catch (error: unknown) {
     database.exec("ROLLBACK");
     throw error;
+  }
+};
+
+const migrateOperatorRegistry=(database:DatabaseSync):void=>{
+  const columns=database.prepare("PRAGMA table_info(Operators)").all() as Array<{name:string}>;
+  if(!columns.some(column=>column.name==="archived"))database.exec("ALTER TABLE Operators ADD COLUMN archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN(0,1))");
+  database.exec("CREATE TRIGGER IF NOT EXISTS operator_code_immutable BEFORE UPDATE OF code ON Operators WHEN NEW.code<>OLD.code BEGIN SELECT RAISE(ABORT,'OPERATOR_CODE_IMMUTABLE'); END; CREATE TRIGGER IF NOT EXISTS operator_archive_inactive BEFORE UPDATE ON Operators WHEN NEW.archived=1 AND NEW.active<>0 BEGIN SELECT RAISE(ABORT,'OPERATOR_ARCHIVED'); END;");
+  for(const [table,column] of [["Panels","scannedByOperatorId"],["Packages","operatoreId"],["LoadingSessions","operatorId"],["LoadingUnits","loadedByOperatorId"],["LoadingUnits","removedByOperatorId"],["OperationalEvents","operatorId"]]){
+    database.exec(`CREATE TRIGGER IF NOT EXISTS operator_available_${table}_${column}_insert BEFORE INSERT ON ${table} WHEN EXISTS(SELECT 1 FROM Operators WHERE id=NEW.${column} AND active=0) BEGIN SELECT RAISE(ABORT,'OPERATOR_INACTIVE'); END;
+      CREATE TRIGGER IF NOT EXISTS operator_available_${table}_${column}_update BEFORE UPDATE OF ${column} ON ${table} WHEN NEW.${column} IS NOT OLD.${column} AND EXISTS(SELECT 1 FROM Operators WHERE id=NEW.${column} AND active=0) BEGIN SELECT RAISE(ABORT,'OPERATOR_INACTIVE'); END;`);
   }
 };
 
