@@ -588,7 +588,7 @@ export default function App() {
             items={transports}
             shipments={shipmentsWithOperationalStatus}
             carriers={settings.trasportatori}
-            onRefresh={async () => setTransports(await listTransports())}
+            onRefresh={refreshScanningData}
           />
         ) : page === "shipments" ? (
           <Shipments

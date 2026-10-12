@@ -12,13 +12,9 @@ export interface LoadingSettings {
   transportDetailId?: string | null;
   transportDetailLabel?: string | null;
 }
-const normalize=(value:string)=>value.trim().toLocaleUpperCase("it-IT").replace(/[\s-]+/g,"");
 
 export function assignedTrailer(db:DatabaseSync,loadId:string):string|undefined {
-  const load=db.prepare("SELECT commessa,camion FROM Loads WHERE id=?").get(loadId) as {commessa:string;camion:string}|undefined;
-  if(!load)return undefined;
-  const assignments=db.prepare("SELECT trailerId,loadId,manualCommessa,manualCarico FROM TransportAssignments WHERE releasedAt IS NULL AND stato IN ('IMPEGNATO','CARICATO') ORDER BY assignedAt DESC").all() as Array<{trailerId:string;loadId:string|null;manualCommessa:string|null;manualCarico:string|null}>;
-  return assignments.find(a=>a.loadId===loadId||(!a.loadId&&normalize(a.manualCommessa??"")===normalize(load.commessa)&&normalize(a.manualCarico??"")===normalize(load.camion)))?.trailerId;
+  return (db.prepare("SELECT trailerId FROM TransportAssignments WHERE loadId=? AND releasedAt IS NULL AND stato IN ('IMPEGNATO','CARICATO') ORDER BY assignedAt DESC LIMIT 1").get(loadId) as {trailerId:string}|undefined)?.trailerId;
 }
 
 export function resolveLoadingTransport(db:DatabaseSync,loadId:string,input:LoadingSettings,previous?:LoadingSessionRecord):LoadingSettings {

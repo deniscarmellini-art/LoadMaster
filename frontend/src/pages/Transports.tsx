@@ -506,9 +506,16 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
         </DialogTitle>
         <DialogContent>
           <Box sx={{ display: "grid", gap: 2, pt: 1 }}>
+            {reservationTrailer?.source !== "MANUAL" && <TextField select label="Carico esistente" value={reservation.loadId ?? ""}
+              helperText="Seleziona il camion della commessa. I campi liberi sono riservati alle commesse non ancora importate."
+              onChange={event=>{const load=shipments.find(item=>item.loadId===event.target.value);setReservation(load?{loadId:load.loadId!,commessa:load.commessa,cliente:load.cliente,carico:load.camion??""}:emptyReservation);}}>
+              <MenuItem value="">Commessa non ancora importata</MenuItem>
+              {shipments.filter((item,index,all)=>item.loadId&&item.camion&&item.operationalStatus!=="SPEDITO"&&all.findIndex(other=>other.loadId===item.loadId)===index).map(item=><MenuItem key={item.loadId} value={item.loadId!}>{item.commessa} · {item.camion} · {item.cliente}</MenuItem>)}
+            </TextField>}
             <TextField
               required
               label="Commessa"
+              disabled={Boolean(reservation.loadId)}
               value={reservation.commessa}
               onChange={(event) =>
                 setReservation((current) => ({
@@ -520,6 +527,7 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
             <TextField
               required
               label="Cliente"
+              disabled={Boolean(reservation.loadId)}
               value={reservation.cliente}
               onChange={(event) =>
                 setReservation((current) => ({
@@ -531,6 +539,7 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
             <TextField
               required
               label="Carico / Camion"
+              disabled={Boolean(reservation.loadId)}
               value={reservation.carico}
               onChange={(event) =>
                 setReservation((current) => ({

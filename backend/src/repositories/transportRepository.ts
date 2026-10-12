@@ -62,7 +62,7 @@ export class TransportRepository {
     this.refreshExpired();
     return this.db
       .prepare(
-        `SELECT t.*,a.id assignmentId,a.source,COALESCE(a.loadId,manualLoad.id) loadId,a.stato assignmentStatus,
+        `SELECT t.*,a.id assignmentId,a.source,a.loadId,a.stato assignmentStatus,
           (SELECT p.plannedDepartureDate FROM ShipmentPlans p WHERE
             (a.loadId IS NOT NULL AND (p.loadId=a.loadId OR
               (p.loadId IS NULL
@@ -81,10 +81,6 @@ export class TransportRepository {
         FROM Trailers t
         LEFT JOIN TransportAssignments a ON a.trailerId=t.id AND a.releasedAt IS NULL
         LEFT JOIN Loads l ON l.id=a.loadId
-        LEFT JOIN Loads manualLoad ON a.loadId IS NULL AND a.source='MANUAL'
-          AND UPPER(TRIM(manualLoad.commessa))=UPPER(TRIM(a.manualCommessa))
-          AND UPPER(REPLACE(REPLACE(TRIM(manualLoad.camion),' ',''),'-',''))=
-              UPPER(REPLACE(REPLACE(TRIM(a.manualCarico),' ',''),'-',''))
         WHERE t.archived=0
         ORDER BY t.sortOrder,t.plate`,
       )
@@ -135,11 +131,17 @@ export class TransportRepository {
       if (!current) return null;
       if (!current.active || current.status !== "DISPONIBILE")
         throw new Error("TRAILER_NOT_AVAILABLE");
-      const load = input.loadId ? this.db.prepare("SELECT * FROM Loads WHERE id=?").get(input.loadId) : undefined;
+      const candidates = input.loadId ? [] : this.db.prepare("SELECT * FROM Loads").all().filter(row =>
+        normalize(String(row.commessa)) === normalize(input.commessa) && normalize(String(row.camion)) === normalize(input.carico));
+      if (candidates.length > 1) throw new Error("INVALID_RESERVATION_LOAD");
+      const load = input.loadId ? this.db.prepare("SELECT * FROM Loads WHERE id=?").get(input.loadId) : candidates[0];
+      if (!load && this.db.prepare("SELECT commessa FROM Loads").all().some(row => normalize(String(row.commessa)) === normalize(input.commessa)))
+        throw new Error("INVALID_RESERVATION_LOAD");
       if (input.loadId && (!load || normalize(String(load.commessa)) !== normalize(input.commessa) || normalize(String(load.camion)) !== normalize(input.carico)))
         throw new Error("INVALID_RESERVATION_LOAD");
-      const session = load ? this.db.prepare("SELECT * FROM LoadingSessions WHERE loadId=?").get(input.loadId!) : undefined;
-      if (load && (load.stato === "SPEDITO" || (session?.transportMode && session.transportMode !== "BILICO_ESSEPI")))
+      const loadId = load ? String(load.id) : undefined;
+      const session = loadId ? this.db.prepare("SELECT * FROM LoadingSessions WHERE loadId=?").get(loadId) : undefined;
+      if (load && (load.stato === "SPEDITO" || session?.shippedAt || (session?.transportMode && session.transportMode !== "BILICO_ESSEPI")))
         throw new Error("INVALID_RESERVATION_LOAD");
       // Include manual reservations for this order/truck: their Load link may not
       // have been adopted by a loading session yet.
@@ -149,8 +151,8 @@ export class TransportRepository {
       const now = new Date().toISOString();
       if (load) {
         this.db.prepare("INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,source,stato,assignedAt,createdAt,updatedAt) VALUES(?,?,?,?,'LOAD','IMPEGNATO',?,?,?)")
-          .run(crypto.randomUUID(),trailerId,input.loadId!,session?.id ?? null,now,now,now);
-        if (session) this.db.prepare("UPDATE LoadingSessions SET trailerId=?,updatedAt=? WHERE id=?").run(trailerId,now,String(session.id));
+          .run(crypto.randomUUID(),trailerId,loadId!,session?.id ?? null,now,now,now);
+        if (session) this.db.prepare("UPDATE LoadingSessions SET trailerId=?,destinationType='RIMORCHIO_ESSEPI',transportMode='BILICO_ESSEPI',updatedAt=? WHERE id=?").run(trailerId,now,String(session.id));
         return this.find(trailerId);
       }
       this.db
@@ -177,6 +179,9 @@ export class TransportRepository {
     const current = this.find(trailerId);
     if (!current) return null;
     if (current.source !== "MANUAL" || !current.assignmentId)
+      throw new Error("RESERVATION_NOT_EDITABLE");
+    if (!this.canRelease(current.assignmentId) || input.loadId || this.db.prepare("SELECT commessa FROM Loads").all().some(row =>
+      normalize(String(row.commessa)) === normalize(input.commessa)))
       throw new Error("RESERVATION_NOT_EDITABLE");
     const now = new Date().toISOString();
     this.db

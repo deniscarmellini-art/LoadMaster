@@ -1607,6 +1607,28 @@ for(const marker of ["event","shippedAt","SPEDITO"])test("blocca storico definit
   }finally{db.close();await app.close();rmSync(directory,{recursive:true,force:true});}
 });
 
+test("Trasporti: carico persistito, camion distinti e nessuna associazione alla lettura", () => {
+  const {database:db,close}=openSqliteDatabase(':memory:');const repo=new TransportRepository(db);
+  try {
+    db.exec(`INSERT INTO Trailers(id,plate,createdAt,updatedAt) VALUES('T','XA 112 LV','now','now'),('T2','OTHER','now','now');
+      INSERT INTO Loads(id,commessa,cliente,camion,createdAt,updatedAt) VALUES('L','265687','BCL','C1-','now','now'),('L2','265687','BCL','C2','now','now');
+      INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,transportMode,startedAt,createdAt,updatedAt) VALUES('S','L','DA_CARICARE','OP','RIMORCHIO_ESSEPI','BILICO_ESSEPI','now','now','now');`);
+    assert.throws(()=>repo.reserve('T',{commessa:'265687',cliente:'BCL',carico:'XA112LV'}),/INVALID_RESERVATION_LOAD/);
+    const a=repo.reserve('T',{commessa:'265687',cliente:'BCL',carico:'C 1'})!;
+    assert.equal(a.loadId,'L');assert.equal(a.loadingSessionId,'S');assert.equal(a.source,'LOAD');
+    assert.equal(db.prepare("SELECT trailerId FROM LoadingSessions WHERE id='S'").get()!.trailerId,'T');
+    const snapshot=db.prepare('SELECT * FROM TransportAssignments ORDER BY id').all();
+    repo.list();repo.list();assert.deepEqual(db.prepare('SELECT * FROM TransportAssignments ORDER BY id').all(),snapshot);
+    assert.throws(()=>repo.reserve('T2',{commessa:'265687',cliente:'BCL',carico:'C1-'}),/LOAD_ALREADY_ASSIGNED/);
+    const b=repo.reserve('T2',{commessa:'265687',cliente:'BCL',carico:'C2'})!;assert.equal(b.loadId,'L2');
+    repo.releaseReservation('T',a.assignmentId!);repo.releaseReservation('T2',b.assignmentId!);
+    const historical=db.prepare('SELECT * FROM TransportAssignments ORDER BY id').all();
+    const changed=repo.reserve('T2',{loadId:'L',commessa:'265687',cliente:'BCL',carico:'C1-'})!;
+    assert.equal(changed.loadingSessionId,'S');assert.equal(db.prepare("SELECT trailerId FROM LoadingSessions WHERE id='S'").get()!.trailerId,'T2');
+    for(const row of historical)assert.deepEqual(db.prepare('SELECT * FROM TransportAssignments WHERE id=?').get(String(row.id)),row);
+  }finally{close();}
+});
+
 test("Disimpegna: storico, pianificazione, reimpegno e sessione vuota", () => {
   const { database: db, close } = openSqliteDatabase(":memory:");
   const repo = new TransportRepository(db);
@@ -1624,7 +1646,7 @@ test("Disimpegna: storico, pianificazione, reimpegno e sessione vuota", () => {
     assert.deepEqual(db.prepare('SELECT * FROM ShipmentPlans').get(), plan);
     assert.deepEqual(db.prepare("SELECT * FROM Trailers WHERE id='T'").get(), trailer);
     const historical = db.prepare('SELECT * FROM TransportAssignments WHERE id=?').get(reserved.assignmentId!)!;
-    assert.equal(historical.stato, 'CONCLUSO'); assert.ok(historical.releasedAt); assert.equal(historical.manualCommessa,'265001');
+    assert.equal(historical.stato, 'CONCLUSO'); assert.ok(historical.releasedAt); assert.equal(historical.loadId,'L'); assert.equal(historical.manualCommessa,null);
     const another = repo.reserve('T',{commessa:'OTHER',cliente:'Altro',carico:'C2'})!;
     assert.throws(()=>repo.releaseReservation('T',reserved.assignmentId!),/RESERVATION_NOT_RELEASABLE/);
     assert.equal(repo.find('T')!.assignmentId, another.assignmentId);
@@ -1635,7 +1657,7 @@ test("Disimpegna: storico, pianificazione, reimpegno e sessione vuota", () => {
     assert.equal(repo.find('T')!.source,'LOAD'); assert.equal(repo.find('T')!.canRelease,true);
     repo.releaseReservation('T');
     assert.equal(db.prepare("SELECT trailerId FROM LoadingSessions WHERE id='S'").get()!.trailerId,null);
-    assert.equal(db.prepare("SELECT loadingSessionId FROM TransportAssignments WHERE source='LOAD'").get()!.loadingSessionId,'S');
+    assert.equal(db.prepare("SELECT loadingSessionId FROM TransportAssignments WHERE source='LOAD' AND loadingSessionId='S'").get()!.loadingSessionId,'S');
     assert.deepEqual(db.prepare('SELECT * FROM ShipmentPlans').get(),plan);
     assert.equal(repo.reserve('T',{commessa:'265001',cliente:'Cliente',carico:'C1'})!.canRelease,true);
   } finally { close(); }
