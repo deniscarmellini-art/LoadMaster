@@ -17,6 +17,7 @@ import MainLayout from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard";
 import ActiveLoads from "./pages/ActiveLoads";
 import PanelScanning from "./pages/PanelScanning";
+import { ScanningRevision, updateScanningPanels, updateScanningSingles, updateScanningPackages, updateScanningDrafts, type ScanningChange } from "./services/scanningLocalState";
 import PrintLabels from "./pages/PrintLabels";
 import Warehouse from "./pages/Warehouse";
 import Settings from "./pages/Settings";
@@ -115,6 +116,7 @@ export default function App() {
   const [confirmRemoved, setConfirmRemoved] = useState(false);
   const settingsRef = useRef(settings);
   const scanningRefreshRef = useRef<Promise<void> | null>(null);
+  const scanningRevision = useRef(new ScanningRevision());
   const settingsRefreshRef = useRef<Promise<void> | null>(null);
   settingsRef.current = settings;
 
@@ -148,6 +150,7 @@ export default function App() {
       const value = settingsRef.current.operatori.find((item) => item.id === id);
       return value ? operatorLabel(value) : id;
     };
+    const revision = scanningRevision.current.capture();
     const request = Promise.all([
       loadCommesseFromApi(),
       loadScanningSnapshot(operatorName),
@@ -155,6 +158,7 @@ export default function App() {
       listTransports(),
       listShipments(),
     ]).then(([loads, snapshot, sessions, transportItems, shipmentItems]) => {
+      if (import.meta.env.VITE_SISLOG_TEST && !scanningRevision.current.isCurrent(revision)) return;
       setCommesse(loads);
       setSingles(snapshot.singles);
       setPackages(snapshot.packages);
@@ -174,6 +178,21 @@ export default function App() {
         scanningRefreshRef.current = null;
     }
   }, []);
+  const confirmScanningChange = useCallback((change: ScanningChange) => {
+    scanningRevision.current.invalidate();
+    setCommesse(current => updateScanningPanels(current, change));
+    setSingles(current => updateScanningSingles(current, change));
+    setPackages(current => updateScanningPackages(current, change));
+    setSuspendedPackages(current => updateScanningPackages(current, change, true));
+    setPackageDrafts(current => updateScanningDrafts(current, change, false));
+    setPackageDraftIds(current => updateScanningDrafts(current, change, true));
+  }, []);
+  const refreshAfterScanningMutation = useCallback(async () => {
+    // Never reuse a GET batch that may have read before the failed/partial write.
+    scanningRevision.current.invalidate();
+    await scanningRefreshRef.current?.catch(() => undefined);
+    await refreshScanningData();
+  }, [refreshScanningData]);
   useEffect(() => {
     let active = true;
     void refreshScanningData()
@@ -788,7 +807,9 @@ export default function App() {
             )}
             suspendedPackages={suspendedPackages.filter(pack=>pack.commessa===scanningTarget.commessa&&pack.camion===scanningTarget.camion)}
             onDraftChange={setDraftForTarget}
-            onDataChanged={refreshScanningData}
+            onDataChanged={import.meta.env.VITE_SISLOG_TEST ? refreshAfterScanningMutation : refreshScanningData}
+            onConfirmedChange={import.meta.env.VITE_SISLOG_TEST ? confirmScanningChange : undefined}
+            onMutationStart={import.meta.env.VITE_SISLOG_TEST ? ()=>scanningRevision.current.invalidate() : undefined}
             onClosePackage={() => undefined}
             onCloseSingle={() => undefined}
             packages={packages}
