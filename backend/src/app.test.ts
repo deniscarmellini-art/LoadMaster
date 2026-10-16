@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import "./materialAvailability.test.js";
+import "./shipmentDeliveryAddress.test.js";
+import "./shippedShipments.test.js";
 import test from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1749,3 +1751,6 @@ import "./history.test.js";
 import "./planningHistory.test.js";
 import "./offlineLoading.test.js";
 import "./shipmentDocument.test.js";
+import "./sharedTransportRegistry.test.js";
+import "./vehicleTypeRegistry.test.js";
+import "./customers.test.js";

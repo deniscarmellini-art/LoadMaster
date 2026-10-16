@@ -10,7 +10,7 @@ const sectionTitles: Record<PrimaryNavigationPage, string> = {
   transports: "Trasporti",
   shipments: "Spedizioni",
   history: "Storico",
-  settings: "Impostazioni",
+  settings: "Anagrafiche",
 };
 
 export const sectionTitleFor = (page: PrimaryNavigationPage): string => sectionTitles[page];

@@ -37,7 +37,7 @@ const items:ReadonlyArray<{page:PrimaryNavigationPage;label:string;icon:React.Re
   {page:"transports",label:"Trasporti",icon:<RouteOutlinedIcon/>},
   {page:"shipments",label:"Spedizioni",icon:<EventNoteOutlinedIcon/>},
   {page:"history",label:"Storico",icon:<HistoryOutlinedIcon/>},
-  {page:"settings",label:"Impostazioni",icon:<SettingsOutlinedIcon/>},
+  {page:"settings",label:"Anagrafiche",icon:<SettingsOutlinedIcon/>},
 ];
 
 export default function PrimaryNavigation({activePage,onNavigate}:Props){

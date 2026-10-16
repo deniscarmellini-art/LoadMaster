@@ -1,3 +1,6 @@
+import { migrateCustomers } from "./customerMigration.js";
+import { migrateSharedTransportRegistry } from "./sharedTransportRegistryMigration.js";
+import { migrateShipmentDeliveryAddress } from "./shipmentDeliveryAddressMigration.js";
 import { migrateLoadingTransport } from "./loadingTransportMigration.js";
 import { migrateMaterialAvailability } from "./materialAvailabilityMigration.js";
 import { mkdirSync } from "node:fs";
@@ -200,12 +203,15 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
       throw error;
     }
   }
+  migrateShipmentDeliveryAddress(database);
   migrateLoadingTransport(database);
   migrateShipmentTransportModel(database);
   migrateTransportAssignments(database);
   migrateOperatorRegistry(database);
   migrateMaterialAvailability(database);
   seedSettings(database);
+  migrateSharedTransportRegistry(database);
+  migrateCustomers(database);
   return {
     database,
     close: () => database.close(),

@@ -1,3 +1,8 @@
+import ShipmentCustomerPicker from "../components/shipments/ShipmentCustomerPicker";
+import ShipmentDateFilter from "../components/shipments/ShipmentDateFilter";
+import type { CaricoCamion } from "../models/Loading";
+import { shipmentListDetails } from "../services/shipmentListPresentation";
+import { shipmentCalendarTransportDetails } from "../services/shipmentCalendarPresentation";
 import { useEffect, useMemo, useState } from "react";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import {
@@ -5,8 +10,6 @@ import {
   Autocomplete,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   Dialog,
   DialogActions,
@@ -27,8 +30,6 @@ import {
   Typography,
   ToggleButton,
   ToggleButtonGroup,
-  useMediaQuery,
-  useTheme,
 } from "@mui/material";
 import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -55,6 +56,7 @@ import { ApiClientError } from "../services/apiClient";
 import { shipmentTransportLabel } from "../services/shipmentTransportPresentation";
 interface Props {
   items: ShipmentItem[];
+  loads?: CaricoCamion[];
   trailers: Rimorchio[];
   carriers: Trasportatore[];
   clientVehicleTypes: VoceTrasporto[];
@@ -67,7 +69,7 @@ const labels: Record<ShipmentStatus, string> = {
   PIANIFICATA: "Pianificata",
   PRONTA: "Pronta",
   IN_VIAGGIO: "In viaggio",
-  CONCLUSA: "Conclusa",
+  CONCLUSA: "Spedita",
 };
 const empty: ShipmentInput = {
   commessa: "",
@@ -77,22 +79,13 @@ const empty: ShipmentInput = {
   plannedDepartureDate: "",
   transportType: null,
   transportDetailId: null,
+  vehicleTypeId: null,
+  plannedCarrierId: null,
   trailerId: null,
   carrierId: null,
+  customerId: null,
   notes: "",
 };
-const statusColor = (s: ShipmentStatus) =>
-  s === "PRONTA"
-    ? "success"
-    : s === "IN_VIAGGIO"
-      ? "info"
-      : s === "PIANIFICATA"
-        ? "warning"
-        : s === "CONCLUSA"
-          ? "default"
-          : "error";
-const actualDepartureLabel = (value: string | null) =>
-  value ? new Date(value).toLocaleDateString("it-IT") : "—";
 const remainsInOperationalView = (item: ShipmentItem) => {
   if (!item.actualDepartureDate) return true;
   const departure = new Date(item.actualDepartureDate);
@@ -106,28 +99,19 @@ const remainsInOperationalView = (item: ShipmentItem) => {
   today.setHours(0, 0, 0, 0);
   return today <= expiry;
 };
-type SortKey =
-  | "commessa"
-  | "cliente"
-  | "camion"
-  | "shipmentStatus"
-  | "plannedDepartureDate"
-  | "operationalStatus"
-  | "transportType"
-  | "vehicle"
-  | "actualDepartureDate";
+type SortKey = "commessa" | "cliente" | "camion" | "plannedDepartureDate" | "operationalStatus" | "transportType";
 type SortDirection = "asc" | "desc";
 const columns: ReadonlyArray<{ label: string; sortKey?: SortKey }> = [
-  { label: "Azioni" },
   { label: "Commessa", sortKey: "commessa" },
   { label: "Cliente", sortKey: "cliente" },
-  { label: "Carico / Camion", sortKey: "camion" },
-  { label: "Stato spedizione", sortKey: "shipmentStatus" },
+  { label: "Carico", sortKey: "camion" },
   { label: "Partenza prevista", sortKey: "plannedDepartureDate" },
   { label: "Stato operativo carico", sortKey: "operationalStatus" },
   { label: "Modalità di trasporto", sortKey: "transportType" },
-  { label: "Dettaglio / Mezzo", sortKey: "vehicle" },
-  { label: "Data partenza effettiva", sortKey: "actualDepartureDate" },
+  { label: "Ritiro / Consegna" },
+  { label: "Tipo mezzo" },
+  { label: "Targa bilico" },
+  { label: "Indirizzo di consegna" },
   { label: "Note" },
 ];
 const collator = new Intl.Collator("it-IT", {
@@ -152,20 +136,21 @@ const OperationalStatusChip = ({
 };
 export default function Shipments({
   items,
+  loads = [],
+  transports,
   trailers,
   carriers,
   clientVehicleTypes,
   thirdPartyTransportModes,
   onRefresh,
 }: Props) {
-  const theme = useTheme(),
-    mobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [search, setSearch] = useState(""),
     [status, setStatus] = useState<ShipmentStatus | "">(""),
     [type, setType] = useState<ShipmentTransportType | "">(""),
+    [carrierFilter, setCarrierFilter] = useState(""),
     [from, setFrom] = useState(""),
     [to, setTo] = useState(""),
-    [sortKey, setSortKey] = useState<SortKey | null>(null),
+    [sortKey, setSortKey] = useState<SortKey | null>("plannedDepartureDate"),
     [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [view, setView] = useState<"list" | "calendar">("calendar");
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
@@ -208,9 +193,20 @@ export default function Shipments({
       ).length,
     [items],
   );
+  // The explicit shipped filter also searches older departures. The default
+  // operational list keeps its existing seven-day window.
+  const listItems = status === "CONCLUSA" ? visibleItems : operationalItems;
+  const listDetails = useMemo(() => new Map(visibleItems.map(item => [item.id,
+    shipmentListDetails(item, carriers, trailers, transports, loads, clientVehicleTypes),
+  ])), [visibleItems, carriers, trailers, transports, loads, clientVehicleTypes]);
+  const calendarUnplaced = visibleItems.filter(item => !hasDeparted(item) &&
+    (!item.plannedDepartureDate || !dayjs(item.plannedDepartureDate).isValid() || dayjs(item.plannedDepartureDate).day() === 0));
+  const calendarTransportDetails = useMemo(() => new Map(visibleItems.map(item => [item.id,
+    shipmentCalendarTransportDetails(item, carriers, clientVehicleTypes, trailers, transports, loads),
+  ])), [visibleItems, carriers, clientVehicleTypes, trailers, transports, loads]);
   const filtered = useMemo(
     () =>
-      operationalItems.filter((x) => {
+      listItems.filter((x) => {
         const q = search.trim().toLocaleUpperCase("it-IT");
         return (
           (!q ||
@@ -218,7 +214,8 @@ export default function Shipments({
               v?.toLocaleUpperCase("it-IT").includes(q),
             )) &&
           (!status || x.shipmentStatus === status) &&
-          (!type || x.transportType === type) &&
+          (!type || listDetails.get(x.id)?.mode === type) &&
+          (!carrierFilter || listDetails.get(x.id)?.carrierId === carrierFilter) &&
           (!from ||
             Boolean(
               x.plannedDepartureDate && x.plannedDepartureDate >= from,
@@ -227,7 +224,7 @@ export default function Shipments({
             Boolean(x.plannedDepartureDate && x.plannedDepartureDate <= to))
         );
       }),
-    [operationalItems, search, status, type, from, to],
+    [listItems, search, status, type, carrierFilter, from, to, listDetails],
   );
   const open = (item?: ShipmentItem, date?: string) => {
     if(item && hasDeparted(item))return;
@@ -240,17 +237,20 @@ export default function Shipments({
             commessa: item.commessa,
             cliente: item.cliente,
             orderReference: item.orderReference ?? "",
+            deliveryAddress: item.deliveryAddress ?? "",
+            customerId: item.customerId ?? null,
             camion: item.camion,
             plannedLoadingDate: item.plannedLoadingDate,
             plannedDepartureDate: date ?? item.plannedDepartureDate,
             transportType: item.transportType,
             transportDetailId: item.transportDetailId,
+            vehicleTypeId: item.vehicleTypeId ?? null,
             trailerId: null,
             carrierId: null,
             plannedCarrierId: item.plannedCarrierId,
             notes: item.notes,
           }
-        : { ...empty, orderReference: "", plannedDepartureDate: date ?? empty.plannedDepartureDate },
+        : { ...empty, orderReference: "", deliveryAddress: "", plannedDepartureDate: date ?? empty.plannedDepartureDate },
     );
   };
   const valid = Boolean(
@@ -300,13 +300,14 @@ export default function Shipments({
   };
   const activeCarriers = carriers.filter((carrier) => carrier.attivo);
   const detailOptions=form.transportType==="BILICO_ESSEPI"?carriers:form.transportType==="RITIRA_CLIENTE"?clientVehicleTypes:form.transportType==="TERZI_PER_ESSEPI"?thirdPartyTransportModes:[];
-  const detailLabel=form.transportType==="BILICO_ESSEPI"?"Trasportatore Essepi":form.transportType==="RITIRA_CLIENTE"?"Tipo di mezzo":"Modalità Terzi per Essepi";
+  const detailLabel=form.transportType==="BILICO_ESSEPI"?"Trasportatore":form.transportType==="RITIRA_CLIENTE"?"Tipo di mezzo":"Modalità Terzi per Essepi";
   const transportLabel=(value:ShipmentTransportType|null)=>value==="BILICO_ESSEPI"?demoBranding.bilico:shipmentTransportLabel(value);
   const depart = async (item: ShipmentItem, carrierId?: string) => {
     try {
       await departShipment(item.id, carrierId);
       await onRefresh();
       setDepartureItem(null);
+      setEditing(null);
       setNotice({ severity: "success", text: "Partenza confermata." });
     } catch {
       setNotice({
@@ -364,6 +365,7 @@ export default function Shipments({
         severity: "success",
         text: "Spedizione collegata al carico reale.",
       });
+      setEditing(null);
     } catch {
       setNotice({
         severity: "error",
@@ -371,72 +373,31 @@ export default function Shipments({
       });
     }
   };
-  const action = (item: ShipmentItem) =>
-    hasDeparted(item) ? null : item.persisted && item.shipmentStatus === "PRONTA" ? (
-      <Stack direction="row" spacing={1}>
-      <Button size="small" onClick={()=>open(item)}>Modifica pianificazione</Button>
-      <Button
-        variant="contained"
-        size="small"
-        onClick={() => {
-          if (item.transportType === "BILICO_ESSEPI") {
-            setDepartureItem(item);
-            setDepartureCarrierId(item.carrierId ?? (activeCarriers.some(c=>c.id===item.plannedCarrierId) ? item.plannedCarrierId : null) ?? "");
-            return;
-          }
-          void depart(item);
-        }}
-      >
-        Conferma partenza
-      </Button>
-      </Stack>
-    ) : (
-      <Stack direction="row">
-        <Button size="small" onClick={() => open(item)}>
-          {item.persisted ? "Modifica pianificazione" : "Pianifica"}
-        </Button>
-        {item.persisted &&
-          !item.loadId &&
-          items.some(
-            (x) =>
-              !x.persisted &&
-              x.commessa.trim().toLocaleUpperCase("it-IT") ===
-                item.commessa.trim().toLocaleUpperCase("it-IT"),
-          ) && (
-            <Button size="small" onClick={() => void connect(item)}>
-              Collega
-            </Button>
-          )}
-      </Stack>
-    );
-  const vehicle = (item: ShipmentItem) => {
-    if (item.transportType !== "BILICO_ESSEPI") return item.transportDetailLabel??"Non specificato";
-    const trailer = item.trailerId
-      ? trailers.find((entry) => entry.id === item.trailerId)?.targa ?? "Rimorchio assegnato"
-      : null;
-    const planned = item.transportDetailLabel ? " — Previsto: " + item.transportDetailLabel : "";
-    if (!trailer) return `${demoBranding.bilico} — Da assegnare` + planned;
-    const carrier = item.carrierId ? carriers.find(c=>c.id===item.carrierId)?.nome ?? "Trasportatore non disponibile" : null;
-    return (carrier ? trailer + " — " + carrier : trailer + " — Trasportatore da definire") + planned;
-  };
+  const planningDirty = editing && editing!=="new" &&
+    (["commessa","cliente","camion","orderReference","deliveryAddress","customerId","plannedLoadingDate","plannedDepartureDate","transportType","transportDetailId","vehicleTypeId","plannedCarrierId","notes"] as const)
+      .some(key => (form[key] ?? "") !== (editing[key] ?? ""));
+  const planningActions = (item: ShipmentItem) => hasDeparted(item) ? null :
+    item.persisted && item.shipmentStatus === "PRONTA" ? (
+      <Button variant="contained" disabled={!!planningDirty} onClick={() => {
+        if (item.transportType === "BILICO_ESSEPI") {
+          setDepartureItem(item);
+          setDepartureCarrierId(item.carrierId ?? (activeCarriers.some(c=>c.id===item.plannedCarrierId) ? item.plannedCarrierId : null) ?? "");
+        } else void depart(item);
+      }}>Conferma partenza</Button>
+    ) : item.persisted && !item.loadId && items.some(x => !x.persisted && x.loadId &&
+      x.commessa.trim().toLocaleUpperCase("it-IT") === item.commessa.trim().toLocaleUpperCase("it-IT")) ? (
+      <Button variant="outlined" disabled={!!planningDirty} onClick={() => void connect(item)}>Collega</Button>
+    ) : null;
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
     const value = (item: ShipmentItem): string | number | null => {
       switch (sortKey) {
-        case "shipmentStatus":
-          return labels[item.shipmentStatus];
         case "plannedDepartureDate":
           return item.plannedDepartureDate
             ? Date.parse(item.plannedDepartureDate)
             : null;
-        case "actualDepartureDate":
-          return item.actualDepartureDate
-            ? Date.parse(item.actualDepartureDate)
-            : null;
         case "transportType":
-          return item.transportType?transportLabel(item.transportType):null;
-        case "vehicle":
-          return item.transportType ? vehicle(item) : null;
+          return listDetails.get(item.id)?.mode ? transportLabel(listDetails.get(item.id)!.mode) : null;
         default:
           return item[sortKey];
       }
@@ -461,7 +422,7 @@ export default function Shipments({
             : -comparison;
       })
       .map(({ item }) => item);
-  }, [filtered, sortKey, sortDirection, trailers, carriers]);
+  }, [filtered, sortKey, sortDirection, listDetails]);
   const requestSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
@@ -470,73 +431,43 @@ export default function Shipments({
     setSortKey(key);
     setSortDirection("asc");
   };
-  const kpis = (
-    [
-      "DA_PIANIFICARE",
-      "PIANIFICATA",
-      "PRONTA",
-      "IN_VIAGGIO",
-    ] as ShipmentStatus[]
-  ).map((s) => ({
-    label: labels[s],
-    value: operationalItems.filter((x) => x.shipmentStatus === s).length,
-  }));
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="it">
       <Box>
-        {view === "list" && <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: { xs: "repeat(2,1fr)", md: "repeat(4,1fr)" },
-            gap: 1.5,
-            mb: 2,
-          }}
-        >
-          {kpis.map((k) => (
-            <Card key={k.label} variant="outlined">
-              <CardContent
-                sx={{
-                  textAlign: "center",
-                  p: 1.5,
-                  "&:last-child": { pb: 1.5 },
-                }}
-              >
-                <Typography variant="caption" color="text.secondary">
-                  {k.label}
-                </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 900 }}>
-                  {k.value}
-                </Typography>
-              </CardContent>
-            </Card>
-          ))}
-        </Box>}
         {legacyCount > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>
-            {legacyCount} spedizion{legacyCount === 1 ? "e" : "i"} conclus
+            {legacyCount} spedizion{legacyCount === 1 ? "e" : "i"} spedit
             {legacyCount === 1 ? "a" : "e"} senza data di partenza effettiva:
             restano visibili perché non è possibile calcolare il limite di 7 giorni.
           </Alert>
         )}
         <Paper sx={{ p: { xs: 1, md: 2 }, ...(view === "calendar" && { py: 1 }) }}>
-          <ToggleButtonGroup exclusive value={view} onChange={(_, value) => { if (value) setView(value); }} aria-label="Visualizzazione spedizioni" size="small" sx={{ mb: view === "calendar" ? 1 : 2 }}>
+          <ToggleButtonGroup exclusive value={view} onChange={(_, value) => { if (value) setView(value); }} aria-label="Visualizzazione spedizioni" size="small" sx={{ mb: 1 }}>
             <ToggleButton value="calendar">Calendario</ToggleButton>
             <ToggleButton value="list">Elenco</ToggleButton>
           </ToggleButtonGroup>
           {view === "list" && <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "1fr", md: "2fr repeat(4,1fr)" },
+              gridTemplateColumns: {
+                xs: "minmax(0,1fr)",
+                sm: "repeat(2,minmax(0,1fr))",
+                md: "repeat(3,minmax(0,1fr))",
+                lg: "minmax(220px,1.6fr) minmax(130px,1fr) minmax(150px,1.1fr) minmax(130px,1fr) repeat(2,minmax(180px,1.1fr))",
+              },
               gap: 1,
-              mb: 2,
+              mb: 1.5,
+              "& > .MuiFormControl-root": { minWidth: 0 },
             }}
           >
             <TextField
+              size="small"
               label="Cerca Commessa / Cliente"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
             <TextField
+              size="small"
               select
               label="Stato spedizione"
               value={status}
@@ -550,6 +481,7 @@ export default function Shipments({
               ))}
             </TextField>
             <TextField
+              size="small"
               select
               label="Modalità di trasporto"
               value={type}
@@ -562,146 +494,53 @@ export default function Shipments({
               <MenuItem value="RITIRA_CLIENTE">Ritira Cliente</MenuItem>
               <MenuItem value="TERZI_PER_ESSEPI">Terzi per Essepi</MenuItem>
             </TextField>
-            <TextField
-              type="date"
-              label="Partenza da"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
-            <TextField
-              type="date"
-              label="Partenza a"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
+            <TextField size="small" select label="Trasportatore" value={carrierFilter} onChange={e=>setCarrierFilter(e.target.value)}>
+              <MenuItem value="">Tutti</MenuItem>
+              {carriers.map(carrier=><MenuItem key={carrier.id} value={carrier.id}>{carrier.nome}{!carrier.attivo?" (non attivo)":""}</MenuItem>)}
+            </TextField>
+            <ShipmentDateFilter label="Partenza da" value={from} onChange={setFrom}/>
+            <ShipmentDateFilter label="Partenza a" value={to} onChange={setTo}/>
           </Box>}
           {view === "calendar" ? (
-            <ShipmentCalendar items={visibleItems} onReschedule={reschedule} onSelectShipment={(item) => open(item)} onSelectDate={(date) => open(undefined, date)} />
-          ) : mobile ? (
-            <Stack sx={{ gap: 1 }}>
-              {filtered.map((item) => (
-                <Card key={item.id} variant="outlined">
-                  <CardContent>
-                    <Stack
-                      direction="row"
-                      sx={{ justifyContent: "space-between", gap: 1 }}
-                    >
-                      <Box>
-                        <Typography sx={{ fontWeight: 900 }}>
-                          {item.commessa}
-                          {item.camion ? ` / ${item.camion}` : ""}
-                        </Typography>
-                        <Typography>{item.cliente}</Typography>
-                      </Box>
-                      <Chip
-                        size="small"
-                        color={statusColor(item.shipmentStatus)}
-                        label={labels[item.shipmentStatus]}
-                      />
-                    </Stack>
-                    <Typography variant="body2" sx={{ mt: 1 }}>
-                      Partenza prevista:{" "}
-                      <PlannedDepartureDate shipment={item} />
-                    </Typography>
-                    <Typography variant="body2">
-                      Trasporto:{" "}
-                      {transportLabel(item.transportType)}
-                    </Typography>
-                    <Typography variant="body2">
-                      Mezzo / Trasportatore: {vehicle(item)}
-                    </Typography>
-                    <Typography variant="body2">
-                      Partenza effettiva: {actualDepartureLabel(item.actualDepartureDate)}
-                    </Typography>
-                    <Stack direction="row" sx={{ alignItems: "center", gap: 1, mt: 1 }}>
-                      <Typography variant="body2">Stato operativo:</Typography>
-                      <OperationalStatusChip status={item.operationalStatus} />
-                    </Stack>
-                    <Box sx={{ mt: 1 }}>{action(item)}</Box>
-                  </CardContent>
-                </Card>
-              ))}
-            </Stack>
+            <>
+              {!!calendarUnplaced.length && <Box sx={{mb:2}}>
+                <Typography variant="subtitle2" sx={{mb:1}}>Pianificazioni senza data o con partenza di domenica</Typography>
+                <Stack direction="row" sx={{gap:1,flexWrap:"wrap"}}>{calendarUnplaced.map(item =>
+                  <Button key={item.id} variant="outlined" onClick={()=>open(item)}>
+                    {[item.commessa,item.camion,item.cliente].filter(Boolean).join(" · ")}
+                    {item.plannedDepartureDate ? ` · ${dayjs(item.plannedDepartureDate).format("DD/MM/YYYY")}` : " · Senza data"}
+                  </Button>
+                )}</Stack>
+              </Box>}
+              <ShipmentCalendar items={visibleItems} transportDetails={calendarTransportDetails} onReschedule={reschedule} onSelectShipment={(item) => open(item)} onSelectDate={(date) => open(undefined, date)} />
+            </>
           ) : (
-            <TableContainer>
-              <Table size="small" sx={{ minWidth: 1350 }}>
-                <TableHead>
-                  <TableRow>
-                    {columns.map(({ label, sortKey: columnSortKey }) => (
-                      <TableCell
-                        key={label}
-                        sx={
-                          label === "Azioni"
-                            ? { minWidth: 190, width: 190 }
-                            : undefined
-                        }
-                      >
-                        {columnSortKey ? (
-                          <TableSortLabel
-                            active={sortKey === columnSortKey}
-                            direction={
-                              sortKey === columnSortKey ? sortDirection : "asc"
-                            }
-                            onClick={() => requestSort(columnSortKey)}
-                          >
-                            {label}
-                          </TableSortLabel>
-                        ) : (
-                          label
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {sorted.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell sx={{ minWidth: 190, width: 190 }}>
-                        <Stack
-                          direction="row"
-                          sx={{
-                            alignItems: "flex-start",
-                            justifyContent: "flex-start",
-                            width: "100%",
-                            "& .MuiButton-root": {
-                              justifyContent: "flex-start",
-                              minWidth: 0,
-                            },
-                          }}
-                        >
-                          {action(item)}
-                        </Stack>
-                      </TableCell>
-                      <TableCell>{item.commessa}</TableCell>
-                      <TableCell>{item.cliente}</TableCell>
-                      <TableCell>{item.camion ?? "—"}</TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          color={statusColor(item.shipmentStatus)}
-                          label={labels[item.shipmentStatus]}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <PlannedDepartureDate shipment={item} />
-                      </TableCell>
-                      <TableCell>
-                        <OperationalStatusChip status={item.operationalStatus} />
-                      </TableCell>
-                      <TableCell>
-                        {transportLabel(item.transportType)}
-                      </TableCell>
-                      <TableCell>{vehicle(item)}</TableCell>
-                      <TableCell>
-                        {actualDepartureLabel(item.actualDepartureDate)}
-                      </TableCell>
-                      <TableCell>{item.notes ?? "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
+            <TableContainer sx={{overflowX:"auto",maxWidth:"100%"}}>
+              <Table size="small" aria-label="Organizzazione ritiri e consegne" sx={{minWidth:1200,tableLayout:"fixed","& th":{whiteSpace:"normal",fontSize:12},"& th, & td":{px:1},"& th .MuiTableSortLabel-icon":{fontSize:16,ml:.25,mr:0},"& td":{verticalAlign:"top",overflowWrap:"anywhere"},"& .MuiChip-root":{maxWidth:"100%",height:"auto"},"& .MuiChip-label":{whiteSpace:"normal",py:.25}}}>
+                <colgroup>{[7.5,9,6,9,10,10,9,7,6.5,13,13].map((width,index)=><col key={columns[index]!.label} style={{width:`${width}%`}}/>)}</colgroup>
+                <TableHead><TableRow>
+                  {columns.map(({label,sortKey:columnSortKey}) => <TableCell key={label}>
+                    {columnSortKey ? <TableSortLabel active={sortKey===columnSortKey} direction={sortKey===columnSortKey?sortDirection:"asc"} onClick={()=>requestSort(columnSortKey)}>{label}</TableSortLabel> : label}
+                  </TableCell>)}
+                </TableRow></TableHead>
+                <TableBody>{sorted.map(item => {
+                  const detail=listDetails.get(item.id)!;
+                  return <TableRow key={item.id}>
+                    <TableCell>{item.commessa || "—"}</TableCell>
+                    <TableCell>{item.cliente?.trim() || "—"}</TableCell>
+                    <TableCell>{item.camion?.trim() || "—"}</TableCell>
+                    <TableCell sx={{whiteSpace:"nowrap"}}><PlannedDepartureDate shipment={item}/></TableCell>
+                    <TableCell><OperationalStatusChip status={item.operationalStatus}/></TableCell>
+                    <TableCell>{transportLabel(detail.mode)}</TableCell>
+                    <TableCell>{detail.party}</TableCell>
+                    <TableCell>{detail.vehicleType}</TableCell>
+                    <TableCell>{detail.plate}</TableCell>
+                    <TableCell sx={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{detail.address}</TableCell>
+                    <TableCell sx={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{detail.notes}</TableCell>
+                  </TableRow>;
+                })}</TableBody>
               </Table>
+              {!sorted.length&&<Typography sx={{p:3,textAlign:"center"}} color="text.secondary">Nessuna spedizione trovata</Typography>}
             </TableContainer>
           )}
         </Paper>
@@ -709,25 +548,30 @@ export default function Shipments({
           open={editing !== null}
           onClose={() => setEditing(null)}
           fullWidth
-          maxWidth="sm"
+          maxWidth={false}
+          slotProps={{paper:{sx:{width:{xs:"calc(100% - 16px)",sm:780},maxWidth:"calc(100% - 32px)",maxHeight:"calc(100% - 32px)",m:2}}}}
         >
-          <DialogTitle>
+          <DialogTitle sx={{py:1.5}}>
             {editing === "new" || (editing && !editing.persisted)
               ? "Pianifica spedizione"
               : "Modifica pianificazione"}
           </DialogTitle>
-          <DialogContent>
-            <Box sx={{ display: "grid", gap: 1.5, pt: 1 }}>
+          {notice?.severity === "error" && <Alert severity="error" sx={{mx:{xs:2,sm:3},mb:1,flexShrink:0}}>{notice.text}</Alert>}
+          <DialogContent sx={{px:{xs:2,sm:3},py:1,minHeight:0}}>
+            <Box sx={{ display: "grid", gridTemplateColumns:{xs:"minmax(0,1fr)",sm:"repeat(2,minmax(0,1fr))"}, gap:1.25, pt:.5, "& > .MuiFormControl-root":{minWidth:0} }}>
               {calendarDate && <Autocomplete
+                size="small"
+                sx={{gridColumn:"1 / -1"}}
                 options={items.filter((item) => !item.persisted && item.loadId && !item.plannedDepartureDate && !shipmentHasDeparted(item))}
                 value={editing && editing !== "new" ? editing : null}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 getOptionLabel={(item) => [item.commessa, item.camion, item.cliente].filter(Boolean).join(" · ")}
                 onChange={(_, item) => open(item ?? undefined, calendarDate)}
-                renderInput={(params) => <TextField {...params} label="Carico da pianificare" helperText="Seleziona un carico esistente oppure compila una nuova pianificazione." />}
+                renderInput={(params) => <TextField {...params} size="small" label="Carico da pianificare" />}
                 noOptionsText="Nessun carico da pianificare"
               />}
               <TextField
+                size="small"
                 required
                 label="Commessa"
                 disabled={editing !== "new" && Boolean(editing?.loadId)}
@@ -735,23 +579,36 @@ export default function Shipments({
                 onChange={(e) => setForm({ ...form, commessa: e.target.value })}
               />
               <TextField
+                size="small"
                 required
                 label="Cliente"
                 disabled={editing !== "new" && Boolean(editing?.loadId)}
                 value={form.cliente}
                 onChange={(e) => setForm({ ...form, cliente: e.target.value })}
               />
+              {editing!==null && <ShipmentCustomerPicker value={form.customerId} onChange={customerId=>setForm({...form,customerId})}/>}
               <TextField
+                size="small"
                 label="Riferimento ordine"
                 value={form.orderReference ?? ""}
                 onChange={(event) => setForm({ ...form, orderReference: event.target.value })}
-                helperText="Facoltativo. Salvato solo nella pianificazione."
               />
               <TextField
+                size="small"
                 label="Carico / Camion"
                 disabled={editing !== "new" && Boolean(editing?.loadId)}
                 value={form.camion ?? ""}
                 onChange={(e) => setForm({ ...form, camion: e.target.value })}
+              />
+              <TextField
+                size="small"
+                label="Indirizzo di consegna"
+                sx={{gridColumn:"1 / -1"}}
+                multiline
+                minRows={2}
+                maxRows={3}
+                value={form.deliveryAddress ?? ""}
+                onChange={(event) => setForm({ ...form, deliveryAddress: event.target.value })}
               />
               <DatePicker
                 label="Partenza prevista"
@@ -770,10 +627,11 @@ export default function Shipments({
                   })
                 }
                 slotProps={{
-                  textField: { fullWidth: true, helperText: "Facoltativa" },
+                  textField: { fullWidth: true, size:"small" },
                 }}
               />
               <TextField
+                size="small"
                 select
                 required
                 label="Modalità di trasporto"
@@ -784,6 +642,7 @@ export default function Shipments({
                     ...form,
                     transportType: value,
                     transportDetailId: null,
+                    vehicleTypeId: null,
                     plannedCarrierId: null,
                     trailerId: null,
                     carrierId: null,
@@ -797,22 +656,37 @@ export default function Shipments({
                 <MenuItem value="RITIRA_CLIENTE">Ritira Cliente</MenuItem>
                 <MenuItem value="TERZI_PER_ESSEPI">Terzi per Essepi</MenuItem>
               </TextField>
-              {form.transportType&&<TextField select label={detailLabel} value={form.transportDetailId??""} onChange={e=>setForm({...form,transportDetailId:e.target.value||null,plannedCarrierId:null})} helperText="Facoltativo">
+              {form.transportType && form.transportType!=="TERZI_PER_ESSEPI" &&<TextField size="small" select label={detailLabel} value={form.transportDetailId??""} sx={{gridColumn:"1 / -1"}} onChange={e=>setForm({...form,transportDetailId:e.target.value||null,plannedCarrierId:null})}>
                 <MenuItem value="">Non specificato</MenuItem>
                 {detailOptions.filter(item=>item.attivo||item.id===form.transportDetailId).map(item=><MenuItem key={item.id} value={item.id} disabled={!item.attivo}>{item.nome}{!item.attivo?" (non attivo)":""}</MenuItem>)}
                 {form.transportDetailId&&!detailOptions.some(item=>item.id===form.transportDetailId)&&<MenuItem value={form.transportDetailId} disabled>{editing&&editing!=="new"?editing.transportDetailLabel??"Voce storica":"Voce storica"} (non disponibile)</MenuItem>}
               </TextField>}
+              {form.transportType==="TERZI_PER_ESSEPI" && <>
+                <TextField size="small" select label="Trasportatore" value={form.plannedCarrierId??""} onChange={e=>setForm({...form,plannedCarrierId:e.target.value||null})}>
+                  <MenuItem value="">Non specificato</MenuItem>
+                  {carriers.filter(item=>item.attivo||item.id===form.plannedCarrierId).map(item=><MenuItem key={item.id} value={item.id} disabled={!item.attivo}>{item.nome}{!item.attivo?" (non attivo)":""}</MenuItem>)}
+                </TextField>
+                <TextField size="small" select label="Tipo mezzo" value={form.vehicleTypeId??""} onChange={e=>setForm({...form,vehicleTypeId:e.target.value||null})}>
+                  <MenuItem value="">Non specificato</MenuItem>
+                  {clientVehicleTypes.filter(item=>item.attivo||item.id===form.vehicleTypeId).map(item=><MenuItem key={item.id} value={item.id} disabled={!item.attivo}>{item.nome}{!item.attivo?" (non attivo)":""}</MenuItem>)}
+                </TextField>
+                {form.transportDetailId && editing && editing!=="new" && <Alert severity="info" sx={{gridColumn:"1 / -1",py:0}}>Valore storico conservato: {editing.transportDetailLabel ?? "Voce non disponibile"}{!form.plannedCarrierId ? ". Trasportatore da verificare." : ""}</Alert>}
+              </>}
               <TextField
+                size="small"
                 multiline
                 minRows={2}
+                sx={{gridColumn:"1 / -1"}}
+                maxRows={3}
                 label="Note"
                 value={form.notes ?? ""}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
               />
             </Box>
+          {editing!=="new"&&editing?.persisted&&<Box sx={{mt:1.5,pt:1,borderTop:1,borderColor:"divider"}}><Button color="error" variant="outlined" startIcon={<DeleteOutlinedIcon/>} onClick={()=>setDeleteItem(editing)}>Elimina spedizione</Button></Box>}
+          {editing && editing!=="new" && <Stack direction="row" sx={{mt:1,gap:1,flexWrap:"wrap",alignItems:"center"}}>{planningActions(editing)}{planningDirty&&<Typography variant="caption" color="text.secondary">Salva le modifiche prima di confermare la partenza o collegare il carico.</Typography>}</Stack>}
           </DialogContent>
-          {editing!=="new"&&editing?.persisted&&<Box sx={{mx:3,pt:2,borderTop:1,borderColor:"divider"}}><Button color="error" variant="outlined" startIcon={<DeleteOutlinedIcon/>} onClick={()=>setDeleteItem(editing)}>Elimina spedizione</Button></Box>}
-          <DialogActions>
+          <DialogActions sx={{px:{xs:2,sm:3},py:1.25,flexShrink:0,borderTop:1,borderColor:"divider"}}>
             <Button onClick={() => setEditing(null)}>Annulla</Button>
             <Button
               variant="contained"
@@ -877,7 +751,7 @@ export default function Shipments({
           </DialogActions>
         </Dialog>
         <Snackbar
-          open={notice !== null}
+          open={notice !== null && !(editing !== null && notice.severity === "error")}
           autoHideDuration={3500}
           onClose={() => setNotice(null)}
         >

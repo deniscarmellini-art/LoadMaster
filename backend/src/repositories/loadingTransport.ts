@@ -25,7 +25,7 @@ export function resolveLoadingTransport(db:DatabaseSync,loadId:string,input:Load
   let label:string|null=null;
   if(detail){
     const table=mode==="BILICO_ESSEPI"?"Carriers":mode==="RITIRA_CLIENTE"?"ClientVehicleTypes":"ThirdPartyTransportModes";
-    const row=db.prepare(`SELECT name,active FROM ${table} WHERE id=?`).get(detail) as {name:string;active:number}|undefined;
+    const row=(db.prepare(`SELECT name,active FROM ${table} WHERE id=?`).get(detail) ?? (mode==="TERZI_PER_ESSEPI"?db.prepare("SELECT name,active FROM ClientVehicleTypes WHERE id=?").get(detail):undefined)) as {name:string;active:number}|undefined;
     const saved=previous?.transportMode===mode&&(mode==="BILICO_ESSEPI"?previous.carrierId:previous?.transportDetailId)===detail;
     if(!row||(!row.active&&!saved))throw new ApiError(400,"INVALID_TRANSPORT_DETAIL","Voce non attiva o incompatibile con la modalità di trasporto");
     label=saved?(previous?.transportDetailLabel??row.name):row.name;

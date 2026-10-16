@@ -29,7 +29,7 @@ export class ShipmentService {
         throw new ApiError(400,"VALIDATION_ERROR","Data prevista non valida");
     } else this.validate(input);
     try {
-      if (!("expectedUpdatedAt" in input)) this.repo.validateTransportDetail(input, this.repo.find(id, false)?.transportDetailId);
+      if (!("expectedUpdatedAt" in input)) this.repo.validateTransportDetail(input, this.repo.find(id, false));
       const value = this.repo.update(id, input);
       if (!value)
         throw new ApiError(404, "RESOURCE_NOT_FOUND", "Spedizione non trovata");
@@ -87,7 +87,7 @@ export class ShipmentService {
       this.loading.ship(
         session.id,
         { ...(carrierId ? { carrierId } : {}), ...(input.operatorId ? { operatorId: input.operatorId } : {}),
-          ...(!session.transportMode && mode ? { transportMode: mode, transportDetailId: mode === "BILICO_ESSEPI" ? null : plan.transportDetailId } : {}) },
+          ...(!session.transportMode && mode ? { transportMode: mode, transportDetailId: mode === "BILICO_ESSEPI" ? null : plan.vehicleTypeId ?? plan.transportDetailId } : {}) },
       );
       // The loading transaction records the real departure on the linked plan.
       // Do not overwrite it in a second, independently committed operation.
@@ -124,10 +124,11 @@ export class ShipmentService {
         "VALIDATION_ERROR",
         "Tipo trasporto obbligatorio",
       );
-    if(input.transportDetailId&&input.plannedCarrierId&&input.transportDetailId!==input.plannedCarrierId)
+    if(input.transportType==="BILICO_ESSEPI"&&input.transportDetailId&&input.plannedCarrierId&&input.transportDetailId!==input.plannedCarrierId)
       throw new ApiError(400,"VALIDATION_ERROR","Dettaglio trasporto incoerente");
-    if (input.plannedCarrierId && (typeof input.plannedCarrierId !== "string" || input.transportType !== "BILICO_ESSEPI"))
-      throw new ApiError(400, "VALIDATION_ERROR", "Trasportatore Essepi consentito solo per Bilico Essepi");
+    if (input.plannedCarrierId && (typeof input.plannedCarrierId !== "string" || !["BILICO_ESSEPI","TERZI_PER_ESSEPI"].includes(input.transportType??"")))
+      throw new ApiError(400, "VALIDATION_ERROR", "Trasportatore consentito solo per Bilico Essepi o Terzi per Essepi");
+    if(input.vehicleTypeId && input.transportType!=="TERZI_PER_ESSEPI") throw new ApiError(400,"VALIDATION_ERROR","Tipo mezzo indipendente consentito per Terzi per Essepi");
     if (input.trailerId || input.carrierId)
       throw new ApiError(
         400,
@@ -137,6 +138,7 @@ export class ShipmentService {
   }
   private conflict(error: unknown): never {
     if (error instanceof ApiError) throw error;
+    if(error instanceof Error&&error.message==="INVALID_CUSTOMER")throw new ApiError(400,"VALIDATION_ERROR","Cliente anagrafico non disponibile");
     if (error instanceof Error && error.message === "SHIPMENT_STALE") throw new ApiError(409,"SHIPMENT_STALE","Pianificazione modificata da un altro utente. Aggiornare e riprovare.");
     if (error instanceof Error && error.message === "INVALID_TRANSPORT_DETAIL") throw new ApiError(400,"VALIDATION_ERROR","Dettaglio della modalità di trasporto non disponibile o incoerente");
     if (error instanceof Error && error.message === "SHIPMENT_CONSOLIDATED") throw new ApiError(409,"SHIPMENT_CONSOLIDATED","Spedizione già partita o consolidata");

@@ -239,7 +239,7 @@ export default function App() {
     } catch (error: unknown) {
       setSettings(previous);
       const message =
-        error instanceof ApiClientError && ["OPERATOR_IN_USE","OPERATOR_CODE_IMMUTABLE","OPERATOR_ARCHIVED"].includes(error.code)
+        error instanceof ApiClientError && ["OPERATOR_IN_USE","OPERATOR_CODE_IMMUTABLE","OPERATOR_ARCHIVED","DUPLICATE_VEHICLE_TYPE"].includes(error.code)
           ? error.message
           : error instanceof ApiClientError && error.code === "RESOURCE_IN_USE"
           ? "Il record è già utilizzato e non può essere eliminato."
@@ -611,6 +611,7 @@ export default function App() {
           />
         ) : page === "shipments" ? (
           <Shipments
+            loads={truckLoads}
             items={shipmentsWithOperationalStatus}
             trailers={settings.rimorchi}
             carriers={settings.trasportatori}

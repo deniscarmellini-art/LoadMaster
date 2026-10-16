@@ -13,6 +13,7 @@ export const shipmentHasDeparted = (item: ShipmentItem) => Boolean(item.actualDe
 
 interface Props {
   items: ShipmentItem[];
+  transportDetails?: ReadonlyMap<string, string>;
   onSelectShipment: (item: ShipmentItem) => void;
   onSelectDate: (date: string) => void;
   onReschedule?: (item: ShipmentItem, date: string) => Promise<void>;
@@ -20,7 +21,7 @@ interface Props {
 
 const weekdays = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
 
-export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate, onReschedule }: Props) {
+export default function ShipmentCalendar({ items, transportDetails, onSelectShipment, onSelectDate, onReschedule }: Props) {
   const [month, setMonth] = useState(() => dayjs().startOf("month"));
   const [dragId, setDragId] = useState<string | null>(null);
   const dragging = useRef<string | null>(null);
@@ -86,7 +87,9 @@ export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate
             <Stack sx={{ gap: 0.75 }}>
               {(events.get(date) ?? []).map((item) => {
                 const presentation = item.transportType ? shipmentTransportPresentation[item.transportType] : { label: "Trasporto da definire", color: "#b0bec5" };
-                const transportText=[presentation.label,item.transportDetailLabel].filter(Boolean).join(" · ");
+                const detail = item.transportType === "RITIRA_CLIENTE" ? null
+                  : transportDetails?.has(item.id) ? transportDetails.get(item.id) : item.transportDetailLabel?.trim();
+                const transportText=[presentation.label,detail && detail !== "—" ? detail : null].filter(Boolean).join(" · ");
                 const heading=[item.commessa,item.camion,item.cliente].filter(Boolean).join(" · ");
                 const reference=item.orderReference?.trim();
                 const note=item.notes?.trim();
@@ -100,7 +103,7 @@ export default function ShipmentCalendar({ items, onSelectShipment, onSelectDate
                   sx={{ display: "block", cursor:departed?"default":dragId===item.id?"grabbing":canDrag(item)?"grab":"pointer",opacity:dragId===item.id?.65:1,width: "100%", textAlign: "left", p: 0.75, borderRadius: 1, borderLeft: `3px solid ${presentation.color}`, bgcolor: alpha(presentation.color, 0.13), "&:hover": { bgcolor: alpha(presentation.color, departed ? 0.13 : 0.24) }, "&.Mui-focusVisible": { outline: `2px solid ${presentation.color}` }, minWidth:0 }}>
                   <Box sx={{display:"flex",alignItems:"center",gap:.5}}><Typography variant="body2" sx={{fontWeight:800,flex:1,minWidth:0,...compactText}}>{heading}</Typography>{departed&&<Box component="span" sx={{flexShrink:0,fontSize:"0.65rem",fontWeight:800,lineHeight:1.5,px:.5,border:1,borderColor:"success.main",bgcolor:theme=>alpha(theme.palette.success.main,.18),borderRadius:.5,color:"success.light"}}>✓ SPEDITA</Box>}</Box>
                   {reference&&<Typography variant="caption" component="div" sx={compactText}>Rif. {reference}</Typography>}
-                  <Typography variant="caption" component="div" sx={{color:"text.secondary",...compactText}}>{transportText}</Typography>
+                  <Typography variant="caption" component="div" data-calendar-transport-details sx={{color:"text.secondary",whiteSpace:"normal",overflowWrap:"anywhere"}}>{transportText}</Typography>
                   {note&&<Typography variant="caption" component="div" sx={compactText}>Nota: <Box component="span" sx={{fontStyle:"italic"}}>{note}</Box></Typography>}
                 </ButtonBase>;
               })}
