@@ -4,6 +4,11 @@ export interface PanelQrData {
 }
 export interface PackageQrData { codicePacco:string;commessa:string;cliente:string;camion:string;numeroPannelli:number;peso:number;volume:number; }
 
+export function panelQrText(panel: PanelQrData) {
+  return `C=${panel.commessa}|CL=${panel.cliente}|N=${panel.numeroPannello}|CA=${panel.camion}|S=${panel.spessore}|L=${panel.lunghezza}|H=${panel.altezza}|P=${panel.peso}`;
+}
+export const packageQrText = (code:string, order:string, client:string, truck:string, pieces:number, kg:number, mc:number) => `PK=${code}|C=${order}|CL=${client}|CA=${truck}|PZ=${pieces}|KG=${kg.toFixed(1)}|MC=${mc.toFixed(3)}`;
+
 const requiredKeys = ["C", "CL", "N", "CA", "S", "L", "H", "P"] as const;
 
 export function parsePanelQr(value: string): PanelQrData | null {

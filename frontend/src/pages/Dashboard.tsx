@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import DashboardDepartureIdentity from "../components/dashboard/DashboardDepartureIdentity";
+import DdtPreviewButton from "../components/shipments/DdtPreviewButton";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { definitiveDdtStatus, type DdtStatus } from "../services/definitiveDdtApi";
 import { demoBranding } from "../services/demoBranding";
 import {
   Alert,
@@ -32,8 +35,7 @@ import type { TransportItem } from "../services/transportsApi";
 import { operatorLabel } from "../models/Settings";
 import PackagePrintPreview from "../components/scanning/PackagePrintPreview";
 import { ApiClientError } from "../services/apiClient";
-import { confirmDeparture, departureTransport, departureTrailerId } from "../services/departureConfirmation";
-import { shipmentTransportLabel } from "../services/shipmentTransportPresentation";
+import { confirmDeparture, departureTransport, departureTrailerId, dashboardLoadForRow } from "../services/departureConfirmation";
 
 interface DashboardProps {
   commesse: Commessa[];
@@ -93,7 +95,8 @@ function Dashboard({
   const [reopenReason, setReopenReason] = useState("");
   const [departureRow, setDepartureRow] = useState<Camion | null>(null);
   const [departureCarrierId, setDepartureCarrierId] = useState("");
-  const [departureAt, setDepartureAt] = useState("");
+  const [ddtSessionId,setDdtSessionId]=useState<string|null>(null);
+  const departurePending=useRef(false);
   const [departureOperatorId, setDepartureOperatorId] = useState("");
   const [departureError, setDepartureError] = useState<string | null>(null);
   const [isDeparting, setIsDeparting] = useState(false);
@@ -134,18 +137,21 @@ function Dashboard({
   const selectedPackages = printablePackages.filter((pack) =>
     selectedPackageCodes.has(pack.codice),
   );
-  const departureLoad = departureRow
-    ? truckLoads.find(
-        (load) =>
-          load.commessa === departureRow.commessa &&
-          load.camion === departureRow.camion &&
-          load.stato === "ATTESA_SPEDIZIONE",
-      )
-    : undefined;
+  const departureLoad=departureRow?dashboardLoadForRow(departureRow,truckLoads):undefined;
+  const [departureDdt,setDepartureDdt]=useState<{sessionId:string;value:DdtStatus}|null>(null);
+  const [departureDdtError,setDepartureDdtError]=useState("");
+  useEffect(()=>{
+    let current=true;setDepartureDdt(null);setDepartureDdtError("");
+    if(import.meta.env.VITE_SISLOG_TEST!==true||!departureLoad)return;
+    const sessionId=departureLoad.loadId;
+    void definitiveDdtStatus(sessionId).then(value=>{if(current)setDepartureDdt({sessionId,value});}).catch(error=>{if(current)setDepartureDdtError(error instanceof Error?error.message:"Verifica DDT non disponibile");});
+    return()=>{current=false;};
+  },[departureLoad?.loadId,departureRow?.id]);
+  const departureDdtValid=import.meta.env.VITE_SISLOG_TEST!==true||!!(departureDdt?.sessionId===departureLoad?.loadId&&departureDdt?.value.document?.status==="EMESSO"&&!departureDdt.value.departed);
   const departureTrailer = trailers.find(
     (trailer) => trailer.id === departureTrailerId(departureLoad, transports),
   );
-  const departurePlan = shipments.find(plan => plan.loadId === departureLoad?.backendLoadId);
+  const departurePlan = departureLoad?shipments.find(plan => plan.persisted&&plan.loadId === departureLoad.backendLoadId):undefined;
   const transport = departureTransport(departureLoad, departurePlan);
   const activeCarriers = carriers.filter(carrier => carrier.attivo || carrier.id === departureLoad?.trasportatoreId);
   const activeOperators = operators.filter(operator => operator.attivo);
@@ -213,15 +219,17 @@ function Dashboard({
               setReopenOperatorId("");
               setReopenReason("");
             }}
+            sessionIdFor={row=>dashboardLoadForRow(row,truckLoads)?.loadId}
+            onViewLoad={row=>{const load=dashboardLoadForRow(row,truckLoads);if(load)onContinueLoad(load.loadId);}}
+            onViewDdt={row=>{const load=dashboardLoadForRow(row,truckLoads);if(load)setDdtSessionId(load.loadId);}}
             onConfirmDeparture={(row) => {
               setDepartureRow(row);
-              const plan = shipments.find(item=>item.loadId===row.id);
-              const load = truckLoads.find(item => item.commessa === row.commessa && item.camion === row.camion);
+              const plan = shipments.find(item=>item.persisted&&item.loadId===row.id);
+              const load = dashboardLoadForRow(row,truckLoads);
               const selected = departureTransport(load, plan).carrierId;
               setDepartureCarrierId(carriers.some(c=>c.id===selected&&(c.attivo||c.id===load?.trasportatoreId)) ? selected : "");
               setDepartureOperatorId(activeOperators.some(op => op.id === load?.operatoreId) ? load!.operatoreId : "");
               setDepartureError(null);
-              setDepartureAt(new Date().toISOString());
             }}
             onOpenHistory={onOpenHistory}
             onUpdate={onImportClick}
@@ -331,27 +339,7 @@ function Dashboard({
               pt: 1,
             }}
           >
-            <TextField
-              label="Commessa"
-              value={departureRow?.commessa ?? ""}
-              slotProps={{ input: { readOnly: true } }}
-            />
-            <TextField
-              label="Cliente"
-              value={departureRow?.cliente ?? ""}
-              slotProps={{ input: { readOnly: true } }}
-            />
-            <TextField
-              label="Camion"
-              value={departureRow?.camion ?? ""}
-              slotProps={{ input: { readOnly: true } }}
-            />
-            <TextField
-              label="Modalità di trasporto"
-              value={transport.mode ? shipmentTransportLabel(transport.mode) : "—"}
-              slotProps={{ input: { readOnly: true } }}
-              sx={{ gridColumn: "1 / -1" }}
-            />
+            <DashboardDepartureIdentity row={departureRow} mode={transport.mode}/>
             {transport.mode === "BILICO_ESSEPI" && <TextField
               label={demoBranding.rimorchio}
               value={
@@ -364,10 +352,10 @@ function Dashboard({
             {transport.requiresCarrier ? <TextField
               select
               required
-              label="Trasportatore"
+              label={transport.mode==="TERZI_PER_ESSEPI"?"Vettore effettivo confermato":"Trasportatore"}
               value={departureCarrierId}
               onChange={(event) => setDepartureCarrierId(event.target.value)}
-              disabled={isDeparting}
+              disabled={isDeparting||import.meta.env.VITE_SISLOG_TEST===true}
               sx={{ gridColumn: "1 / -1" }}
             >
               <MenuItem value="" disabled>
@@ -388,14 +376,7 @@ function Dashboard({
               disabled={isDeparting} onChange={event => setDepartureOperatorId(event.target.value)} sx={{ gridColumn: "1 / -1" }}>
               {activeOperators.map(operator => <MenuItem key={operator.id} value={operator.id}>{operatorLabel(operator)}</MenuItem>)}
             </TextField>
-            <TextField
-              label="Data e ora partenza"
-              value={
-                departureAt ? new Date(departureAt).toLocaleString("it-IT") : ""
-              }
-              slotProps={{ input: { readOnly: true } }}
-              sx={{ gridColumn: "1 / -1" }}
-            />
+            <Typography variant="body2" sx={{gridColumn:"1 / -1"}}>Data e ora effettive vengono registrate dal server alla conferma della partenza.</Typography>
           </Box>
           {transport.requiresCarrier && !activeCarriers.length && (
             <Alert severity="warning" sx={{ mt: 2 }}>
@@ -404,15 +385,19 @@ function Dashboard({
             </Alert>
           )}
           {departureError && <Alert severity="error" sx={{ mt: 2 }}>{departureError}</Alert>}
+          {!departureDdtValid&&<Alert severity="warning" sx={{mt:2}}>{departureDdtError||(!departureDdt?"Verifica DDT definitivo in corso…":"Partenza bloccata: emettere un DDT definitivo valido in Carico camion. Un DDT annullato non consente la partenza.")}</Alert>}
+          {departureDdtValid&&departureDdt?.value.document&&<Alert severity="success" sx={{mt:2}}>DDT valido: {departureDdt.value.document.fullNumber}. Data di emissione e PDF originale resteranno invariati.</Alert>}
           {!transport.mode && <Alert severity="warning" sx={{ mt: 2 }}>Salvare la modalità effettiva in Carico camion prima di confermare la partenza.</Alert>}
         </DialogContent>
         <DialogActions>
+          {!departureDdtValid&&departureLoad&&<Button disabled={isDeparting} onClick={()=>{setDepartureRow(null);onContinueLoad(departureLoad.loadId);}}>Apri carico / DDT</Button>}
           <Button disabled={isDeparting} onClick={() => setDepartureRow(null)}>Annulla</Button>
           <Button
-            disabled={isDeparting || !departureOperatorId || !transport.mode || (transport.requiresCarrier && !departureCarrierId)}
+            disabled={!departureDdtValid || isDeparting || departureLoad?.stato!=="ATTESA_SPEDIZIONE" || !departureOperatorId || !transport.mode || (transport.requiresCarrier && !departureCarrierId)}
             variant="contained"
             onClick={async () => {
-              if (!departureRow || isDeparting) return;
+              if (!departureDdtValid || !departureRow || isDeparting || departurePending.current || departureLoad?.stato!=="ATTESA_SPEDIZIONE") return;
+              departurePending.current=true;
               setIsDeparting(true);
               setDepartureError(null);
               await confirmDeparture(
@@ -420,13 +405,14 @@ function Dashboard({
                 () => setDepartureRow(null),
                 setDepartureError,
               );
-              setIsDeparting(false);
+              setIsDeparting(false);departurePending.current=false;
             }}
           >
             Conferma partenza
           </Button>
         </DialogActions>
       </Dialog>
+      {ddtSessionId&&<DdtPreviewButton key={ddtSessionId} sessionId={ddtSessionId} disabled={false} preferArchived autoOpen showButton={false} onClosed={()=>setDdtSessionId(null)}/>}
       <Dialog
         fullScreen
         open={packagePrintRow !== null}

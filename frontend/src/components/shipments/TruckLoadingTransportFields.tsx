@@ -10,6 +10,9 @@ interface Props {
   detailId:string;
   detailLabel?:string|null;
   options:Array<{id:string;nome:string;attivo:boolean}>;
+  carrierId?:string;
+  carriers?:Array<{id:string;nome:string;attivo:boolean}>;
+  onCarrierChange?:(id:string)=>void;
   assigned?:TransportItem;
   transports:TransportItem[];
   saving:boolean;
@@ -21,7 +24,7 @@ interface Props {
 
 export const availableLoadingTrailers=(items:readonly TransportItem[])=>items.filter(item=>item.active&&item.status==="DISPONIBILE"&&!item.assignmentId);
 
-export default function TruckLoadingTransportFields({load,mode,detailId,detailLabel,options,assigned,transports,saving,onRefresh,onBusyChange,onModeChange,onDetailChange}:Props){
+export default function TruckLoadingTransportFields({load,mode,detailId,detailLabel,options,carrierId="",carriers=[],onCarrierChange,assigned,transports,saving,onRefresh,onBusyChange,onModeChange,onDetailChange}:Props){
   const [selected,setSelected]=useState("");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState<string|null>(null);
@@ -65,6 +68,7 @@ export default function TruckLoadingTransportFields({load,mode,detailId,detailLa
   </Stack>;
   return <>
     <LoadingTransportFields mode={mode} detailId={detailId} detailLabel={detailLabel} options={options} disabled={busy||saving} trailerControl={trailerControl} onModeChange={changeMode} onDetailChange={onDetailChange}/>
+    {mode==="TERZI_PER_ESSEPI"&&<TextField select label="Vettore effettivo confermato" value={carrierId} disabled={busy||saving} onChange={event=>onCarrierChange?.(event.target.value)} helperText="Selezione esplicita richiesta per DDT e partenza. Non viene recuperata dal Calendario."><MenuItem value="">Seleziona vettore effettivo</MenuItem>{carriers.filter(item=>item.attivo||item.id===carrierId).map(item=><MenuItem key={item.id} value={item.id}>{item.nome}</MenuItem>)}</TextField>}
     {error&&<Alert severity="error" onClose={()=>setError(null)}>{error}</Alert>}
     <Dialog open={release!==null} onClose={()=>{if(!busy)setRelease(null);}}>
       <DialogTitle>Disimpegna rimorchio</DialogTitle>

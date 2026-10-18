@@ -1,3 +1,4 @@
+import { dashboardLoadForRow } from "./services/departureConfirmation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -104,6 +105,7 @@ export default function App() {
   const [transports, setTransports] = useState<TransportItem[]>([]);
   const [shipments, setShipments] = useState<ShipmentItem[]>([]);
   const [resumeLoad, setResumeLoad] = useState<CaricoCamion | null>(null);
+  const [loadingReadOnly,setLoadingReadOnly]=useState(false);
   const [loadingInstance, setLoadingInstance] = useState(0);
   const [historyLoadId, setHistoryLoadId] = useState<string | undefined>();
   const [isImporting,setIsImporting]=useState(false);
@@ -253,6 +255,7 @@ export default function App() {
     (loadId: string) => {
       const existing = truckLoads.find((load) => load.loadId === loadId);
       if (!existing) return;
+      setLoadingReadOnly(existing.stato === "ATTESA_SPEDIZIONE");
       setResumeLoad(existing);
       setLoadingInstance((value) => value + 1);
       setPage("loading");
@@ -482,6 +485,7 @@ export default function App() {
                     const value = {
                       ...existing,
                       stato: session.stato,
+                      chiusuraConfermataIl: session.closureConfirmedAt ?? undefined,
                       eventi: [
                         ...existing.eventi,
                         {
@@ -493,6 +497,7 @@ export default function App() {
                         },
                       ],
                     };
+                    setLoadingReadOnly(false);
                     setResumeLoad(value);
                     setPage("loading");
                   },
@@ -513,18 +518,14 @@ export default function App() {
                 scansioni: [],
                 eventi: [],
               };
+              setLoadingReadOnly(false);
               setResumeLoad(load);
               setLoadingInstance((value) => value + 1);
               setPage("loading");
             }}
             onConfirmDeparture={async (row, carrierId, operatorId) => {
-              const load = truckLoads.find(
-                (item) =>
-                  item.commessa === row.commessa &&
-                  item.camion === row.camion &&
-                  item.stato === "ATTESA_SPEDIZIONE",
-              );
-              if (!load) throw new Error("Carico non più pronto alla partenza. Aggiornare e riprovare.");
+              const load=dashboardLoadForRow(row,truckLoads);
+              if (!load || load.stato!=="ATTESA_SPEDIZIONE") throw new Error("Carico non più pronto alla partenza. Aggiornare e riprovare.");
               const shipment = shipments.find(
                 (item) =>
                   item.persisted &&
@@ -544,6 +545,7 @@ export default function App() {
           />
         ) : page === "scanning-list" ? (
           <ActiveLoads
+            commesse={commesse}
             activeSessions={activeScanningSessions}
             onOpen={openScanning}
             packages={packages}
@@ -636,6 +638,7 @@ export default function App() {
               await refreshScanningData();
             }}
             key={`${resumeLoad?.loadId ?? "loading-list"}:${loadingInstance}`}
+            readOnly={loadingReadOnly}
             initialLoad={resumeLoad}
             shipments={shipmentsWithOperationalStatus}
             clientVehicleTypes={settings.tipiMezzoCliente}
@@ -704,7 +707,7 @@ export default function App() {
                             ? {
                                 ...panel,
                                 caricato: true,
-                                spedito: destination === "carrier",
+                                spedito: load.stato === "SPEDITO",
                               }
                             : panel,
                         ),
@@ -722,7 +725,7 @@ export default function App() {
                     ? {
                         ...pack,
                         stato:
-                          destination === "carrier" ? "SPEDITO" : "CARICATO",
+                          load.stato === "SPEDITO" ? "SPEDITO" : "CARICATO",
                       }
                     : pack,
                 ),

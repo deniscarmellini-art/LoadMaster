@@ -1,12 +1,13 @@
 import { apiRequest } from "./apiClient";
+import { normalizeShipmentPlanningInput } from "./shipmentPlanningInput";
 import type { OperationalLoadStatus } from "./dashboardService";
 export type ShipmentStatus="DA_PIANIFICARE"|"PIANIFICATA"|"PRONTA"|"IN_VIAGGIO"|"CONCLUSA";
 export type ShipmentTransportType="BILICO_ESSEPI"|"RITIRA_CLIENTE"|"TERZI_PER_ESSEPI";
 export interface ShipmentItem{id:string;persisted:boolean;loadId:string|null;commessa:string;cliente:string;orderReference:string|null;customerId?:string|null;deliveryAddress?:string|null;camion:string|null;plannedLoadingDate:string|null;plannedDepartureDate:string|null;originalPlannedDepartureDate:string|null;plannedDepartureDateChangedAt:string|null;actualDepartureDate:string|null;transportType:ShipmentTransportType|null;vehicleTypeId?:string|null;transportDetailId:string|null;transportDetailLabel:string|null;trailerId:string|null;carrierId:string|null;plannedCarrierId:string|null;notes:string|null;shipmentStatus:ShipmentStatus;operationalStatus:OperationalLoadStatus|null;createdAt:string|null;updatedAt:string|null;}
 export interface ShipmentInput{orderReference?:string|null;customerId?:string|null;deliveryAddress?:string|null;loadId?:string|null;commessa:string;cliente:string;camion?:string|null;plannedLoadingDate?:string|null;plannedDepartureDate?:string|null;transportType?:ShipmentTransportType|null;vehicleTypeId?:string|null;transportDetailId?:string|null;trailerId?:string|null;carrierId?:string|null;plannedCarrierId?:string|null;notes?:string|null;}
 export const listShipments=():Promise<ShipmentItem[]>=>apiRequest("/shipments");
-export const createShipment=(input:ShipmentInput):Promise<ShipmentItem>=>apiRequest("/shipments",{method:"POST",body:JSON.stringify(input)});
-export const updateShipment=(id:string,input:ShipmentInput|{plannedDepartureDate:string;expectedUpdatedAt:string}):Promise<ShipmentItem>=>apiRequest(`/shipments/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify(input)});
+export const createShipment=(input:ShipmentInput):Promise<ShipmentItem>=>apiRequest("/shipments",{method:"POST",body:JSON.stringify(normalizeShipmentPlanningInput(input))});
+export const updateShipment=(id:string,input:ShipmentInput|{plannedDepartureDate:string;expectedUpdatedAt:string}):Promise<ShipmentItem>=>apiRequest(`/shipments/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify("expectedUpdatedAt" in input?input:normalizeShipmentPlanningInput(input))});
 export const linkShipment=(id:string,loadId:string):Promise<ShipmentItem>=>apiRequest(`/shipments/${encodeURIComponent(id)}/link`,{method:"PATCH",body:JSON.stringify({loadId})});
 export const departShipment=(id:string,carrierId?:string,operatorId?:string):Promise<ShipmentItem>=>apiRequest(`/shipments/${encodeURIComponent(id)}/depart`,{method:"POST",body:JSON.stringify({carrierId,operatorId})});
 export const deleteShipment=(id:string):Promise<{success:boolean}>=>apiRequest(`/shipments/${encodeURIComponent(id)}`,{method:"DELETE"});

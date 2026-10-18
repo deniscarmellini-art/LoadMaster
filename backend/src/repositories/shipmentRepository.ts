@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { recognizeCustomer } from "./customerRecognition.js";
 import { reconcileAllOperationalLoadStatuses } from "./operationalLoadStatus.js";
 
 export type ShipmentStatus =
@@ -60,7 +61,14 @@ const norm = (v: string) =>
     .toLocaleUpperCase("it-IT")
     .replace(/[\s-]+/g, "");
 export class ShipmentRepository {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: DatabaseSync, private readonly autoRecognizeCustomer = false) {}
+  private customerFor(input: Pick<ShipmentInput,"loadId"|"cliente"|"customerId">, previousId: string | null = null): string | null {
+    if (!this.autoRecognizeCustomer) return input.customerId === undefined ? previousId : input.customerId || null;
+    if (input.customerId) return input.customerId; // Explicit manual selection takes priority over recognition.
+    if (previousId) return previousId; // Never erase or replace an existing association automatically.
+    const load = input.loadId ? this.db.prepare("SELECT cliente FROM Loads WHERE id=?").get(input.loadId) : undefined;
+    return recognizeCustomer(this.db, load ? String(load.cliente) : input.cliente).customerId;
+  }
   list(reconcile = true): ShipmentRecord[] {
     if (reconcile) reconcileAllOperationalLoadStatuses(this.db);
     const plans = this.db
@@ -166,6 +174,7 @@ export class ShipmentRepository {
       id = crypto.randomUUID();
     this.transaction(() => {
       this.assertUnique(input);
+      if (this.autoRecognizeCustomer) input = {...input, customerId: this.customerFor(input)};
       this.db
         .prepare(
           "INSERT INTO ShipmentPlans(id,loadId,manualCommessa,manualCliente,manualCarico,plannedLoadingDate,plannedDepartureDate,originalPlannedDepartureDate,plannedDepartureDateChangedAt,transportType,transportMode,transportDetailId,transportDetailLabel,trailerId,carrierId,plannedCarrierId,notes,createdAt,updatedAt,orderReference,deliveryAddress,vehicleTypeId,customerId)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -222,11 +231,13 @@ export class ShipmentRepository {
         ? now
         : old.plannedDepartureDateChangedAt;
     if ("expectedUpdatedAt" in input) {
-      if (nextPlannedDepartureDate === old.plannedDepartureDate) return old;
-      this.db.prepare("UPDATE ShipmentPlans SET plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,updatedAt=? WHERE id=?").run(nextPlannedDepartureDate, originalPlannedDepartureDate, plannedDepartureDateChangedAt, now, id);
-      this.audit(old.loadId, "SHIPMENT_PLAN_UPDATED", {before:old,after:{plannedDepartureDate:nextPlannedDepartureDate}}, now);
+      const customerId = this.customerFor({loadId:old.loadId,cliente:old.cliente}, old.customerId);
+      if (nextPlannedDepartureDate === old.plannedDepartureDate && customerId === old.customerId) return old;
+      this.db.prepare("UPDATE ShipmentPlans SET plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,customerId=?,updatedAt=? WHERE id=?").run(nextPlannedDepartureDate, originalPlannedDepartureDate, plannedDepartureDateChangedAt, customerId, now, id);
+      this.audit(old.loadId, "SHIPMENT_PLAN_UPDATED", {before:old,after:{plannedDepartureDate:nextPlannedDepartureDate,...(this.autoRecognizeCustomer?{customerId}:{})}}, now);
     } else {
       this.assertUnique(input, id);
+      if (this.autoRecognizeCustomer) input = {...input, customerId: this.customerFor(input, old.customerId)};
       this.db
         .prepare(
           "UPDATE ShipmentPlans SET loadId=?,manualCommessa=?,manualCliente=?,manualCarico=?,plannedLoadingDate=?,plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,transportType=?,transportMode=?,transportDetailId=?,transportDetailLabel=?,plannedCarrierId=?,notes=?,updatedAt=?,orderReference=?,deliveryAddress=?,vehicleTypeId=?,customerId=? WHERE id=?",
@@ -259,31 +270,26 @@ export class ShipmentRepository {
     });
   }
   link(id: string, loadId: string): ShipmentRecord | null {
-    const old = this.find(id);
-    if (!old || !old.persisted) return null;
-    const load = this.db
-      .prepare("SELECT commessa,cliente,camion FROM Loads WHERE id=?")
-      .get(loadId) as
-      { commessa: string; cliente: string; camion: string } | undefined;
-    if (!load) throw new Error("LOAD_NOT_FOUND");
-    this.assertUnique(
-      {
-        ...old,
-        loadId,
-        commessa: load.commessa,
-        cliente: load.cliente,
-        camion: load.camion,
-      },
-      id,
-    );
-    this.transaction(() => {
-      this.db
-        .prepare(
-          "UPDATE ShipmentPlans SET loadId=?,manualCommessa=NULL,manualCliente=NULL,manualCarico=NULL,updatedAt=? WHERE id=?",
-        )
-        .run(loadId, new Date().toISOString(), id);
+    return this.transaction(() => {
+      const old = this.find(id, false);
+      if (!old || !old.persisted) return null;
+      // Confirmations are idempotent; an existing relationship is never replaced.
+      if (old.loadId === loadId) return old;
+      if (old.loadId) throw new Error("SHIPMENT_ALREADY_LINKED");
+      this.assertNotDeparted(id, false);
+      const load = this.db.prepare("SELECT commessa,cliente,camion,stato FROM Loads WHERE id=?").get(loadId) as
+        {commessa:string;cliente:string;camion:string;stato:string} | undefined;
+      if (!load) throw new Error("LOAD_NOT_FOUND");
+      const departed = this.db.prepare(`SELECT 1 FROM LoadingSessions WHERE loadId=? AND (stato='SPEDITO' OR shippedAt IS NOT NULL)
+        UNION ALL SELECT 1 FROM OperationalEvents WHERE loadId=? AND type='PARTENZA_CONFERMATA'
+        UNION ALL SELECT 1 FROM TransportAssignments WHERE loadId=? AND (departedAt IS NOT NULL OR availableFrom IS NOT NULL OR stato='IN_VIAGGIO')`).get(loadId,loadId,loadId);
+      if (load.stato === "SPEDITO" || departed) throw new Error("SHIPMENT_CONSOLIDATED");
+      this.assertUnique({...old,loadId,commessa:load.commessa,cliente:load.cliente,camion:load.camion},id);
+      const customerId = this.customerFor({loadId,cliente:load.cliente}, old.customerId);
+      this.db.prepare("UPDATE ShipmentPlans SET loadId=?,manualCommessa=NULL,manualCliente=NULL,manualCarico=NULL,customerId=?,updatedAt=? WHERE id=?")
+        .run(loadId,customerId,new Date().toISOString(),id);
+      return this.find(id, false);
     });
-    return this.find(id);
   }
   depart(id: string, at: string, carrierId?: string): ShipmentRecord | null {
     const current = this.find(id);

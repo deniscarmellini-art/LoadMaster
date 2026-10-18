@@ -24,6 +24,9 @@ export const registerErrorHandlers = (app: FastifyInstance): void => {
       await reply.status(error.statusCode).send(response(error.code, error.message));
       return;
     }
+    if(error.message==="DDT_LOAD_LOCKED"){
+      await reply.status(409).send(response("DDT_LOAD_LOCKED","Carico bloccato da un DDT valido: annullare prima il documento indicando il motivo."));return;
+    }
 
     if (error.validation) {
       await reply.status(400).send(response("VALIDATION_ERROR", "Dati della richiesta non validi"));

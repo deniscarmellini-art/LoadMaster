@@ -7,6 +7,7 @@ import dayjs from "dayjs";
 import "dayjs/locale/it";
 import type { ShipmentItem } from "../../services/shipmentsApi";
 import { shipmentTransportPresentation } from "../../services/shipmentTransportPresentation";
+import { shipmentLoadLinkLabel } from "../../services/shipmentLoadLink";
 import { ApiClientError } from "../../services/apiClient";
 
 export const shipmentHasDeparted = (item: ShipmentItem) => Boolean(item.actualDepartureDate || item.operationalStatus === "SPEDITO" || item.shipmentStatus === "IN_VIAGGIO" || item.shipmentStatus === "CONCLUSA");
@@ -93,7 +94,8 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
                 const heading=[item.commessa,item.camion,item.cliente].filter(Boolean).join(" · ");
                 const reference=item.orderReference?.trim();
                 const note=item.notes?.trim();
-                const fullText=[heading,reference?`Rif. ${reference}`:null,transportText,note?`Nota: ${note}`:null].filter(Boolean).join("\n");
+                const linkLabel=shipmentLoadLinkLabel(item);
+                const fullText=[heading,linkLabel,reference?`Rif. ${reference}`:null,transportText,note?`Nota: ${note}`:null].filter(Boolean).join("\n");
                 const compactText={overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"} as const;
                 const departed=shipmentHasDeparted(item);
                 return <ButtonBase key={item.id} data-shipment-id={item.id} aria-disabled={departed || undefined} tabIndex={departed ? -1 : 0} disableRipple={departed} draggable={canDrag(item)} title={fullText+(departed?"\nSPEDITA":canDrag(item)?"\nTrascina per cambiare la data prevista":"")}
@@ -102,6 +104,7 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
                   onClick={(event) => { event.stopPropagation();if(departed||Date.now()<suppressClickUntil.current)return;onSelectShipment(item); }}
                   sx={{ display: "block", cursor:departed?"default":dragId===item.id?"grabbing":canDrag(item)?"grab":"pointer",opacity:dragId===item.id?.65:1,width: "100%", textAlign: "left", p: 0.75, borderRadius: 1, borderLeft: `3px solid ${presentation.color}`, bgcolor: alpha(presentation.color, 0.13), "&:hover": { bgcolor: alpha(presentation.color, departed ? 0.13 : 0.24) }, "&.Mui-focusVisible": { outline: `2px solid ${presentation.color}` }, minWidth:0 }}>
                   <Box sx={{display:"flex",alignItems:"center",gap:.5}}><Typography variant="body2" sx={{fontWeight:800,flex:1,minWidth:0,...compactText}}>{heading}</Typography>{departed&&<Box component="span" sx={{flexShrink:0,fontSize:"0.65rem",fontWeight:800,lineHeight:1.5,px:.5,border:1,borderColor:"success.main",bgcolor:theme=>alpha(theme.palette.success.main,.18),borderRadius:.5,color:"success.light"}}>✓ SPEDITA</Box>}</Box>
+                  <Typography variant="caption" component="div" data-calendar-load-link sx={{fontWeight:700,overflowWrap:"anywhere"}}>{linkLabel}</Typography>
                   {reference&&<Typography variant="caption" component="div" sx={compactText}>Rif. {reference}</Typography>}
                   <Typography variant="caption" component="div" data-calendar-transport-details sx={{color:"text.secondary",whiteSpace:"normal",overflowWrap:"anywhere"}}>{transportText}</Typography>
                   {note&&<Typography variant="caption" component="div" sx={compactText}>Nota: <Box component="span" sx={{fontStyle:"italic"}}>{note}</Box></Typography>}

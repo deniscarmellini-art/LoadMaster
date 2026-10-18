@@ -54,6 +54,7 @@ export class ShipmentService {
       throw new ApiError(404, "RESOURCE_NOT_FOUND", "Spedizione non trovata");
     if (plan.shipmentStatus !== "PRONTA")
       throw new ApiError(409, "INVALID_STATUS", "La spedizione non è pronta");
+    if(!plan.loadId&&this.loading.requiresDefinitiveDdt)throw new ApiError(409,"DDT_VALID_REQUIRED","Collegare un carico con DDT definitivo valido prima di confermare la partenza.");
     if (!plan.loadId && !plan.transportType)
       throw new ApiError(
         400,
@@ -81,14 +82,8 @@ export class ShipmentService {
           "LOADING_SESSION_NOT_FOUND",
           "Sessione di carico non trovata",
         );
-      const mode = session.transportMode ?? plan.transportType;
-      const carrierId = input.carrierId ??
-        (mode === "BILICO_ESSEPI" ? session.carrierId ?? plan.carrierId ?? plan.plannedCarrierId : undefined);
-      this.loading.ship(
-        session.id,
-        { ...(carrierId ? { carrierId } : {}), ...(input.operatorId ? { operatorId: input.operatorId } : {}),
-          ...(!session.transportMode && mode ? { transportMode: mode, transportDetailId: mode === "BILICO_ESSEPI" ? null : plan.vehicleTypeId ?? plan.transportDetailId } : {}) },
-      );
+      if(!session.transportMode)throw new ApiError(400,"VALIDATION_ERROR","Salvare la modalità effettiva in Carico camion prima della partenza");
+      this.loading.ship(session.id,{...(input.carrierId?{carrierId:input.carrierId}:{}),...(input.operatorId?{operatorId:input.operatorId}:{})});
       // The loading transaction records the real departure on the linked plan.
       // Do not overwrite it in a second, independently committed operation.
       return this.repo.find(id)!;
@@ -138,6 +133,7 @@ export class ShipmentService {
   }
   private conflict(error: unknown): never {
     if (error instanceof ApiError) throw error;
+    if (error instanceof Error && error.message === "SHIPMENT_ALREADY_LINKED") throw new ApiError(409,"SHIPMENT_ALREADY_LINKED","La pianificazione è già collegata a un altro carico");
     if(error instanceof Error&&error.message==="INVALID_CUSTOMER")throw new ApiError(400,"VALIDATION_ERROR","Cliente anagrafico non disponibile");
     if (error instanceof Error && error.message === "SHIPMENT_STALE") throw new ApiError(409,"SHIPMENT_STALE","Pianificazione modificata da un altro utente. Aggiornare e riprovare.");
     if (error instanceof Error && error.message === "INVALID_TRANSPORT_DETAIL") throw new ApiError(400,"VALIDATION_ERROR","Dettaglio della modalità di trasporto non disponibile o incoerente");

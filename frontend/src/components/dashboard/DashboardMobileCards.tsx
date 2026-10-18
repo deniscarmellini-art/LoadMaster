@@ -1,10 +1,11 @@
-import { dashboardVisualStatus } from "./dashboardVisualStatus";
+import DashboardWaitingActions from "./DashboardWaitingActions";
+import DashboardStatusBadge from "./DashboardStatusBadge";
 import { useState } from "react";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined";
 import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
-import { Box, Button, Chip, IconButton, Menu, MenuItem, Paper, Stack, Typography } from "@mui/material";
+import { Box, Button, IconButton, Menu, MenuItem, Paper, Stack, Typography } from "@mui/material";
 
 import type { Camion } from "../../models/Camion";
 import type { ShipmentItem } from "../../services/shipmentsApi";
@@ -13,6 +14,10 @@ import { dashboardPrimaryLabel, runDashboardPrimaryAction, type DashboardPrimary
 import type { DashboardTransportPresentation } from "./dashboardTransport";
 
 interface Props extends DashboardPrimaryHandlers {
+  onReopen:(row:Camion)=>void;
+  onConfirmDeparture:(row:Camion)=>void;
+  onViewDdt:(row:Camion)=>void;
+  sessionIdFor:(row:Camion)=>string|undefined;
   hasPackages: (row: Camion) => boolean;
   onPrintPackages: (row: Camion) => void;
   rows: Camion[];
@@ -30,7 +35,6 @@ export default function DashboardMobileCards(props: Props) {
 
   return <Stack sx={{ gap: 1 }}>
     {props.rows.map((row) => {
-      const status = dashboardVisualStatus(row);
       const shipment = props.shipmentFor(row);
       const transport = props.transportFor(row);
       return <Paper key={row.id} variant="outlined" onClick={() => runDashboardPrimaryAction(row, handlers)} sx={{ p: 1.5, cursor: "pointer", overflow: "hidden", "&:active": { bgcolor: "action.selected" } }}>
@@ -40,7 +44,7 @@ export default function DashboardMobileCards(props: Props) {
           <Typography noWrap sx={{ fontWeight: 700 }}>{row.cliente}</Typography>
           <Typography variant="body2" color="text.secondary">Camion {row.camion}</Typography>
         </Box>
-        <Chip color={status.color} label={status.label.toUpperCase()} size="small" variant="outlined" sx={{ flexShrink: 0, fontWeight: 800 }} />
+        <DashboardStatusBadge row={row} onConfirmDeparture={props.onConfirmDeparture} mobile/>
       </Stack>
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", my: 1.25 }}>
         {[["Previsti", row.previsti], ["Pronti", row.pronti], ["Mancanti", row.mancanti], ["Caricati", row.caricati]].map(([label, value]) => <Box key={label} sx={{ textAlign: "center" }}><Typography sx={{ fontWeight: 900 }}>{value}</Typography><Typography variant="caption" color="text.secondary">{label}</Typography></Box>)}
@@ -64,12 +68,14 @@ export default function DashboardMobileCards(props: Props) {
       {transport.plannedCarrier && <Typography variant="body2">Previsto: {transport.plannedCarrier}</Typography>}
       <Stack direction="row" sx={{ gap: 1, mt: 1.25 }}>
         <Button fullWidth size="large" variant="contained" onClick={(event) => { event.stopPropagation(); runDashboardPrimaryAction(row, handlers); }}>{dashboardPrimaryLabel(row)}</Button>
-        <IconButton aria-label={`Altre azioni commessa ${row.commessa}`} onClick={(event) => { event.stopPropagation(); setMenuAnchor(event.currentTarget); setMenuRow(row); }} sx={{ border: 1, borderColor: "divider", borderRadius: 1.5, minHeight: 44, minWidth: 44 }}><MoreVertIcon /></IconButton>
+        <IconButton aria-label={`Operazioni commessa ${row.commessa} / camion ${row.camion}`} onClick={(event) => { event.stopPropagation(); setMenuAnchor(event.currentTarget); setMenuRow(row); }} sx={{ border: 1, borderColor: "divider", borderRadius: 1.5, minHeight: 44, minWidth: 44 }}><MoreVertIcon /></IconButton>
       </Stack>
     </Paper>;
     })}
     {!props.rows.length && <Typography color="text.secondary" sx={{ py: 4, textAlign: "center" }}>Nessun carico attivo</Typography>}
     <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeMenu}>
+      {menuRow?.stato === "Attesa spedizione" && <DashboardWaitingActions sessionId={props.sessionIdFor(menuRow)} onViewLoad={()=>secondary(props.onViewLoad)} onViewDdt={()=>secondary(props.onViewDdt)} onConfirmDeparture={()=>secondary(props.onConfirmDeparture)}/>}
+      {menuRow?.stato === "Attesa spedizione" && <MenuItem onClick={()=>secondary(props.onReopen)}>Riapri carico</MenuItem>}
       {menuRow?.stato === "Da completare" && <MenuItem onClick={() => secondary(props.onOpenScanning)}><QrCodeScannerOutlinedIcon sx={{ mr: 1.5 }} />Scansione elementi</MenuItem>}
       {(menuRow?.stato === "Da caricare" || menuRow?.stato === "In carico") && <MenuItem onClick={() => secondary(menuRow.stato === "In carico" ? props.onContinueLoad : props.onStartLoad)}><LocalShippingOutlinedIcon sx={{ mr: 1.5 }} />Carico camion</MenuItem>}
       {menuRow && props.hasPackages(menuRow) && <MenuItem onClick={() => secondary(props.onPrintPackages)}><PrintOutlinedIcon sx={{ mr: 1.5 }} />Stampa etichette</MenuItem>}

@@ -1,11 +1,12 @@
-import { dashboardVisualStatus } from "./dashboardVisualStatus";
+import DashboardWaitingActions from "./DashboardWaitingActions";
+import DashboardStatusBadge from "./DashboardStatusBadge";
 import { useState } from "react";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import EditDocumentIcon from "@mui/icons-material/EditDocument";
 import LaunchOutlinedIcon from "@mui/icons-material/LaunchOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
-import { Box, Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from "@mui/material";
+import { Box, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import type { GridColDef } from "@mui/x-data-grid";
 
@@ -28,22 +29,25 @@ interface Props {
   onReopen: (row: Camion) => void;
   onContinueLoad: (row: Camion) => void;
   onConfirmDeparture: (row: Camion) => void;
+  onViewLoad:(row:Camion)=>void;
+  onViewDdt:(row:Camion)=>void;
+  sessionIdFor:(row:Camion)=>string|undefined;
   onOpenHistory: (row: Camion) => void;
   shipmentFor: (row: Camion) => ShipmentItem | undefined;
   transportFor: (row: Camion) => DashboardTransportPresentation;
 }
 
-export default function DashboardGrid({ rows, referenceFor, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onOpenHistory, shipmentFor, transportFor }: Props) {
+export default function DashboardGrid({ rows, referenceFor, onDelete, onOpenScanning, onStartLoad, onPrintPackages, hasPackages, onUpdate, onReopen, onContinueLoad, onConfirmDeparture, onViewLoad, onViewDdt, sessionIdFor, onOpenHistory, shipmentFor, transportFor }: Props) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [menuRow, setMenuRow] = useState<Camion | null>(null);
   const closeMenu = () => { setAnchorEl(null); setMenuRow(null); };
   const runAction = (action: () => void) => { closeMenu(); action(); };
-  const primaryHandlers = { onConfirmDeparture, onContinueLoad, onOpenHistory, onOpenScanning, onStartLoad };
+  const primaryHandlers = { onViewLoad, onContinueLoad, onOpenHistory, onOpenScanning, onStartLoad };
   const fixedColumn = { disableReorder: true } as const;
   const columns: GridColDef<Camion>[] = [
     { ...fixedColumn, field: "commessa", headerName: "Commessa", width: 100, minWidth: 100, align: "left", headerAlign: "left" },
-    { ...fixedColumn, field: "cliente", headerName: "Cliente", minWidth: 160, flex: 1, align: "left", headerAlign: "left" },
-    { ...fixedColumn, field: "reference", headerName: "Rif. ordine", width: 140, minWidth: 140, valueGetter: (_value, row) => referenceFor(row), align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "cliente", headerName: "Cliente", minWidth: 140, flex: 0.85, align: "left", headerAlign: "left" },
+    { ...fixedColumn, field: "reference", headerName: "Rif. ordine", width: 180, minWidth: 180, valueGetter: (_value, row) => referenceFor(row), align: "left", headerAlign: "left" },
     { ...fixedColumn, field: "camion", headerName: "Camion", width: 80, minWidth: 80, align: "center", headerAlign: "center" },
     { ...fixedColumn, field: "previsti", headerName: "Previsti", width: 80, minWidth: 80, type: "number", align: "center", headerAlign: "center" },
     { ...fixedColumn, field: "pronti", headerName: "Pronti", width: 80, minWidth: 80, type: "number", align: "center", headerAlign: "center" },
@@ -76,18 +80,7 @@ export default function DashboardGrid({ rows, referenceFor, onDelete, onOpenScan
       width: 140, minWidth: 140,
       align: "center",
       headerAlign: "center",
-      renderCell: (params) => {
-        const { label: stato, color } = dashboardVisualStatus(params.row);
-        return (
-          <Chip
-            color={color}
-            label={stato}
-            size="small"
-            variant="outlined"
-            sx={{ fontWeight: 700, height: 30, minWidth: 0, maxWidth: "100%", "& .MuiChip-label": { px: 1, textAlign: "center", width: "100%" } }}
-          />
-        );
-      },
+      renderCell: (params) => <DashboardStatusBadge row={params.row} onConfirmDeparture={onConfirmDeparture}/>,
     },
     {
       ...fixedColumn,
@@ -126,14 +119,14 @@ export default function DashboardGrid({ rows, referenceFor, onDelete, onOpenScan
       ...fixedColumn,
       field: "operazione",
       headerName: "Operazioni",
-      width: 80, minWidth: 80,
+      width: 100, minWidth: 100,
       sortable: false,
       filterable: false,
       align: "center",
       headerAlign: "center",
       headerClassName: "dashboard-grid__operations-header",
       renderCell: (params) => {
-        return <IconButton aria-label={`Operazioni commessa ${params.row.commessa}`} onClick={(event) => { event.stopPropagation(); setAnchorEl(event.currentTarget); setMenuRow(params.row); }} size="small" sx={{ borderRadius: 1.5, height: 32, width: 32, "&:hover": { bgcolor: "rgba(255,255,255,0.08)" } }}><MoreVertIcon fontSize="small" /></IconButton>;
+        return <IconButton aria-label={`Operazioni commessa ${params.row.commessa} / camion ${params.row.camion}`} onClick={(event) => { event.stopPropagation(); setAnchorEl(event.currentTarget); setMenuRow(params.row); }} size="small" sx={{ borderRadius: 1.5, height: 32, width: 32, "&:hover": { bgcolor: "rgba(255,255,255,0.08)" } }}><MoreVertIcon fontSize="small" /></IconButton>;
       },
     },
   ];
@@ -161,7 +154,9 @@ export default function DashboardGrid({ rows, referenceFor, onDelete, onOpenScan
         bgcolor: dashboardColors.grid,
         border: 0,
         borderRadius: 2,
-        "& .MuiDataGrid-columnHeaders": { backgroundColor: dashboardColors.header, borderBottom: "1px solid rgba(255,255,255,0.16)" },
+        borderTopLeftRadius: 0, borderTopRightRadius: 0,
+        "& .MuiDataGrid-columnHeaders": { borderRadius: 0, backgroundColor: dashboardColors.header, borderBottom: "1px solid rgba(255,255,255,0.16)" },
+        '&& [aria-rowindex="1"] .MuiDataGrid-columnHeader': { borderTopLeftRadius: 0, borderTopRightRadius: 0 },
         "& .MuiDataGrid-columnHeader": { px: 1, transition: "background-color 180ms ease, color 180ms ease" },
         "& .MuiDataGrid-columnSeparator": { display: "none" },
         "& .dashboard-grid__operations-header": { px: 0 },
@@ -176,6 +171,7 @@ export default function DashboardGrid({ rows, referenceFor, onDelete, onOpenScan
       }}
     />
     <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeMenu}>
+      {menuRow?.stato==="Attesa spedizione"&&<DashboardWaitingActions sessionId={sessionIdFor(menuRow)} onViewLoad={()=>runAction(()=>onViewLoad(menuRow))} onViewDdt={()=>runAction(()=>onViewDdt(menuRow))} onConfirmDeparture={()=>runAction(()=>onConfirmDeparture(menuRow))}/>}
       {menuRow?.stato==="In carico"&&<MenuItem onClick={()=>{const row=menuRow;closeMenu();onContinueLoad(row);}}><ListItemIcon><LaunchOutlinedIcon fontSize="small"/></ListItemIcon><ListItemText>Continua carico</ListItemText></MenuItem>}
       <MenuItem onClick={() => runAction(onUpdate)}><ListItemIcon><EditDocumentIcon fontSize="small" /></ListItemIcon><ListItemText>Aggiorna distinta</ListItemText></MenuItem>
       {menuRow&&hasPackages(menuRow)&&<MenuItem onClick={()=>runAction(()=>onPrintPackages(menuRow))}><ListItemIcon><PrintOutlinedIcon fontSize="small"/></ListItemIcon><ListItemText>Stampa etichette pacchi</ListItemText></MenuItem>}

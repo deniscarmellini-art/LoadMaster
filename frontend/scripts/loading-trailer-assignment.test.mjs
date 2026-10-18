@@ -20,5 +20,9 @@ test('Carico camion: disponibili attivi, azione esplicita, assegnato unico e cat
   const occupied=render({assigned});assert(occupied.includes('AE 34133'));assert(occupied.includes('Centinato'));assert(occupied.includes('Disimpegna'));assert(!occupied.includes('Impegna rimorchio'));
   assert(!render({assigned:{...assigned,canRelease:false}}).includes('>Disimpegna<'));
   for(const mode of ['RITIRA_CLIENTE','TERZI_PER_ESSEPI']){const markup=render({mode});assert(!markup.includes('Rimorchio Essepi'));assert(!markup.includes('Impegna rimorchio'));}
+  const third=render({mode:'TERZI_PER_ESSEPI',carrierId:'actual',carriers:[{id:'actual',nome:'Vettore confermato',attivo:true}]});
+  assert(third.includes('Vettore effettivo confermato'));assert(third.includes('Vettore confermato'));assert(third.includes('Non viene recuperata dal Calendario'));
+  assert(!render({mode:'RITIRA_CLIENTE'}).includes('Vettore effettivo confermato'));
+  assert(!render({mode:'BILICO_ESSEPI'}).includes('Vettore effettivo confermato'));
  }finally{await server.close();}
 });

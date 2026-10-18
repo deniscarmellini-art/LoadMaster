@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { buildApp } from "./app.js";
+import { buildApp, seedDepartureDdtForApp } from "./fixtures/departureDdt.js";
 import type { AppConfig } from "./config/environment.js";
 import { migrateShipmentDeliveryAddress } from "./database/shipmentDeliveryAddressMigration.js";
 
@@ -53,6 +53,8 @@ test("indirizzo: pianificazione manuale, collegamento al carico, partenza reale 
     assert.equal(planResponse.statusCode,200);const id = planResponse.json().id;
     const imported = await app.inject({method:"POST",url:"/api/loads/import",payload:{commessa:input.commessa,cliente:input.cliente,numeroCliente:"",riferimentoOrdine:"Ordine separato",pannelli:[{numeroPannello:"1",numeroCliente:"",numeroMasterPanel:"1",camion:"C1",lato1:"",lato2:"",tipoPannello:"TEST",quantita:1,spessore:100,lunghezza:1000,altezza:1000,superficie:1,volume:.1,peso:50}]}});
     assert.equal(imported.statusCode,201);const load = imported.json()[0];
+    assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json().find((p:{id:string})=>p.id===id).loadId,null);
+    assert.equal((await app.inject({method:"PATCH",url:`/api/shipments/${id}/link`,payload:{loadId:load.id}})).statusCode,200);
     let plans = (await app.inject({method:"GET",url:"/api/shipments"})).json();
     assert.equal(plans.find((p:{id:string})=>p.id===id).loadId,load.id);
     assert.equal(plans.find((p:{id:string})=>p.id===id).deliveryAddress,address);
@@ -62,6 +64,7 @@ test("indirizzo: pianificazione manuale, collegamento al carico, partenza reale 
     assert.equal(session.statusCode,201);
     const sessionId = session.json().id;
     assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${sessionId}/units`,payload:{operatorId,unitType:"PANEL",panelId:load.pannelli[0].id}})).statusCode,200);
+    seedDepartureDdtForApp(app,sessionId);
     const shipped = await app.inject({method:"POST",url:`/api/loading-sessions/${sessionId}/ship`,payload:{operatorId}});
     assert.equal(shipped.statusCode,200);assert.equal(shipped.json().stato,"SPEDITO");
     await app.close();app = await buildApp(cfg);

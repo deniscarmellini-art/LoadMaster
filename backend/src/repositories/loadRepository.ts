@@ -3,7 +3,6 @@ import type { DatabaseSync } from "node:sqlite";
 import type { LoadImport,LoadRecord,LoadStatus,PanelImport,PanelRecord,PanelStatus } from "../models/operational.js";
 import { requiredNumber,requiredString } from "./repositoryUtils.js";
 import { reconcileAllOperationalLoadStatuses,reconcileOperationalLoadStatus } from "./operationalLoadStatus.js";
-import { reconcileManualShipments } from "./shipmentReconciliation.js";
 import { ApiError } from "../utils/apiError.js";
 
 const nullableString=(row:Record<string,unknown>,key:string)=>typeof row[key]==="string"?row[key] as string:null;
@@ -16,7 +15,6 @@ interface RelatedTransportAssignment{id:string;loadId:string|null;loadingSession
 export interface OrderDeletionAssessment{loads:LoadRecord[];shipmentPlanIds:string[];reversibleLoadingSessionIds:string[];preventiveTransportAssignmentIds:string[];blockingReason:string|null}
 export class LoadRepository{
  constructor(private readonly database:DatabaseSync){}
- reconcileShipments(commessa:string):void{reconcileManualShipments(this.database,commessa);}
  // Reconcile identity across the order before applying truck assignments.
  updateOrderManifest(input:LoadImport):LoadRecord[]{
   const loads=this.findByOrder(input.commessa), incoming=new Map<string,PanelImport>();
@@ -80,7 +78,6 @@ export class LoadRepository{
    if(input.removeMissing&&!this.panels(load.id).length&&!input.pannelli.some(p=>normalizedTruck(p.camion)===normalizedTruck(load.camion))){const assessment=this.assessLoadsDeletion([load],input.commessa);if(assessment.blockingReason||assessment.shipmentPlanIds.length||assessment.preventiveTransportAssignmentIds.length)conflict(`Camion ${load.camion} con relazioni operative: rimozione vietata`);this.deleteOrderRelations(assessment);continue;}
    if(changed.has(load.id))reconcileOperationalLoadStatus(this.database,load.id);
   }
-  this.reconcileShipments(input.commessa);
   return this.findByOrder(input.commessa);
  }
  list():LoadRecord[]{reconcileAllOperationalLoadStatuses(this.database);return this.database.prepare("SELECT * FROM Loads ORDER BY commessa,camion").all().map(row=>this.withPanels(loadBase(row)));}

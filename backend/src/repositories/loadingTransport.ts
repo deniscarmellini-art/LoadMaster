@@ -20,7 +20,7 @@ export function assignedTrailer(db:DatabaseSync,loadId:string):string|undefined 
 export function resolveLoadingTransport(db:DatabaseSync,loadId:string,input:LoadingSettings,previous?:LoadingSessionRecord):LoadingSettings {
   const mode=input.transportMode??null;
   const detail=mode==="BILICO_ESSEPI"?input.carrierId:input.transportDetailId;
-  if((mode!=="BILICO_ESSEPI"&&input.carrierId)||(mode==="BILICO_ESSEPI"&&input.transportDetailId)||(!mode&&detail))
+  if((mode!=="BILICO_ESSEPI"&&mode!=="TERZI_PER_ESSEPI"&&input.carrierId)||(mode==="BILICO_ESSEPI"&&input.transportDetailId)||(!mode&&detail))
     throw new ApiError(400,"INVALID_TRANSPORT_DETAIL","Dettaglio incompatibile con la modalità di trasporto");
   let label:string|null=null;
   if(detail){
@@ -30,7 +30,12 @@ export function resolveLoadingTransport(db:DatabaseSync,loadId:string,input:Load
     if(!row||(!row.active&&!saved))throw new ApiError(400,"INVALID_TRANSPORT_DETAIL","Voce non attiva o incompatibile con la modalità di trasporto");
     label=saved?(previous?.transportDetailLabel??row.name):row.name;
   }
+  if(mode==="TERZI_PER_ESSEPI"&&input.carrierId){
+    const carrier=db.prepare("SELECT active FROM Carriers WHERE id=?").get(input.carrierId) as {active:number}|undefined;
+    const saved=previous?.transportMode===mode&&previous.carrierId===input.carrierId;
+    if(!carrier||(!carrier.active&&!saved))throw new ApiError(400,"INVALID_TRANSPORT_DETAIL","Vettore effettivo non disponibile o non attivo");
+  }
   if(mode!=="BILICO_ESSEPI" && assignedTrailer(db,loadId))
     throw new ApiError(409,"TRAILER_RELEASE_REQUIRED","Disimpegnare esplicitamente il rimorchio prima di cambiare modalit\u00e0. Il disimpegno non \u00e8 consentito dopo l'inizio del carico fisico.");
-  return {...input,transportMode:mode,destinationType:mode==="BILICO_ESSEPI"?"RIMORCHIO_ESSEPI":"TRASPORTATORE",trailerId:mode==="BILICO_ESSEPI"?assignedTrailer(db,loadId):undefined,carrierId:mode==="BILICO_ESSEPI"?detail||undefined:undefined,transportDetailId:mode==="BILICO_ESSEPI"?null:detail||null,transportDetailLabel:label};
+  return {...input,transportMode:mode,destinationType:mode==="BILICO_ESSEPI"?"RIMORCHIO_ESSEPI":"TRASPORTATORE",trailerId:mode==="BILICO_ESSEPI"?assignedTrailer(db,loadId):undefined,carrierId:mode==="BILICO_ESSEPI"?detail||undefined:mode==="TERZI_PER_ESSEPI"?input.carrierId:undefined,transportDetailId:mode==="BILICO_ESSEPI"?null:detail||null,transportDetailLabel:label};
 }

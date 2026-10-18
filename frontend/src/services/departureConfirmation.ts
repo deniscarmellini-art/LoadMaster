@@ -1,14 +1,20 @@
 import type { CaricoCamion } from "../models/Loading";
 import type { ShipmentItem } from "./shipmentsApi";
 import type { TransportItem } from "./transportsApi";
+import type { Camion } from "../models/Camion";
 
-export const departureTransport = (load?: CaricoCamion, plan?: ShipmentItem) => {
-  const mode = load?.transportMode ?? plan?.transportType ?? null;
+export function dashboardLoadForRow(row:Pick<Camion,"id">,loads:readonly CaricoCamion[]):CaricoCamion|undefined {
+  const matches=loads.filter(load=>load.backendLoadId===row.id);
+  return matches.length===1?matches[0]:undefined;
+}
+
+export const departureTransport = (load?: CaricoCamion, _plan?: ShipmentItem) => {
+  const mode = load?.transportMode ?? null;
   return {
     mode,
-    requiresCarrier: mode === "BILICO_ESSEPI",
-    carrierId: mode === "BILICO_ESSEPI" ? load?.trasportatoreId ?? plan?.plannedCarrierId ?? "" : "",
-    detailLabel: load?.transportMode ? load.transportDetailLabel ?? "" : plan?.transportDetailLabel ?? "",
+    requiresCarrier: mode === "BILICO_ESSEPI" || mode === "TERZI_PER_ESSEPI",
+    carrierId: mode !== "RITIRA_CLIENTE" ? load?.trasportatoreId ?? "" : "",
+    detailLabel: load?.transportDetailLabel ?? "",
   };
 };
 

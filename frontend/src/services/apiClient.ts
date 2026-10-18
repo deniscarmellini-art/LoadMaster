@@ -60,3 +60,16 @@ export const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T
 };
 
 export const checkApiHealth = (): Promise<ApiHealth> => apiRequest<ApiHealth>("/health");
+
+export const apiPdfRequest = async (path: string): Promise<Blob> => {
+  let response: Response;
+  try { response = await fetch(`${apiUrl}${path}`, { headers: { Accept: "application/pdf" }, cache: "no-store" }); }
+  catch { throw new ApiClientError("NETWORK_ERROR", "Backend non raggiungibile"); }
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => undefined);
+    if (isApiError(payload)) throw new ApiClientError(payload.error.code, payload.error.message, response.status);
+    throw new ApiClientError("HTTP_ERROR", `Anteprima DDT non disponibile (${response.status})`, response.status);
+  }
+  if (!response.headers.get("content-type")?.includes("application/pdf")) throw new ApiClientError("INVALID_PDF", "Il server non ha restituito un PDF valido");
+  return response.blob();
+};

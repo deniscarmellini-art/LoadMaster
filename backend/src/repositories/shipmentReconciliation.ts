@@ -10,9 +10,10 @@ export interface ShipmentLinkDecision {
   camion: string | null;
   candidateLoadIds: string[];
   loadId: string | null;
-  reason: "MATCH" | "NO_MATCH" | "AMBIGUOUS_LOADS" | "LOAD_ALREADY_PLANNED" | "COMPETING_PLANS" | "DEPARTED_PLAN";
+  reason: "SUGGESTION" | "NO_MATCH" | "AMBIGUOUS_LOADS" | "LOAD_ALREADY_PLANNED" | "COMPETING_PLANS" | "DEPARTED_PLAN";
 }
 
+// Read-only textual suggestions; SUGGESTION never authorizes an automatic link.
 // Evaluate the whole order after all trucks have been imported. Never narrow a
 // truck-less plan to the remaining unplanned loads: that would guess its intent.
 export function previewShipmentReconciliation(db: DatabaseSync, commessa?: string): ShipmentLinkDecision[] {
@@ -28,11 +29,11 @@ export function previewShipmentReconciliation(db: DatabaseSync, commessa?: strin
     const candidates = loads.filter(load => orderKey(load.commessa) === orderKey(plan.manualCommessa) &&
       (!plan.manualCarico?.trim() || truckKey(load.camion) === truckKey(plan.manualCarico)));
     const candidate = candidates.length === 1 ? candidates[0]! : null;
-    const reason = plan.actualDepartureDate ? "DEPARTED_PLAN" : !candidates.length ? "NO_MATCH" : candidates.length > 1 ? "AMBIGUOUS_LOADS" : occupied.has(candidate!.id) ? "LOAD_ALREADY_PLANNED" : "MATCH";
-    return {planId:plan.id,commessa:plan.manualCommessa,camion:plan.manualCarico,candidateLoadIds:candidates.map(load=>load.id),loadId:reason === "MATCH" ? candidate!.id : null,reason};
+    const reason = plan.actualDepartureDate ? "DEPARTED_PLAN" : !candidates.length ? "NO_MATCH" : candidates.length > 1 ? "AMBIGUOUS_LOADS" : occupied.has(candidate!.id) ? "LOAD_ALREADY_PLANNED" : "SUGGESTION";
+    return {planId:plan.id,commessa:plan.manualCommessa,camion:plan.manualCarico,candidateLoadIds:candidates.map(load=>load.id),loadId:reason === "SUGGESTION" ? candidate!.id : null,reason};
   });
   for (const decision of decisions) {
-    if (decision.reason !== "MATCH") continue;
+    if (decision.reason !== "SUGGESTION") continue;
     // Also reject competing manual plans, regardless of their date or detail.
     if (decisions.some(other => other.planId !== decision.planId && other.reason !== "DEPARTED_PLAN" && other.candidateLoadIds.length === 1 && other.candidateLoadIds[0] === decision.loadId)) {
       decision.reason = "COMPETING_PLANS";
@@ -42,18 +43,7 @@ export function previewShipmentReconciliation(db: DatabaseSync, commessa?: strin
   return decisions;
 }
 
+// Compatibility entry point: textual candidates are suggestions, never authority to write.
 export function reconcileManualShipments(db: DatabaseSync, commessa?: string): ShipmentLinkDecision[] {
-  // Works both inside the import transaction and as a standalone maintenance action.
-  db.exec("SAVEPOINT reconcile_manual_shipments");
-  try {
-    const decisions = previewShipmentReconciliation(db, commessa);
-    const update = db.prepare("UPDATE ShipmentPlans SET loadId=?,manualCommessa=NULL,manualCliente=NULL,manualCarico=NULL,updatedAt=? WHERE id=? AND loadId IS NULL");
-    const now = new Date().toISOString();
-    for (const decision of decisions) if (decision.reason === "MATCH") update.run(decision.loadId, now, decision.planId);
-    db.exec("RELEASE reconcile_manual_shipments");
-    return decisions;
-  } catch (error) {
-    db.exec("ROLLBACK TO reconcile_manual_shipments; RELEASE reconcile_manual_shipments");
-    throw error;
-  }
+  return previewShipmentReconciliation(db, commessa);
 }

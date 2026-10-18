@@ -4,7 +4,7 @@ import {mkdtempSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {DatabaseSync} from "node:sqlite";
-import {buildApp} from "./app.js";
+import {buildApp,seedDepartureDdtForApp} from "./fixtures/departureDdt.js";
 import {migrateCustomers} from "./database/customerMigration.js";
 import {customerFields,type CustomerData} from "./models/customer.js";
 
@@ -93,6 +93,7 @@ test("customer links: no automatic matching, separate delivery address, omission
   await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0].id}/close-single`,payload:{operatorId}});
   const session=await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId,destinationType:"TRASPORTATORE",transportMode:"RITIRA_CLIENTE"}});assert.equal(session.statusCode,201,session.body);
   await app.inject({method:"POST",url:`/api/loading-sessions/${session.json().id}/units`,payload:{operatorId,unitType:"PANEL",panelId:load.pannelli[0].id}});
+  seedDepartureDdtForApp(app,session.json().id);
   const shipped=await app.inject({method:"POST",url:`/api/loading-sessions/${session.json().id}/ship`,payload:{operatorId}});assert.equal(shipped.statusCode,200,shipped.body);
   await app.close();app=await buildApp(cfg);
   const plan=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((p:{id:string})=>p.id===legacy.id);assert.equal(plan.customerId,customer.id);assert.equal(plan.deliveryAddress,"Cantiere di consegna");assert.equal((await app.inject({method:"GET",url:"/api/customers"})).json()[0].cap,"00123");

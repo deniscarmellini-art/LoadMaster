@@ -1,4 +1,8 @@
 import { customerRoutes } from "./routes/customerRoutes.js";
+import { definitiveDdtRoutes } from "./routes/definitiveDdtRoutes.js";
+import { ddtPreview } from "./repositories/ddtPreviewRepository.js";
+import { ApiError } from "./utils/apiError.js";
+import { loadingSimulationCandidates } from "./repositories/loadingSimulation.js";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -56,7 +60,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const app = (config.httpsKeyPath&&config.httpsCertPath
     ? Fastify({logger,https:{key:readFileSync(config.httpsKeyPath),cert:readFileSync(config.httpsCertPath)}})
     : Fastify({logger})) as unknown as FastifyInstance;
-  const connection = openSqliteDatabase(config.databasePath);
+  const connection = openSqliteDatabase(config.databasePath,{enableDefinitiveDdt:config.environment==="test"});
   app.addHook("onClose", async () => connection.close());
   const operatorService = new OperatorService(new OperatorRepository(connection.database));
   const trailerService = new TrailerService(new TrailerRepository(connection.database));
@@ -66,8 +70,8 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const transportRepository=new TransportRepository(connection.database);
   const loadService = new LoadService(new LoadRepository(connection.database));
   const scanningService = new ScanningService(new ScanningRepository(connection.database));
-  const loadingService = new LoadingService(new LoadingRepository(connection.database,transportRepository),transportRepository);
-  const shipmentService = new ShipmentService(new ShipmentRepository(connection.database),loadingService);
+  const loadingService = new LoadingService(new LoadingRepository(connection.database,transportRepository),transportRepository,config.environment==="test");
+  const shipmentService = new ShipmentService(new ShipmentRepository(connection.database,config.environment === "test"),loadingService);
   const transportService=new TransportService(transportRepository);
   const operationalSettingService = new OperationalSettingService(new OperationalSettingRepository(connection.database));
 
@@ -76,6 +80,22 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
       methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     });
   registerErrorHandlers(app);
+  if(config.environment==="test")definitiveDdtRoutes(app,connection.database);
+  if(config.environment==="test")app.get<{Params:{id:string}}>("/api/loading-sessions/:id/ddt-preview/availability",async(request,reply)=>{
+    reply.header("Cache-Control","no-store");
+    try{ddtPreview(connection.database,request.params.id,new Date(),true);return {available:true};}
+    catch(error){if(error instanceof ApiError&&(error.statusCode===422||error.statusCode===404))return {available:false,reason:error.message};throw error;}
+  });
+  // The simulator only supplies labels. No simulator route exists outside TEST.
+  if(config.environment==="test")app.get<{Params:{id:string}}>("/api/loading-sessions/:id/test-qr-candidates",async(request,reply)=>
+    reply.header("Cache-Control","no-store").send(loadingSimulationCandidates(connection.database,request.params.id)));
+  // Phase 1 is available only outside production and never calls loading/departure services.
+  if (config.environment !== "production") app.get<{Params:{id:string}}>("/api/loading-sessions/:id/ddt-preview", async (request, reply) => {
+    const model = ddtPreview(connection.database, request.params.id, new Date(), config.environment === "test");
+    const { renderDdtPreview } = await import("./services/ddtPreviewPdf.js");
+    const { pdf } = renderDdtPreview(model);
+    return reply.header("Cache-Control", "no-store").header("Content-Disposition", 'inline; filename="anteprima-ddt.pdf"').type("application/pdf").send(pdf);
+  });
   app.get<{Params:{id:string}}>("/api/history/:id/document",async request=>shipmentDocument(connection.database,request.params.id));
   app.get<{Querystring:{search?:string;from?:string;to?:string;client?:string;sort?:string;asc?:boolean;page?:number;pageSize?:number}}>("/api/history",{schema:{querystring:{type:"object",additionalProperties:false,properties:{search:{type:"string"},from:{type:"string",pattern:"^\\d{4}-\\d{2}-\\d{2}$"},to:{type:"string",pattern:"^\\d{4}-\\d{2}-\\d{2}$"},client:{type:"string"},sort:{enum:["date","commessa","cliente","camion","panels","packs","weight","volume"]},asc:{type:"boolean"},page:{type:"integer",minimum:0},pageSize:{type:"integer",minimum:1,maximum:100}}}}},async request=>historyPage(connection.database,request.query));
   await app.register(systemRoutes, { prefix: "/api", config });

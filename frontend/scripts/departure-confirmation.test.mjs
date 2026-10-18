@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {confirmDeparture,departureTransport,departureTrailerId} from '../src/services/departureConfirmation.ts';
 
-test('partenza: effettivo prima del pianificato, regole per le tre modalità',()=>{
+test('partenza: solo dati effettivi, nessun fallback pianificato, regole per le tre modalità',()=>{
  const planned={transportType:'BILICO_ESSEPI',plannedCarrierId:'Cristelli',transportDetailLabel:'Pianificato'};
  assert.deepEqual(departureTransport({transportMode:'RITIRA_CLIENTE',transportDetailLabel:'Autotreno'},planned),{mode:'RITIRA_CLIENTE',requiresCarrier:false,carrierId:'',detailLabel:'Autotreno'});
  assert.equal(departureTransport({transportMode:'RITIRA_CLIENTE'},planned).requiresCarrier,false);
- const third=departureTransport({transportMode:'TERZI_PER_ESSEPI',transportDetailLabel:'Angeli Motrice'},planned);assert.equal(third.requiresCarrier,false);assert.equal(third.detailLabel,'Angeli Motrice');
+ const third=departureTransport({transportMode:'TERZI_PER_ESSEPI',transportDetailLabel:'Angeli Motrice'},planned);assert.equal(third.requiresCarrier,true);assert.equal(third.detailLabel,'Angeli Motrice');assert.equal(third.carrierId,'');assert.equal(departureTransport(undefined,planned).mode,null);assert.equal(departureTransport({transportMode:'TERZI_PER_ESSEPI',trasportatoreId:'Effettivo'},planned).carrierId,'Effettivo');
  assert.equal(departureTransport({transportMode:'BILICO_ESSEPI',trasportatoreId:'Effettivo'},planned).carrierId,'Effettivo');
- assert.equal(departureTransport({transportMode:'BILICO_ESSEPI'},planned).carrierId,'Cristelli');
+ assert.equal(departureTransport({transportMode:'BILICO_ESSEPI'},planned).carrierId,'');
  const load={backendLoadId:'L',commessa:'265694',camion:'C2-',rimorchioId:'stale'};
  assert.equal(departureTrailerId(load,[{id:'assigned',status:'CARICATO',loadId:'L'}]),'assigned');
  assert.equal(departureTrailerId(load,[{id:'manual',status:'IMPEGNATO',loadId:null,commessa:'265694',camion:'C2'}]),'manual');

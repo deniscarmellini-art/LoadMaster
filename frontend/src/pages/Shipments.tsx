@@ -1,3 +1,5 @@
+import { normalizeShipmentPlanningInput } from "../services/shipmentPlanningInput";
+import { shipmentLinkSuggestions } from "../services/shipmentLinkSuggestions";
 import ShipmentCustomerPicker from "../components/shipments/ShipmentCustomerPicker";
 import ShipmentDateFilter from "../components/shipments/ShipmentDateFilter";
 import type { CaricoCamion } from "../models/Loading";
@@ -39,7 +41,6 @@ import type { Rimorchio, Trasportatore, VoceTrasporto } from "../models/Settings
 import {
   createShipment,
   deleteShipment,
-  departShipment,
   linkShipment,
   updateShipment,
   type ShipmentInput,
@@ -168,8 +169,6 @@ export default function Shipments({
   const [editing, setEditing] = useState<ShipmentItem | null | "new">(null),
     [form, setForm] = useState<ShipmentInput>(empty),
     [deleteItem, setDeleteItem] = useState<ShipmentItem | null>(null),
-    [departureItem, setDepartureItem] = useState<ShipmentItem | null>(null),
-    [departureCarrierId, setDepartureCarrierId] = useState(""),
     [notice, setNotice] = useState<{
       severity: "success" | "error";
       text: string;
@@ -231,7 +230,7 @@ export default function Shipments({
     setCalendarDate(date ?? null);
     setEditing(item ?? "new");
     setForm(
-      item
+      normalizeShipmentPlanningInput(item
         ? {
             loadId: item.loadId,
             commessa: item.commessa,
@@ -250,7 +249,7 @@ export default function Shipments({
             plannedCarrierId: item.plannedCarrierId,
             notes: item.notes,
           }
-        : { ...empty, orderReference: "", deliveryAddress: "", plannedDepartureDate: date ?? empty.plannedDepartureDate },
+        : { ...empty, orderReference: "", deliveryAddress: "", plannedDepartureDate: date ?? empty.plannedDepartureDate }),
     );
   };
   const valid = Boolean(
@@ -260,26 +259,29 @@ export default function Shipments({
     if (!valid) return;
     if(editing && editing!=="new" && hasDeparted(editing))return;
     try {
+      let saved: ShipmentItem | undefined;
       if (editing === "new" || (editing && !editing.persisted))
-        await createShipment({
+        saved = await createShipment({
           ...form,
           trailerId: null,
           carrierId: null,
           loadId: editing === "new" ? null : editing.loadId,
         });
       else if (editing)
-        await updateShipment(editing.id, {
+        saved = await updateShipment(editing.id, {
           ...form,
           trailerId: null,
           carrierId: null,
         });
       await onRefresh();
       setEditing(null);
-      setNotice({ severity: "success", text: "Pianificazione salvata." });
-    } catch {
+      setNotice({ severity: "success", text: import.meta.env.VITE_SISLOG_TEST && !saved?.customerId
+        ? "Pianificazione salvata. Per il DDT selezionare esplicitamente il cliente anagrafico: nessuna corrispondenza esatta univoca."
+        : "Pianificazione salvata." });
+    } catch (error) {
       setNotice({
         severity: "error",
-        text: "Impossibile salvare la pianificazione.",
+        text: error instanceof ApiClientError ? error.message : "Impossibile salvare la pianificazione.",
       });
     }
   };
@@ -298,66 +300,12 @@ export default function Shipments({
       });
     }
   };
-  const activeCarriers = carriers.filter((carrier) => carrier.attivo);
   const detailOptions=form.transportType==="BILICO_ESSEPI"?carriers:form.transportType==="RITIRA_CLIENTE"?clientVehicleTypes:form.transportType==="TERZI_PER_ESSEPI"?thirdPartyTransportModes:[];
   const detailLabel=form.transportType==="BILICO_ESSEPI"?"Trasportatore":form.transportType==="RITIRA_CLIENTE"?"Tipo di mezzo":"Modalità Terzi per Essepi";
   const transportLabel=(value:ShipmentTransportType|null)=>value==="BILICO_ESSEPI"?demoBranding.bilico:shipmentTransportLabel(value);
-  const depart = async (item: ShipmentItem, carrierId?: string) => {
-    try {
-      await departShipment(item.id, carrierId);
-      await onRefresh();
-      setDepartureItem(null);
-      setEditing(null);
-      setNotice({ severity: "success", text: "Partenza confermata." });
-    } catch {
-      setNotice({
-        severity: "error",
-        text: "Impossibile confermare la partenza.",
-      });
-    }
-  };
-  const connect = async (item: ShipmentItem) => {
-    if(hasDeparted(item))return;
-    const candidates = items.filter(
-      (x) =>
-        !x.persisted &&
-        x.loadId &&
-        x.commessa.trim().toLocaleUpperCase("it-IT") ===
-          item.commessa.trim().toLocaleUpperCase("it-IT") &&
-        (!item.camion ||
-          x.camion?.replace(/[\s-]+/g, "").toLocaleUpperCase("it-IT") ===
-            item.camion.replace(/[\s-]+/g, "").toLocaleUpperCase("it-IT")),
-    );
-    if (!candidates.length) {
-      setNotice({
-        severity: "error",
-        text: "Nessun carico reale compatibile trovato.",
-      });
-      return;
-    }
-    let target: ShipmentItem | undefined = candidates[0];
-    if (candidates.length > 1) {
-      const truck = window
-        .prompt(
-          `Scegli il camion da collegare: ${candidates.map((x) => x.camion).join(", ")}`,
-        )
-        ?.replace(/[\s-]+/g, "")
-        .toLocaleUpperCase("it-IT");
-      target =
-        candidates.find(
-          (x) =>
-            x.camion?.replace(/[\s-]+/g, "").toLocaleUpperCase("it-IT") ===
-            truck,
-        );
-      if (!target) return;
-    }
-    if (!target) return;
-    if (
-      !window.confirm(
-        `Collegare la pianificazione ${item.commessa} al carico ${target.camion}?`,
-      )
-    )
-      return;
+  const connect = async (item: ShipmentItem, target: ShipmentItem) => {
+    if (hasDeparted(item) || item.loadId || !target.loadId) return;
+    if (!window.confirm(`Confermare il collegamento della pianificazione ${item.id} (${item.commessa}) al carico ${target.camion ?? "-"}, commessa ${target.commessa}, ID ${target.loadId}?`)) return;
     try {
       await linkShipment(item.id, target.loadId!);
       await onRefresh();
@@ -366,28 +314,16 @@ export default function Shipments({
         text: "Spedizione collegata al carico reale.",
       });
       setEditing(null);
-    } catch {
+    } catch (error) {
       setNotice({
         severity: "error",
-        text: "Impossibile collegare la spedizione.",
+        text: error instanceof ApiClientError ? error.message : "Impossibile collegare la spedizione.",
       });
     }
   };
   const planningDirty = editing && editing!=="new" &&
     (["commessa","cliente","camion","orderReference","deliveryAddress","customerId","plannedLoadingDate","plannedDepartureDate","transportType","transportDetailId","vehicleTypeId","plannedCarrierId","notes"] as const)
       .some(key => (form[key] ?? "") !== (editing[key] ?? ""));
-  const planningActions = (item: ShipmentItem) => hasDeparted(item) ? null :
-    item.persisted && item.shipmentStatus === "PRONTA" ? (
-      <Button variant="contained" disabled={!!planningDirty} onClick={() => {
-        if (item.transportType === "BILICO_ESSEPI") {
-          setDepartureItem(item);
-          setDepartureCarrierId(item.carrierId ?? (activeCarriers.some(c=>c.id===item.plannedCarrierId) ? item.plannedCarrierId : null) ?? "");
-        } else void depart(item);
-      }}>Conferma partenza</Button>
-    ) : item.persisted && !item.loadId && items.some(x => !x.persisted && x.loadId &&
-      x.commessa.trim().toLocaleUpperCase("it-IT") === item.commessa.trim().toLocaleUpperCase("it-IT")) ? (
-      <Button variant="outlined" disabled={!!planningDirty} onClick={() => void connect(item)}>Collega</Button>
-    ) : null;
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
     const value = (item: ShipmentItem): string | number | null => {
@@ -586,7 +522,7 @@ export default function Shipments({
                 value={form.cliente}
                 onChange={(e) => setForm({ ...form, cliente: e.target.value })}
               />
-              {editing!==null && <ShipmentCustomerPicker value={form.customerId} onChange={customerId=>setForm({...form,customerId})}/>}
+              {editing!==null && <ShipmentCustomerPicker value={form.customerId} customerName={editing!=="new"&&editing.loadId?editing.cliente:form.cliente} onChange={customerId=>setForm({...form,customerId})}/>}
               <TextField
                 size="small"
                 label="Riferimento ordine"
@@ -683,8 +619,14 @@ export default function Shipments({
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
               />
             </Box>
+          {editing && editing!=="new" && editing.persisted && !editing.loadId && !hasDeparted(editing) && <Box sx={{mt:1.5}}>
+            <Typography variant="subtitle2">Possibili carichi da collegare - conferma richiesta</Typography>
+            <Typography variant="caption" color="text.secondary">La commessa suggerisce i candidati; verifica il carico prima di confermare. Nessun collegamento viene applicato dall'importazione.</Typography>
+            <Stack sx={{gap:1,mt:1}}>{shipmentLinkSuggestions(editing,items).map(target=><Button key={target.loadId} variant="outlined" disabled={!!planningDirty} sx={{justifyContent:"flex-start",textAlign:"left",overflowWrap:"anywhere"}} onClick={()=>void connect(editing,target)}>Conferma collegamento: {target.commessa} / Carico {target.camion ?? "-"} / {target.cliente} / ID: {target.loadId}</Button>)}</Stack>
+            {!shipmentLinkSuggestions(editing,items).length && <Typography variant="body2" color="text.secondary">Nessun carico disponibile suggerito. I carichi già collegati o spediti sono esclusi.</Typography>}
+          </Box>}
           {editing!=="new"&&editing?.persisted&&<Box sx={{mt:1.5,pt:1,borderTop:1,borderColor:"divider"}}><Button color="error" variant="outlined" startIcon={<DeleteOutlinedIcon/>} onClick={()=>setDeleteItem(editing)}>Elimina spedizione</Button></Box>}
-          {editing && editing!=="new" && <Stack direction="row" sx={{mt:1,gap:1,flexWrap:"wrap",alignItems:"center"}}>{planningActions(editing)}{planningDirty&&<Typography variant="caption" color="text.secondary">Salva le modifiche prima di confermare la partenza o collegare il carico.</Typography>}</Stack>}
+          {editing && editing!=="new" && <Stack direction="row" sx={{mt:1,gap:1,flexWrap:"wrap",alignItems:"center"}}>{planningDirty&&<Typography variant="caption" color="text.secondary">Salva le modifiche prima di collegare il carico.</Typography>}</Stack>}
           </DialogContent>
           <DialogActions sx={{px:{xs:2,sm:3},py:1.25,flexShrink:0,borderTop:1,borderColor:"divider"}}>
             <Button onClick={() => setEditing(null)}>Annulla</Button>
@@ -701,54 +643,6 @@ export default function Shipments({
           <DialogTitle>Elimina spedizione</DialogTitle>
           <DialogContent><Typography>Vuoi eliminare la pianificazione della spedizione {deleteItem?.commessa}{deleteItem?.camion?` / ${deleteItem.camion}`:""}?<br/>La commessa e il carico non verranno eliminati.</Typography></DialogContent>
           <DialogActions><Button onClick={()=>setDeleteItem(null)}>Annulla</Button><Button color="error" variant="contained" startIcon={<DeleteOutlinedIcon/>} onClick={()=>deleteItem&&void remove(deleteItem)}>Elimina spedizione</Button></DialogActions>
-        </Dialog>
-        <Dialog
-          open={departureItem !== null}
-          onClose={() => setDepartureItem(null)}
-          fullWidth
-          maxWidth="xs"
-        >
-          <DialogTitle>Conferma partenza</DialogTitle>
-          <DialogContent>
-            <Typography sx={{ mb: 2 }}>
-              {departureItem?.commessa}
-              {departureItem?.camion ? ` / ${departureItem.camion}` : ""} — {departureItem?.cliente}
-            </Typography>
-            <TextField
-              select
-              required
-              fullWidth
-              label="Trasportatore effettivo"
-              value={departureCarrierId}
-              onChange={(event) => setDepartureCarrierId(event.target.value)}
-            >
-              <MenuItem value="" disabled>
-                Seleziona trasportatore
-              </MenuItem>
-              {activeCarriers.map((carrier) => (
-                <MenuItem key={carrier.id} value={carrier.id}>
-                  {carrier.nome}
-                </MenuItem>
-              ))}
-            </TextField>
-            {!activeCarriers.length && (
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                Nessun trasportatore attivo disponibile. Configurarlo nelle Impostazioni.
-              </Alert>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDepartureItem(null)}>Annulla</Button>
-            <Button
-              variant="contained"
-              disabled={!departureCarrierId || !activeCarriers.length}
-              onClick={() => {
-                if (departureItem) void depart(departureItem, departureCarrierId);
-              }}
-            >
-              Conferma partenza
-            </Button>
-          </DialogActions>
         </Dialog>
         <Snackbar
           open={notice !== null && !(editing !== null && notice.severity === "error")}

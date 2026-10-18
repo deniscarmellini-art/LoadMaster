@@ -1,4 +1,6 @@
 import { migrateCustomers } from "./customerMigration.js";
+import { migrateDefinitiveDdt } from "./definitiveDdtMigration.js";
+import { migrateDdtLocks } from "./ddtLocksMigration.js";
 import { migrateSharedTransportRegistry } from "./sharedTransportRegistryMigration.js";
 import { migrateShipmentDeliveryAddress } from "./shipmentDeliveryAddressMigration.js";
 import { migrateLoadingTransport } from "./loadingTransportMigration.js";
@@ -12,7 +14,7 @@ export interface DatabaseConnection {
   close: () => void;
 }
 
-export const openSqliteDatabase = (databasePath: string): DatabaseConnection => {
+export const openSqliteDatabase = (databasePath: string, options: { enableDefinitiveDdt?: boolean } = {}): DatabaseConnection => {
   if (databasePath !== ":memory:") mkdirSync(dirname(databasePath), { recursive: true });
   const database = new DatabaseSync(databasePath);
   database.exec("PRAGMA foreign_keys = ON");
@@ -212,6 +214,8 @@ export const openSqliteDatabase = (databasePath: string): DatabaseConnection => 
   seedSettings(database);
   migrateSharedTransportRegistry(database);
   migrateCustomers(database);
+  // Phase 2A stays dormant during normal application startup (including TEST/DEMO).
+  if (options.enableDefinitiveDdt) { migrateDefinitiveDdt(database); migrateDdtLocks(database); }
   return {
     database,
     close: () => database.close(),
