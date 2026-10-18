@@ -19,6 +19,7 @@
     "@mui/x-date-pickers": "^9.11.0",
     "@zxing/browser": "^0.2.1",
     "dayjs": "^1.11.21",
+    "fflate": "0.8.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "qrcode.react": "^4.2.0",

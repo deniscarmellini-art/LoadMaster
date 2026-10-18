@@ -1,4 +1,6 @@
 import { normalizeShipmentPlanningInput } from "../services/shipmentPlanningInput";
+import DeliveryProgramExport from "../components/shipments/DeliveryProgramExport";
+import { filterShipmentList } from "../services/shipmentListFilters";
 import { shipmentLinkSuggestions } from "../services/shipmentLinkSuggestions";
 import ShipmentCustomerPicker from "../components/shipments/ShipmentCustomerPicker";
 import ShipmentDateFilter from "../components/shipments/ShipmentDateFilter";
@@ -204,25 +206,7 @@ export default function Shipments({
     shipmentCalendarTransportDetails(item, carriers, clientVehicleTypes, trailers, transports, loads),
   ])), [visibleItems, carriers, clientVehicleTypes, trailers, transports, loads]);
   const filtered = useMemo(
-    () =>
-      listItems.filter((x) => {
-        const q = search.trim().toLocaleUpperCase("it-IT");
-        return (
-          (!q ||
-            [x.commessa, x.cliente, x.camion].some((v) =>
-              v?.toLocaleUpperCase("it-IT").includes(q),
-            )) &&
-          (!status || x.shipmentStatus === status) &&
-          (!type || listDetails.get(x.id)?.mode === type) &&
-          (!carrierFilter || listDetails.get(x.id)?.carrierId === carrierFilter) &&
-          (!from ||
-            Boolean(
-              x.plannedDepartureDate && x.plannedDepartureDate >= from,
-            )) &&
-          (!to ||
-            Boolean(x.plannedDepartureDate && x.plannedDepartureDate <= to))
-        );
-      }),
+    () => filterShipmentList(listItems,listDetails,{search,status,type,carrierFilter,from,to}),
     [listItems, search, status, type, carrierFilter, from, to, listDetails],
   );
   const open = (item?: ShipmentItem, date?: string) => {
@@ -437,6 +421,7 @@ export default function Shipments({
             <ShipmentDateFilter label="Partenza da" value={from} onChange={setFrom}/>
             <ShipmentDateFilter label="Partenza a" value={to} onChange={setTo}/>
           </Box>}
+          {view==="list"&&<DeliveryProgramExport filtered={filtered} details={listDetails} from={from} to={to} carrierId={carrierFilter||undefined} carrierName={carrierFilter?carriers.find(carrier=>carrier.id===carrierFilter)?.nome:undefined}/>}
           {view === "calendar" ? (
             <>
               {!!calendarUnplaced.length && <Box sx={{mb:2}}>

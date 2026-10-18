@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createShipment,updateShipment} from '../src/services/shipmentsApi.ts';
+import {createServer} from 'vite';
+import {fileURLToPath} from 'node:url';
 import {normalizeShipmentPlanningInput} from '../src/services/shipmentPlanningInput.ts';
 
 test('Ritira Cliente: apertura e salvataggio eliminano dal payload il vettore aziendale residuo, senza mutare il record storico',async()=>{
+ const server=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),configFile:false,define:{'import.meta.env.VITE_SISLOG_TEST':'true'},server:{middlewareMode:true,watch:null,ws:false},appType:'custom'});
  const legacy={commessa:'TEST',cliente:'Cliente TEST',transportType:'RITIRA_CLIENTE',plannedCarrierId:'OLD',carrierId:'OLD-ACTUAL',vehicleTypeId:'OLD-TYPE',transportDetailId:'CLIENT-VEHICLE',notes:'Conservare',trailerId:null};
  const before=JSON.stringify(legacy),normalized=normalizeShipmentPlanningInput(legacy);
  assert.equal(normalized.plannedCarrierId,null);assert.equal(normalized.carrierId,null);assert.equal(normalized.vehicleTypeId,null);
@@ -11,11 +13,12 @@ test('Ritira Cliente: apertura e salvataggio eliminano dal payload il vettore az
  const original=globalThis.fetch,calls=[];
  globalThis.fetch=async(url,options)=>{calls.push({url,payload:JSON.parse(options.body)});return new Response('{}',{headers:{'content-type':'application/json'}});};
  try{
+  const {createShipment,updateShipment}=await server.ssrLoadModule('/src/services/shipmentsApi.ts');
   await updateShipment('PLAN',legacy);await createShipment(legacy);
   for(const call of calls)assert.deepEqual(call.payload,normalized);
   const date={plannedDepartureDate:'2026-10-20',expectedUpdatedAt:'2026-10-18T08:00:00Z'};
   await updateShipment('PLAN',date);assert.deepEqual(calls[2].payload,date);
- }finally{globalThis.fetch=original;}
+ }finally{globalThis.fetch=original;await server.close();}
 });
 
 test('cambio modalità: Ritira Cliente non conserva vettori Terzi/Bilico, altre modalità preservano dati e controlli',()=>{

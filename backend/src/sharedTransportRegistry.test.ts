@@ -3,9 +3,45 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { migrateSharedTransportRegistry } from "./database/sharedTransportRegistryMigration.js";
 import { buildApp, seedDepartureDdtForApp } from "./fixtures/departureDdt.js";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+test("Ritira Cliente: modifica piano legacy con vettore previsto residuo, cambio modalità e assegnazioni preservate",async()=>{
+ const dir=mkdtempSync(join(tmpdir(),"sislog-client-pickup-"));
+ const config={environment:"test" as const,databasePath:join(dir,"test.sqlite"),port:3194,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath:null,httpsKeyPath:null,httpsCertPath:null};
+ const app=await buildApp(config),db=new DatabaseSync(config.databasePath);
+ try{
+  const carrier=String(db.prepare("SELECT id FROM Carriers WHERE active=1 LIMIT 1").get()!.id);
+  const trailer=String(db.prepare("SELECT id FROM Trailers WHERE active=1 LIMIT 1").get()!.id);
+  const at="2026-10-18T08:00:00Z";
+  db.prepare("INSERT INTO Loads(id,commessa,cliente,camion,stato,createdAt,updatedAt) VALUES('PICKUP-L','PICKUP','Cliente TEST','C1','DA_COMPLETARE',?,?)").run(at,at);
+  db.prepare("INSERT INTO TransportAssignments(id,trailerId,loadId,source,stato,assignedAt,createdAt,updatedAt) VALUES('PICKUP-A',?,'PICKUP-L','LOAD','IMPEGNATO',?,?,?)").run(trailer,at,at,at);
+  const input={loadId:'PICKUP-L',commessa:'PICKUP',cliente:'Cliente TEST',camion:'C1',transportType:'RITIRA_CLIENTE',plannedCarrierId:null,carrierId:null,notes:'Conservare'};
+  const created=await app.inject({method:"POST",url:"/api/shipments",payload:input});assert.equal(created.statusCode,200,created.body);
+  const id=created.json().id,url=`/api/shipments/${id}`;
+  // Isolated fixture reproduces the existing TEST record, never an operational DB.
+  db.prepare("UPDATE ShipmentPlans SET plannedCarrierId=? WHERE id=?").run(carrier,id);
+  const beforePlan=db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(id);
+  const dependencies=()=>JSON.stringify([db.prepare("SELECT * FROM TransportAssignments").all(),db.prepare("SELECT * FROM LoadingSessions").all(),db.prepare("SELECT * FROM DdtDocuments").all(),db.prepare("SELECT * FROM Loads").all()]);
+  const beforeDependencies=dependencies();
+  const rejected=await app.inject({method:"PUT",url,payload:{...input,plannedCarrierId:carrier}});
+  assert.equal(rejected.statusCode,400);assert.match(rejected.body,/Trasportatore consentito solo/);
+  assert.deepEqual(db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(id),beforePlan);
+  const saved=await app.inject({method:"PUT",url,payload:{...input,notes:'Modifica esplicita TEST'}});
+  assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().plannedCarrierId,null);assert.equal(saved.json().carrierId,null);
+  assert.equal(saved.json().transportType,'RITIRA_CLIENTE');assert.equal(dependencies(),beforeDependencies);
+  // Other transport modes keep their own validation and predictions.
+  const invalidActual=await app.inject({method:"PUT",url,payload:{...input,carrierId:carrier}});assert.equal(invalidActual.statusCode,400);
+  const bilico=await app.inject({method:"PUT",url,payload:{...input,transportType:'BILICO_ESSEPI',transportDetailId:carrier}});
+  assert.equal(bilico.statusCode,200,bilico.body);assert.equal(bilico.json().plannedCarrierId,carrier);
+  const pickup=await app.inject({method:"PUT",url,payload:input});assert.equal(pickup.statusCode,200,pickup.body);assert.equal(pickup.json().plannedCarrierId,null);
+  const terzi=await app.inject({method:"PUT",url,payload:{...input,transportType:'TERZI_PER_ESSEPI',plannedCarrierId:carrier}});
+  assert.equal(terzi.statusCode,200,terzi.body);assert.equal(terzi.json().plannedCarrierId,carrier);
+  const invalid=await app.inject({method:"PUT",url,payload:{...input,transportType:'TERZI_PER_ESSEPI',plannedCarrierId:'unknown'}});assert.equal(invalid.statusCode,400);
+  assert.equal(dependencies(),beforeDependencies);
+ }finally{db.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+});
 
 test("shared registry migration preserves identities, combined values and unknowns; confirmed Sulpizii is unique",()=>{
  const db=new DatabaseSync(":memory:");

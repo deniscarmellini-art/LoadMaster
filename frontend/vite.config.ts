@@ -25,6 +25,11 @@ export default defineConfig(({ command, mode }) => {
     throw new Error("Per PRODUZIONE usare scripts/start-production.ps1; Vite serve solo TEST");
   return {
     plugins: [react()],
+    // SSR test helpers use Vite's default .vite cache with a different dependency
+    // graph. Keep the running TEST browser's optimized modules independent.
+    cacheDir: test
+      ? fileURLToPath(new URL("./node_modules/.vite-sislog-test", import.meta.url))
+      : undefined,
     // Dev ignores legacy VITE_API_URL values, including machine .env.local.
     define: {
       "import.meta.env.VITE_SISLOG_TEST": JSON.stringify(test),

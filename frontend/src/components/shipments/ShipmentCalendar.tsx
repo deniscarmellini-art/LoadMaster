@@ -10,7 +10,8 @@ import { shipmentTransportPresentation } from "../../services/shipmentTransportP
 import { shipmentLoadLinkLabel } from "../../services/shipmentLoadLink";
 import { ApiClientError } from "../../services/apiClient";
 
-export const shipmentHasDeparted = (item: ShipmentItem) => Boolean(item.actualDepartureDate || item.operationalStatus === "SPEDITO" || item.shipmentStatus === "IN_VIAGGIO" || item.shipmentStatus === "CONCLUSA");
+import { shipmentHasDeparted } from "../../services/shipmentDeparture";
+export { shipmentHasDeparted } from "../../services/shipmentDeparture";
 
 interface Props {
   items: ShipmentItem[];
