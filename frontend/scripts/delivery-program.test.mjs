@@ -16,10 +16,10 @@ const options={from:'2026-10-19',to:'2026-10-21',carrierName:'Vettore TEST',gene
 const base={id:'P',persisted:true,loadId:'L',commessa:'ORD-TEST',cliente:'Cliente TEST',orderReference:'RIF-001',camion:'C1',plannedDepartureDate:'2026-10-20',actualDepartureDate:null,operationalStatus:'DA_COMPLETARE',shipmentStatus:'PIANIFICATA',transportType:'TERZI_PER_ESSEPI',plannedCarrierId:'C',vehicleTypeId:'V',deliveryAddress:'Via di consegna 10\nEdificio B, 38100 Trento (TN)\nIngresso magazzino posteriore',notes:'Prima riga: telefonare prima della consegna.\nSeconda riga: accesso dal cancello laterale.\nUltima riga: fine istruzioni.'};
 const detail=item=>shipmentListDetails(item,[{id:'C',nome:'Vettore TEST'},{id:'OTHER',nome:'Altro vettore'}],[],[],[],[{id:'V',nome:'Autotreno'}]);
 const details=items=>new Map(items.map(item=>[item.id,detail(item)]));
-const filters={search:'cliente test',status:'PIANIFICATA',type:'TERZI_PER_ESSEPI',carrierFilter:'C',from:options.from,to:options.to};
+const filters={search:'cliente test',type:'TERZI_PER_ESSEPI',carrierFilter:'C',from:options.from,to:options.to};
 const modelFor=items=>prepareDeliveryProgram(items,details(items),options);
 
-test('programma: stessi filtri Elenco per ricerca, modalità, stato, trasportatore e date inclusive; export cronologico senza partenze',()=>{
+test('programma: stessi filtri Elenco per ricerca, modalità, trasportatore e date inclusive; lista ed export senza partenze',()=>{
  const items=[base,{...base,id:'END',plannedDepartureDate:'2026-10-21T10:00:00.000Z'},{...base,id:'START',plannedDepartureDate:'2026-10-19'},
   {...base,id:'OUT-LOW',plannedDepartureDate:'2026-10-18'},{...base,id:'OUT-HIGH',plannedDepartureDate:'2026-10-22'},
   {...base,id:'CARRIER',plannedCarrierId:'OTHER'},{...base,id:'MODE',transportType:'RITIRA_CLIENTE'},{...base,id:'STATUS',shipmentStatus:'PRONTA'},
@@ -27,12 +27,32 @@ test('programma: stessi filtri Elenco per ricerca, modalità, stato, trasportato
   {...base,id:'ACTUAL',actualDepartureDate:'2026-10-18T07:00:00Z'},
   {...base,id:'INVALID',plannedDepartureDate:'2026-02-30'},{...base,id:'UNDATED',plannedDepartureDate:null}];
  const before=JSON.stringify(items),map=details(items),visible=filterShipmentList(items,map,filters),model=prepareDeliveryProgram(visible,map,options);
- assert.deepEqual(visible.map(item=>item.id),['P','END','START','DEPARTED','ACTUAL']);
- assert.deepEqual(model.rows.map(row=>row.id),['START','P','END']);
+ assert.deepEqual(visible.map(item=>item.id),['P','END','START','STATUS']);
+ assert.deepEqual(model.rows.map(row=>row.id),['START','P','STATUS','END']);
  assert.deepEqual(new Set(model.rows.map(row=>row.id)),new Set(visible.filter(item=>!shipmentHasDeparted(item)).map(item=>item.id)));
  assert.equal(JSON.stringify(items),before);assert.match(model.period,/19\/10\/2026.*21\/10\/2026/);
  assert.equal(model.options.carrierName,'Vettore TEST');assert.match(model.generatedLabel,/10:30/);
  assert.equal(model.rows[1].values[5],base.deliveryAddress);assert.equal(model.rows[1].values[8],base.notes);
+});
+
+test('Elenco: tutti gli stati non partiti visibili, SPEDITO/IN_VIAGGIO e partenze effettive esclusi senza limiti impliciti di data',()=>{
+ const pending=[
+  {...base,id:'UNPLANNED',shipmentStatus:'DA_PIANIFICARE',operationalStatus:null,plannedDepartureDate:null},
+  {...base,id:'PLANNED',plannedDepartureDate:'2025-01-01'},
+  {...base,id:'READY',shipmentStatus:'PRONTA',operationalStatus:'ATTESA_SPEDIZIONE'},
+  {...base,id:'LOADING',operationalStatus:'IN_CARICO'},
+ ];
+ const departed=[{...base,id:'SHIPPED',operationalStatus:'SPEDITO'},
+  {...base,id:'TRAVELLING',shipmentStatus:'IN_VIAGGIO'},
+  {...base,id:'CLOSED',shipmentStatus:'CONCLUSA'},
+  {...base,id:'ACTUAL',actualDepartureDate:'2026-10-18T08:00:00Z'}];
+ const items=[...pending,...departed],map=details(items),before=JSON.stringify(items);
+ const visible=filterShipmentList(items,map,{search:'',type:'',carrierFilter:'',from:'',to:''});
+ assert.deepEqual(visible,pending);
+ const model=prepareDeliveryProgram(visible,map,{...options,from:'',to:''});
+ assert.deepEqual(new Set(model.rows.map(row=>row.id)),new Set(pending.map(row=>row.id)));
+ assert.equal(JSON.stringify(items),before);
+ assert.deepEqual(filterShipmentList(items,map,{search:'',type:'',carrierFilter:'',from:'2026-10-19',to:'2026-10-21'}).map(row=>row.id),['READY','LOADING']);
 });
 
 test('programma: nessun documento vuoto; tutti gli indicatori di partenza esclusi e date mancanti solo senza periodo',()=>{

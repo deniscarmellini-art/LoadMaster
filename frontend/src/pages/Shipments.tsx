@@ -47,7 +47,6 @@ import {
   updateShipment,
   type ShipmentInput,
   type ShipmentItem,
-  type ShipmentStatus,
   type ShipmentTransportType,
 } from "../services/shipmentsApi";
 import type { TransportItem } from "../services/transportsApi";
@@ -67,13 +66,6 @@ interface Props {
   transports: TransportItem[];
   onRefresh: () => Promise<void>;
 }
-const labels: Record<ShipmentStatus, string> = {
-  DA_PIANIFICARE: "Da pianificare",
-  PIANIFICATA: "Pianificata",
-  PRONTA: "Pronta",
-  IN_VIAGGIO: "In viaggio",
-  CONCLUSA: "Spedita",
-};
 const empty: ShipmentInput = {
   commessa: "",
   cliente: "",
@@ -88,19 +80,6 @@ const empty: ShipmentInput = {
   carrierId: null,
   customerId: null,
   notes: "",
-};
-const remainsInOperationalView = (item: ShipmentItem) => {
-  if (!item.actualDepartureDate) return true;
-  const departure = new Date(item.actualDepartureDate);
-  if (Number.isNaN(departure.getTime())) return true;
-  const expiry = new Date(
-    departure.getFullYear(),
-    departure.getMonth(),
-    departure.getDate() + 7,
-  );
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today <= expiry;
 };
 type SortKey = "commessa" | "cliente" | "camion" | "plannedDepartureDate" | "operationalStatus" | "transportType";
 type SortDirection = "asc" | "desc";
@@ -148,7 +127,6 @@ export default function Shipments({
   onRefresh,
 }: Props) {
   const [search, setSearch] = useState(""),
-    [status, setStatus] = useState<ShipmentStatus | "">(""),
     [type, setType] = useState<ShipmentTransportType | "">(""),
     [carrierFilter, setCarrierFilter] = useState(""),
     [from, setFrom] = useState(""),
@@ -180,10 +158,6 @@ export default function Shipments({
     if(editing && editing!=="new" && departed(editing))setEditing(null);
     if(deleteItem && departed(deleteItem))setDeleteItem(null);
   }, [items, editing, deleteItem]);
-  const operationalItems = useMemo(
-    () => visibleItems.filter(remainsInOperationalView),
-    [visibleItems],
-  );
   const legacyCount = useMemo(
     () =>
       items.filter(
@@ -194,9 +168,6 @@ export default function Shipments({
       ).length,
     [items],
   );
-  // The explicit shipped filter also searches older departures. The default
-  // operational list keeps its existing seven-day window.
-  const listItems = status === "CONCLUSA" ? visibleItems : operationalItems;
   const listDetails = useMemo(() => new Map(visibleItems.map(item => [item.id,
     shipmentListDetails(item, carriers, trailers, transports, loads, clientVehicleTypes),
   ])), [visibleItems, carriers, trailers, transports, loads, clientVehicleTypes]);
@@ -206,8 +177,8 @@ export default function Shipments({
     shipmentCalendarTransportDetails(item, carriers, clientVehicleTypes, trailers, transports, loads),
   ])), [visibleItems, carriers, clientVehicleTypes, trailers, transports, loads]);
   const filtered = useMemo(
-    () => filterShipmentList(listItems,listDetails,{search,status,type,carrierFilter,from,to}),
-    [listItems, search, status, type, carrierFilter, from, to, listDetails],
+    () => filterShipmentList(visibleItems,listDetails,{search,type,carrierFilter,from,to}),
+    [visibleItems, search, type, carrierFilter, from, to, listDetails],
   );
   const open = (item?: ShipmentItem, date?: string) => {
     if(item && hasDeparted(item))return;
@@ -354,7 +325,7 @@ export default function Shipments({
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="it">
       <Box>
-        {legacyCount > 0 && (
+        {view === "calendar" && legacyCount > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>
             {legacyCount} spedizion{legacyCount === 1 ? "e" : "i"} spedit
             {legacyCount === 1 ? "a" : "e"} senza data di partenza effettiva:
@@ -373,7 +344,7 @@ export default function Shipments({
                 xs: "minmax(0,1fr)",
                 sm: "repeat(2,minmax(0,1fr))",
                 md: "repeat(3,minmax(0,1fr))",
-                lg: "minmax(220px,1.6fr) minmax(130px,1fr) minmax(150px,1.1fr) minmax(130px,1fr) repeat(2,minmax(180px,1.1fr))",
+                lg: "minmax(190px,1.5fr) repeat(2,minmax(150px,1.1fr)) repeat(2,minmax(160px,1fr)) minmax(200px,1.2fr)",
               },
               gap: 1,
               mb: 1.5,
@@ -386,20 +357,6 @@ export default function Shipments({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <TextField
-              size="small"
-              select
-              label="Stato spedizione"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as ShipmentStatus | "")}
-            >
-              <MenuItem value="">Tutti</MenuItem>
-              {Object.entries(labels).map(([v, l]) => (
-                <MenuItem key={v} value={v}>
-                  {l}
-                </MenuItem>
-              ))}
-            </TextField>
             <TextField
               size="small"
               select
@@ -420,8 +377,8 @@ export default function Shipments({
             </TextField>
             <ShipmentDateFilter label="Partenza da" value={from} onChange={setFrom}/>
             <ShipmentDateFilter label="Partenza a" value={to} onChange={setTo}/>
+            <DeliveryProgramExport filtered={filtered} details={listDetails} from={from} to={to} carrierId={carrierFilter||undefined} carrierName={carrierFilter?carriers.find(carrier=>carrier.id===carrierFilter)?.nome:undefined}/>
           </Box>}
-          {view==="list"&&<DeliveryProgramExport filtered={filtered} details={listDetails} from={from} to={to} carrierId={carrierFilter||undefined} carrierName={carrierFilter?carriers.find(carrier=>carrier.id===carrierFilter)?.nome:undefined}/>}
           {view === "calendar" ? (
             <>
               {!!calendarUnplaced.length && <Box sx={{mb:2}}>

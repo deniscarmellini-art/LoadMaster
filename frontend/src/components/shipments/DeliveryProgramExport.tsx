@@ -32,7 +32,7 @@ function TestDeliveryProgramExport({filtered,details,from,to,carrierId,carrierNa
     finally{pending.current=false;setBusy(false);}
   };
   return <>
-    <Stack sx={{gap:1,mb:1.5,alignItems:"flex-start"}}><Button variant="outlined" onClick={open} disabled={busy}>Esporta pianificazione</Button>{error&&!model&&<Alert severity="info">{error}</Alert>}</Stack>
+    <Stack sx={{gap:1,minWidth:0,alignSelf:"start"}}><Button fullWidth size="small" sx={{minHeight:40,whiteSpace:"nowrap"}} variant="outlined" onClick={open} disabled={busy}>Esporta pianificazione</Button>{error&&!model&&<Alert severity="info">{error}</Alert>}</Stack>
     <Dialog open={!!model} onClose={()=>{if(!busy)setModel(null);}} fullWidth maxWidth="sm">
       <DialogTitle>Esporta pianificazione</DialogTitle>
       <DialogContent><Typography sx={{mb:1}}>{model?.rows.length} consegne da effettuare, ordinate per data prevista.</Typography>{model?.options.carrierName&&<Typography>Trasportatore: {model.options.carrierName}</Typography>}<Typography>{model?.period}</Typography><Alert severity="info" sx={{mt:2}}>{deliveryProgramDisclaimer}. Le spedizioni già partite sono escluse.</Alert>{error&&<Alert severity="error" sx={{mt:1}}>{error}</Alert>}{busy&&<Typography sx={{mt:1}}>Generazione in corso…</Typography>}</DialogContent>
