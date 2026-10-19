@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { buildApp } from "./app.js";
 import { ddtPreview } from "./repositories/ddtPreviewRepository.js";
-import { renderDdtPreview } from "./services/ddtPreviewPdf.js";
+import { renderDdtPreview, renderDefinitiveDdt } from "./services/ddtPreviewPdf.js";
 
 async function fixture(count = 20) {
   const dir=mkdtempSync(join(tmpdir(),"sislog-ddt-preview-"));
@@ -52,6 +52,11 @@ test("DDT preview: only active loaded material, packages once, imported identity
     const response=await f.app.inject({method:"GET",url:"/api/loading-sessions/session/ddt-preview"});
     assert.equal(response.statusCode,200);assert.match(response.headers["content-type"]!,/application\/pdf/);
     assert.equal(response.rawPayload.subarray(0,5).toString(),"%PDF-");assert.equal(response.headers["cache-control"],"no-store");
+    assert.match(response.headers["content-disposition"]!,/^inline; filename="TEST-265612_C1_Cliente TEST importato.pdf"; filename\*=UTF-8''TEST-265612_C1_Cliente%20TEST%20importato.pdf$/);
+    const download=await f.app.inject({method:"GET",url:"/api/loading-sessions/session/ddt-preview?download=1"});
+    assert.equal(download.statusCode,200);
+    assert.equal(download.headers["content-disposition"],response.headers["content-disposition"]!.replace(/^inline;/,"attachment;"));
+    assert.equal(download.rawPayload.subarray(0,5).toString(),"%PDF-");
     assert.equal(f.snapshot(),before);assert.deepEqual(f.db.prepare("PRAGMA data_version").get(),version);
     assert.equal((await f.app.inject({method:"GET",url:"/api/loading-sessions/session/ddt-preview"})).statusCode,200);
     assert.equal(f.snapshot(),before);
@@ -116,6 +121,34 @@ test("DDT preview: one/multiple pages, row boundaries, repeated groups and final
   }
 });
 
+test("DDT TEST multipagina: spazio recuperato, pacchi integri e riepilogo finale",async()=>{
+  const f=await fixture(80);try{
+    const before=f.snapshot(),model=ddtPreview(f.db,"session",new Date("2026-10-16T10:00:00Z"));
+    const legacy=renderDdtPreview(model),compact=renderDdtPreview(model,true);
+    assert.ok(compact.pages<legacy.pages);
+    assert.equal(compact.placements.length,80);assert.equal(new Set(compact.placements.map(p=>p.elementId)).size,80);
+    assert.equal(compact.summaryPage,compact.pages);
+    assert.ok(compact.placements.every(p=>p.top>=(p.page===1?356:176)&&p.bottom<=(p.page===1?682:772)));
+    assert.ok(compact.placements.some(p=>p.page===2&&p.top<333));
+    assert.deepEqual(compact.placements.filter(p=>p.page===1),legacy.placements.filter(p=>p.page===1));
+    const packagePages=compact.placements.filter(p=>p.group==="PACCO P-001").map(p=>p.page);
+    assert.equal(new Set(packagePages).size,1);
+    const dir=process.env.DDT_PREVIEW_QA_DIR;
+    if(dir){mkdirSync(resolve(dir),{recursive:true});writeFileSync(join(resolve(dir),"test-compatto-80.pdf"),renderDefinitiveDdt(model,true).pdf);writeFileSync(join(resolve(dir),"legacy-80.pdf"),renderDefinitiveDdt(model).pdf);}
+    // A package fits a continuation page but not the remaining first-page space.
+    const packModel=structuredClone(model);packModel.groups=[{label:"PACCO INTERO",packageId:"WHOLE",elements:model.groups.flatMap(g=>g.elements).slice(0,20)}];
+    const whole=renderDdtPreview(packModel,true);
+    assert.equal(new Set(whole.placements.map(p=>p.page)).size,1);assert.equal(whole.placements[0]!.page,2);
+    // An oversized package must continue without dropping or duplicating rows.
+    packModel.groups[0]!.elements=model.groups.flatMap(g=>g.elements);
+    const split=renderDdtPreview(packModel,true);
+    assert.equal(split.placements.length,80);assert.equal(new Set(split.placements.map(p=>p.elementId)).size,80);
+    assert.ok(new Set(split.placements.map(p=>p.page)).size>1);
+    if(dir)writeFileSync(join(resolve(dir),"test-pacco-lungo.pdf"),renderDefinitiveDdt(packModel,true).pdf);
+    assert.equal(f.snapshot(),before);
+  }finally{await f.close();}
+});
+
 test("DDT preview: a package continues across pages without repeating elements",async()=>{
   const f=await fixture(40);try{
     f.db.exec("UPDATE Panels SET packageId='pack' WHERE id<>'not-loaded'; DELETE FROM LoadingUnits WHERE unitType='PANEL'");
@@ -159,5 +192,34 @@ test("DDT: modalita effettiva mancante non viene inferita dal vettore o dal Cale
   f.db.prepare("UPDATE LoadingSessions SET transportMode=NULL").run();
   f.db.prepare("UPDATE ShipmentPlans SET transportMode='TERZI_PER_ESSEPI',plannedCarrierId='carrier'").run();
   const before=f.snapshot();assert.throws(()=>ddtPreview(f.db,"session"),/modalit. effettiva/);assert.equal(f.snapshot(),before);
+ }finally{await f.close();}
+});
+
+test("Anteprima TEST storica: recupero pianificazione solo a carico chiuso, senza scritture",async()=>{
+ const f=await fixture(4);try{
+  f.db.exec("UPDATE LoadingSessions SET stato='ATTESA_SPEDIZIONE',completedAt='2026-09-17T07:13:11Z',transportMode=NULL,carrierId=NULL; UPDATE Loads SET stato='ATTESA_SPEDIZIONE'; UPDATE ShipmentPlans SET transportMode='BILICO_ESSEPI',plannedCarrierId='carrier'");
+  const before=f.snapshot();
+  assert.throws(()=>ddtPreview(f.db,'session'),/modalit. effettiva/);
+  assert.equal(ddtPreview(f.db,'session',new Date(),true,true).transport.carrierName,'VETTORE TEST');
+  assert.equal((await f.app.inject({method:'GET',url:'/api/loading-sessions/session/ddt-preview/availability'})).json().available,true);
+  assert.equal((await f.app.inject({method:'GET',url:'/api/loading-sessions/session/ddt-preview'})).statusCode,200);
+  assert.equal(f.snapshot(),before);
+  // A complete actual tuple wins even when the plan specifies a different responsibility.
+  f.db.exec("UPDATE LoadingSessions SET transportMode='RITIRA_CLIENTE'");
+  assert.equal(ddtPreview(f.db,'session',new Date(),true,true).transport.responsibility,'DESTINATARIO');
+  // A mode without its required actual carrier is also incomplete.
+  f.db.exec("UPDATE LoadingSessions SET transportMode='TERZI_PER_ESSEPI'");
+  assert.equal(ddtPreview(f.db,'session',new Date(),true,true).transport.responsibility,'MITTENTE');
+  for(const mode of ['TERZI_PER_ESSEPI','RITIRA_CLIENTE']){
+   f.db.prepare('UPDATE ShipmentPlans SET transportMode=?').run(mode);
+   const model=ddtPreview(f.db,'session',new Date(),true,true);
+   assert.equal(model.transport.carrierName,mode==='RITIRA_CLIENTE'?null:'VETTORE TEST');
+  }
+  f.db.exec("UPDATE ShipmentPlans SET transportMode='BILICO_ESSEPI',plannedCarrierId=NULL,transportDetailId=NULL,carrierId=NULL");
+  const incomplete=f.snapshot();
+  const fail=await f.app.inject({method:'GET',url:'/api/loading-sessions/session/ddt-preview'});
+  assert.equal(fail.statusCode,422);assert.match(fail.json().error.message,/vettore effettivo confermato/);assert.equal(f.snapshot(),incomplete);
+  f.db.exec("UPDATE ShipmentPlans SET plannedCarrierId='carrier'; UPDATE LoadingSessions SET stato='IN_CARICO'");
+  assert.throws(()=>ddtPreview(f.db,'session',new Date(),true,true),/vettore effettivo confermato/);
  }finally{await f.close();}
 });

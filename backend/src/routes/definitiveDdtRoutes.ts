@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { DatabaseSync } from "node:sqlite";
 import { IssuedDdtService } from "../services/issuedDdtService.js";
 import { ApiError } from "../utils/apiError.js";
+import { ddtContentDisposition } from "../services/ddtDownloadName.js";
 
 export function definitiveDdtRoutes(app:FastifyInstance,db:DatabaseSync):void {
   const service=new IssuedDdtService(db);
@@ -18,9 +19,9 @@ export function definitiveDdtRoutes(app:FastifyInstance,db:DatabaseSync):void {
   app.post<{Params:{id:string};Body:{operatorId:string;requestKey:string}}>("/api/loading-sessions/:id/ddt",{schema:{body:{type:"object",additionalProperties:false,required:["operatorId","requestKey"],properties:{operatorId:{type:"string",minLength:1},requestKey:{type:"string",minLength:16,maxLength:128,pattern:"^[a-zA-Z0-9-]+$"}}}}},async(request,reply)=>{
     reply.header("Cache-Control","no-store");try{return service.issue(request.params.id,request.body.operatorId,request.body.requestKey);}catch(error){return convert(error);}
   });
-  app.get<{Params:{id:string}}>("/api/ddt/:id/pdf",async(request,reply)=>{
+  app.get<{Params:{id:string};Querystring:{download?:string}}>("/api/ddt/:id/pdf",async(request,reply)=>{
     try{const doc=service.repo.find(request.params.id);if(!doc)throw new Error("DDT_NOT_FOUND");
-      return reply.header("Cache-Control","no-store").header("Content-Disposition",`inline; filename="ddt-${doc.year}-${doc.sequence}.pdf"`).header("X-DDT-Status",doc.status).type("application/pdf").send(service.repo.originalPdf(doc.id));
+      return reply.header("Cache-Control","no-store").header("Content-Disposition",ddtContentDisposition(doc.snapshotJson,request.query.download==="1")).header("X-DDT-Status",doc.status).type("application/pdf").send(service.repo.originalPdf(doc.id));
     }catch(error){return convert(error);}
   });
   app.post<{Params:{id:string};Body:{operatorId:string;reason:string}}>("/api/ddt/:id/cancel",{schema:{body:{type:"object",additionalProperties:false,required:["operatorId","reason"],properties:{operatorId:{type:"string",minLength:1},reason:{type:"string",minLength:1,maxLength:2000}}}}},async(request,reply)=>{

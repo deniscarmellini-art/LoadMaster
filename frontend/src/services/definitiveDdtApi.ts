@@ -22,3 +22,5 @@ export async function cancelDdtAndRefresh(id:string,operatorId:string,reason:str
   if(!status.history.some(doc=>doc.id===id&&doc.status==="ANNULLATO"))throw failure??new Error("Annullamento non confermato. Verificare lo stato del documento.");
   return status;
 }
+
+export function originalDdtPdfUrl(id:string){testOnly();return `/api/ddt/${encodeURIComponent(id)}/pdf`;}

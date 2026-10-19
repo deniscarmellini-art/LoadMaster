@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, MenuItem, Stack, TextField } from "@mui/material";
+import { Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import LoadingTransportFields from "./LoadingTransportFields";
 import { createTransportReservation, releaseTransportReservation, type TransportItem } from "../../services/transportsApi";
 import type { ShipmentTransportType } from "../../services/shipmentsApi";
@@ -30,6 +30,8 @@ export default function TruckLoadingTransportFields({load,mode,detailId,detailLa
   const [error,setError]=useState<string|null>(null);
   const [release,setRelease]=useState<{trailer:TransportItem;nextMode?:ShipmentTransportType|""}|null>(null);
   const available=availableLoadingTrailers(transports);
+  const compact=import.meta.env.VITE_SISLOG_TEST===true;
+  const selectedTrailer=available.find(item=>item.id===selected);
   const changeMode=(next:ShipmentTransportType|"")=>{
     setError(null);
     if(assigned&&next!=="BILICO_ESSEPI"){
@@ -66,10 +68,33 @@ export default function TruckLoadingTransportFields({load,mode,detailId,detailLa
       {!available.length&&<Alert severity="info">Nessun rimorchio attivo disponibile.</Alert>}
     </>}
   </Stack>;
+  const compactTrailerControl=<>
+    {assigned?<>
+      <TextField label="Rimorchio Essepi" value={assigned.plate} title={assigned.description} slotProps={{input:{readOnly:true}}}
+        sx={{gridColumn:{xs:"1 / -1",sm:"span 2",md:"auto"},"& input":{fontWeight:800,letterSpacing:.5}}}/>
+      {assigned.canRelease?<Button variant="outlined" disabled={busy||saving} onClick={()=>setRelease({trailer:assigned})}>Disimpegna</Button>:<Typography variant="caption" color="text.secondary" sx={{alignSelf:"center"}}>Rimorchio non disimpegnabile</Typography>}
+    </>:<>
+      <TextField select label="Rimorchio Essepi" value={selectedTrailer?selected:""} disabled={busy||saving}
+        onChange={event=>{setSelected(event.target.value);setError(null);}}
+        slotProps={{select:{renderValue:()=>selectedTrailer?.plate??""}}}
+        sx={{gridColumn:{xs:"1 / -1",sm:"span 2",md:"auto"},"& .MuiSelect-select":{fontWeight:800,letterSpacing:.5},...(selectedTrailer?{"& .MuiOutlinedInput-root":{bgcolor:"rgba(255,152,0,.08)"},"& .MuiOutlinedInput-notchedOutline":{borderColor:"warning.main"}}:{})}}>
+        <MenuItem value="">Seleziona rimorchio</MenuItem>
+        {available.map(item=><MenuItem key={item.id} value={item.id}>{[item.plate,item.description].filter(Boolean).join(" — ")}</MenuItem>)}
+      </TextField>
+      <Button variant={selectedTrailer?"contained":"outlined"} color="primary" disabled={busy||saving||!selectedTrailer} onClick={reserve}>
+        {busy?"Impegno in corso…":"Impegna rimorchio"}
+      </Button>
+    </>}
+  </>;
   return <>
-    <LoadingTransportFields mode={mode} detailId={detailId} detailLabel={detailLabel} options={options} disabled={busy||saving} trailerControl={trailerControl} onModeChange={changeMode} onDetailChange={onDetailChange}/>
+    <LoadingTransportFields mode={mode} detailId={detailId} detailLabel={detailLabel} options={options} disabled={busy||saving} trailerControl={compact?compactTrailerControl:trailerControl} onModeChange={changeMode} onDetailChange={onDetailChange}/>
     {mode==="TERZI_PER_ESSEPI"&&<TextField select label="Vettore effettivo confermato" value={carrierId} disabled={busy||saving} onChange={event=>onCarrierChange?.(event.target.value)} helperText="Selezione esplicita richiesta per DDT e partenza. Non viene recuperata dal Calendario."><MenuItem value="">Seleziona vettore effettivo</MenuItem>{carriers.filter(item=>item.attivo||item.id===carrierId).map(item=><MenuItem key={item.id} value={item.id}>{item.nome}</MenuItem>)}</TextField>}
-    {error&&<Alert severity="error" onClose={()=>setError(null)}>{error}</Alert>}
+    {compact&&mode==="BILICO_ESSEPI"&&<>
+      {assigned&&!error&&<Alert severity="success" sx={{gridColumn:"1 / -1"}}>Rimorchio impegnato: <strong>{assigned.plate}</strong></Alert>}
+      {!assigned&&selectedTrailer&&<Alert severity="warning" sx={{gridColumn:"1 / -1"}}>Targa selezionata: <strong>{selectedTrailer.plate}</strong> — impegno da confermare.</Alert>}
+      {!assigned&&!available.length&&<Alert severity="info" sx={{gridColumn:"1 / -1"}}>Nessun rimorchio attivo disponibile.</Alert>}
+    </>}
+    {error&&<Alert severity="error" sx={compact?{gridColumn:"1 / -1"}:undefined} onClose={()=>setError(null)}>{error}</Alert>}
     <Dialog open={release!==null} onClose={()=>{if(!busy)setRelease(null);}}>
       <DialogTitle>Disimpegna rimorchio</DialogTitle>
       <DialogContent><DialogContentText>Disimpegnare {release?.trailer.plate}{release?.nextMode?" e cambiare modalità di trasporto":""}? Il backend verifica che il carico fisico non sia iniziato.</DialogContentText>{error&&<Alert severity="error">{error}</Alert>}</DialogContent>

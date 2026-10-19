@@ -1,7 +1,13 @@
+import CompactOperationalSummary from "../shared/CompactOperationalSummary";
 import { Box, Paper, Typography } from "@mui/material";
 import { panelScanningSummaryFields, type PanelScanningSummaryData } from "../../services/panelScanningSummary";
 
 export default function PanelScanningSummary(props: PanelScanningSummaryData) {
+  if(import.meta.env.VITE_SISLOG_TEST===true){
+    const fields=panelScanningSummaryFields(props);
+    const ordered=[fields[0]!,fields[2]!,fields[1]!,fields[3]!,...fields.slice(4)];
+    return <CompactOperationalSummary fields={ordered} label="Riepilogo scansione elemento finito"/>;
+  }
   return <Box aria-label="Riepilogo scansione elemento finito" sx={{
     display: "grid", gridTemplateColumns: {
       xs: "repeat(2,minmax(0,1fr))", sm: "repeat(4,minmax(0,1fr))",

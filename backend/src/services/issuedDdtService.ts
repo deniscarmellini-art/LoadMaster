@@ -31,7 +31,7 @@ export class IssuedDdtService {
       const current=this.repo.valid(sessionId);
       const history=this.repo.history(sessionId),departed=this.repo.hasDeparted(sessionId);
       if(current){this.db.exec("COMMIT");return {document:current,history,canCancel:!departed,departed,canIssue:false,reason:"Carico bloccato da un DDT valido."};}
-      try{const model=this.model(sessionId,new Date());renderDefinitiveDdt(model);this.db.exec("COMMIT");return {document:null,history,canCancel:false,departed,canIssue:true};}
+      try{const model=this.model(sessionId,new Date());renderDefinitiveDdt(model,true);this.db.exec("COMMIT");return {document:null,history,canCancel:false,departed,canIssue:true};}
       catch(error){if(error instanceof ApiError){this.db.exec("COMMIT");return {document:null,history,canCancel:false,departed,canIssue:false,reason:error.message};}throw error;}
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
@@ -51,6 +51,6 @@ export class IssuedDdtService {
       const carrier=session.carrierId?this.db.prepare("SELECT * FROM Carriers WHERE id=?").get(String(session.carrierId)):null;
       const trailer=session.trailerId?this.db.prepare("SELECT * FROM Trailers WHERE id=?").get(String(session.trailerId)):null;
       return {model:{...model,kind:"DDT_DEFINITIVO"},session,load,plan,customer,units,panels,packages,carrier,trailer,template:{version:"ESSEPI_V3",issuer:ddtIssuer,conditions:ddtConditions}};
-    },snapshot=>renderDefinitiveDdt((snapshot.data as {model:Omit<DdtPreview,"kind">}).model).pdf,requestKey);
+    },snapshot=>renderDefinitiveDdt((snapshot.data as {model:Omit<DdtPreview,"kind">}).model,true).pdf,requestKey);
   }
 }

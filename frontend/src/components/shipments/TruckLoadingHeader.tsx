@@ -2,8 +2,10 @@ import { Box, Typography } from "@mui/material";
 import type { Camion } from "../../models/Camion";
 import type { Commessa } from "../../types/excel";
 import { truckLoadingHeaderRows } from "../../services/truckLoadingHeader";
+import { OperationalIdentity } from "../shared/OperationalLayout";
 
 export default function TruckLoadingHeader({ selected, commesse }: { selected: Camion; commesse: Commessa[] }) {
+  if(import.meta.env.VITE_SISLOG_TEST===true)return <OperationalIdentity fullWidth rows={truckLoadingHeaderRows(selected,commesse)} label="Dati del carico selezionato"/>;
   return <Box aria-label="Dati del carico selezionato" sx={{ flex: 1, minWidth: 0, width: "100%", maxWidth: 1240, mx: "auto" }}>
     {truckLoadingHeaderRows(selected, commesse).map((row, index) => <Box key={index} sx={{
       display: "grid", gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(2,minmax(0,1fr))", md: "minmax(0,320px) minmax(0,300px) minmax(0,180px) minmax(0,180px)" },

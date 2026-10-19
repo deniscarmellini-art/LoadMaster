@@ -5,8 +5,8 @@ import {createServer} from 'vite';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 
-test('Carico camion: disponibili attivi, azione esplicita, assegnato unico e categorie senza rimorchio',async()=>{
- const server=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),configFile:false,server:{middlewareMode:true,watch:null,ws:false},appType:'custom'});
+for(const testUi of [false,true])test(`Carico camion: disponibili attivi, azione esplicita, assegnato unico e categorie senza rimorchio (TEST=${testUi})`,async()=>{
+ const server=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),configFile:false,define:{'import.meta.env.VITE_SISLOG_TEST':JSON.stringify(testUi)},server:{middlewareMode:true,watch:null,ws:false},appType:'custom'});
  try{
   const {default:Fields,availableLoadingTrailers}=await server.ssrLoadModule('/src/components/shipments/TruckLoadingTransportFields.tsx');
   const base={id:'T',plate:'AE 34133',description:'Centinato',active:true,status:'DISPONIBILE',assignmentId:null,canRelease:false};
@@ -15,9 +15,10 @@ test('Carico camion: disponibili attivi, azione esplicita, assegnato unico e cat
   let calls=0;
   const props={load:{id:'L',commessa:'265001',cliente:'Cliente',camion:'C1'},mode:'BILICO_ESSEPI',detailId:'',options:[],transports:items,saving:false,onRefresh:async()=>{calls++;},onBusyChange:()=>{},onModeChange:()=>{},onDetailChange:()=>{}};
   const render=(extra={})=>renderToStaticMarkup(React.createElement(Fields,{...props,...extra}));
-  const empty=render();assert(empty.includes('Impegna rimorchio'));assert(empty.includes('Seleziona un rimorchio disponibile'));assert(empty.includes('Obbligatorio alla conclusione'));assert.equal(calls,0,'rendering/selecting does not issue any operation');
+  const empty=render();assert(empty.includes('Impegna rimorchio'));if(!testUi)assert(empty.includes('Seleziona un rimorchio disponibile'));assert(empty.includes('Obbligatorio alla conclusione'));assert.equal(calls,0,'rendering/selecting does not issue any operation');
   const assigned={...base,status:'IMPEGNATO',assignmentId:'A',canRelease:true};
   const occupied=render({assigned});assert(occupied.includes('AE 34133'));assert(occupied.includes('Centinato'));assert(occupied.includes('Disimpegna'));assert(!occupied.includes('Impegna rimorchio'));
+  if(testUi){assert(occupied.includes('Rimorchio impegnato:'));assert(occupied.includes('MuiAlert-colorSuccess'));assert(!empty.includes('Rimorchio impegnato:'));}
   assert(!render({assigned:{...assigned,canRelease:false}}).includes('>Disimpegna<'));
   for(const mode of ['RITIRA_CLIENTE','TERZI_PER_ESSEPI']){const markup=render({mode});assert(!markup.includes('Rimorchio Essepi'));assert(!markup.includes('Impegna rimorchio'));}
   const third=render({mode:'TERZI_PER_ESSEPI',carrierId:'actual',carriers:[{id:'actual',nome:'Vettore confermato',attivo:true}]});

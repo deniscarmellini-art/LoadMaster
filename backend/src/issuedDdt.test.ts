@@ -7,6 +7,16 @@ import { join,resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { buildApp } from "./app.js";
 import { Worker } from "node:worker_threads";
+import { ddtDownloadName } from "./services/ddtDownloadName.js";
+
+test("Nome download DDT: valori reali, Windows, Unicode e dati mancanti",()=>{
+  const name=(order:unknown,truck:unknown,customer:unknown)=>ddtDownloadName(JSON.stringify({data:{model:{order,truck,customer}}}));
+  assert.equal(name("265694","C5","RossiLegnami"),"265694_C5_RossiLegnami.pdf");
+  assert.equal(name('26/56', 'C:5', 'Rossi<>:"/\\|?*\r\n. '),'26-56_C-5_Rossi-----------.pdf');
+  assert.equal(name(null,"", "..."),"Commessa_Camion_Cliente.pdf");
+  assert.equal(name("CON","LPT1","Caffè"),"_CON__LPT1_Caffè.pdf");
+  assert.equal(ddtDownloadName("{}"),"Commessa_Camion_Cliente.pdf");
+});
 
 async function fixture(mode="RITIRA_CLIENTE",count=4){
   const dir=mkdtempSync(join(tmpdir(),"sislog-ddt2b-")),databasePath=join(dir,"test.sqlite");
@@ -46,6 +56,12 @@ for(const mode of ["BILICO_ESSEPI","RITIRA_CLIENTE","TERZI_PER_ESSEPI"])test(`DD
     assert.equal(payload.data.model.reference,doc.fullNumber);assert.equal(payload.data.model.date,doc.documentDate.split("-").reverse().join("/"));
     assert.equal((await f.issue(key)).json().id,doc.id);assert.equal((await f.issue()).statusCode,409);
     const pdf=await f.app.inject({method:"GET",url:`/api/ddt/${doc.id}/pdf`});assert.equal(pdf.statusCode,200);assert.equal(pdf.rawPayload.subarray(0,5).toString(),"%PDF-");
+    assert.match(String(pdf.headers["content-disposition"]),/^inline; filename="DDT-TEST_C1_Cliente fixture.pdf"/);
+    const archivedBefore=f.db.prepare("SELECT * FROM DdtDocuments WHERE id=?").get(doc.id);
+    const download=await f.app.inject({method:"GET",url:`/api/ddt/${doc.id}/pdf?download=1`});
+    assert.match(String(download.headers["content-disposition"]),/^attachment; filename="DDT-TEST_C1_Cliente fixture.pdf"/);
+    assert.deepEqual(download.rawPayload,pdf.rawPayload);
+    assert.deepEqual(f.db.prepare("SELECT * FROM DdtDocuments WHERE id=?").get(doc.id),archivedBefore);
     assert.equal(createHash("sha256").update(pdf.rawPayload).digest("hex"),doc.pdfSha256);
     assert.deepEqual((await f.app.inject({method:"GET",url:`/api/ddt/${doc.id}/pdf`})).rawPayload,pdf.rawPayload);
     assert.equal(f.db.prepare("SELECT COUNT(*) n FROM DdtDocuments").get()!.n,1);
@@ -118,6 +134,18 @@ test("DDT definitivo: protezioni API e SQL, annullamento backend e riapertura",a
     const second=await f.issue();assert.equal(second.statusCode,200,second.body);assert.equal(second.json().sequence,2);
     assert.equal(f.db.prepare("SELECT replacedByDdtId FROM DdtDocuments WHERE id=?").get(doc.id)!.replacedByDdtId,second.json().id);
   }finally{await f.close();}
+});
+
+test("Recupero trasporto pianificato: anteprima consentita ma emissione definitiva ancora bloccata",async()=>{
+ const f=await fixture();try{
+  f.db.exec("UPDATE LoadingSessions SET transportMode=NULL,carrierId=NULL WHERE id='S'; UPDATE ShipmentPlans SET transportMode='BILICO_ESSEPI',plannedCarrierId=(SELECT id FROM Carriers WHERE active=1 LIMIT 1) WHERE id='PLAN'");
+  const before=f.state(),session=f.db.prepare("SELECT * FROM LoadingSessions WHERE id='S'").get();
+  assert.equal((await f.app.inject({method:'GET',url:'/api/loading-sessions/S/ddt-preview'})).statusCode,200);
+  const issued=await f.issue();assert.equal(issued.statusCode,422);assert.match(issued.json().error.message,/modalit. effettiva/);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM DdtDocuments').get()!.n,0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM DdtSequences').get()!.n,0);
+  assert.equal(f.state(),before);assert.deepEqual(f.db.prepare("SELECT * FROM LoadingSessions WHERE id='S'").get(),session);
+ }finally{await f.close();}
 });
 
 test("DDT definitivo: corruzione PDF blocca la ristampa via API",async()=>{

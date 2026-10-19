@@ -19,17 +19,17 @@ const required = (value: unknown, label: string): string =>
   typeof value === "string" && value.trim() ? value.trim() : missing(`Anteprima DDT: ${label} non disponibile.`);
 
 /** Only SELECTs: deliberately avoids operational repositories whose reads reconcile state. */
-export function ddtPreview(db: DatabaseSync, sessionId: string, now = new Date(), autoRecognizeCustomer = false): DdtPreview {
+export function ddtPreview(db: DatabaseSync, sessionId: string, now = new Date(), autoRecognizeCustomer = false, allowPlannedTransport = false): DdtPreview {
   // A read transaction provides a consistent view of units, package contents and planning.
   db.exec("BEGIN DEFERRED");
   try {
-    const result = readPreview(db, sessionId, now, autoRecognizeCustomer);
+    const result = readPreview(db, sessionId, now, autoRecognizeCustomer, allowPlannedTransport);
     db.exec("COMMIT");
     return result;
   } catch (error) { db.exec("ROLLBACK"); throw error; }
 }
 
-export function readPreview(db: DatabaseSync, sessionId: string, now: Date, autoRecognizeCustomer: boolean): DdtPreview {
+export function readPreview(db: DatabaseSync, sessionId: string, now: Date, autoRecognizeCustomer: boolean, allowPlannedTransport = false): DdtPreview {
   const session = db.prepare("SELECT s.*,l.commessa,l.cliente,l.camion FROM LoadingSessions s JOIN Loads l ON l.id=s.loadId WHERE s.id=?").get(sessionId) as Row | undefined;
   if (!session) throw new ApiError(404, "RESOURCE_NOT_FOUND", "Sessione di carico non trovata");
   const plan = db.prepare("SELECT * FROM ShipmentPlans WHERE loadId=?").get(String(session.loadId)) as Row | undefined;
@@ -46,9 +46,26 @@ export function readPreview(db: DatabaseSync, sessionId: string, now: Date, auto
   if (!customer) missing("Anteprima DDT: collegare l'anagrafica cliente alla spedizione pianificata.");
   const vat = required(customer.partitaIva, "partita IVA del cliente collegato");
   const destination = required(plan.deliveryAddress, "destinazione merce nella spedizione pianificata");
-  // Never substitute the planned carrier or a generic vehicle type for the actual carrier.
-  const carrierRow = session.transportMode!=="RITIRA_CLIENTE"&&session.carrierId ? db.prepare("SELECT name FROM Carriers WHERE id=?").get(String(session.carrierId)) : undefined;
-  const transport=documentTransport(session.transportMode,session.carrierId,carrierRow as {name:unknown}|undefined);
+  const resolveTransport = (mode:unknown, carrierId:unknown) => {
+    const row = mode!=="RITIRA_CLIENTE" && typeof carrierId==="string" && carrierId
+      ? db.prepare("SELECT name FROM Carriers WHERE id=?").get(carrierId) : undefined;
+    return documentTransport(mode,carrierId,row as {name:unknown}|undefined);
+  };
+  const transport = (() => {
+    try { return resolveTransport(session.transportMode,session.carrierId); }
+    catch (actualError) {
+      // Temporary TEST preview opt-in. Issuance calls readPreview with the strict default.
+      if (!allowPlannedTransport || session.stato!=="ATTESA_SPEDIZIONE" || !session.completedAt || session.shippedAt
+        || !(actualError instanceof ApiError) || actualError.code!=="DDT_PREVIEW_DATA_MISSING") throw actualError;
+      const mode=plan.transportMode ?? plan.transportType;
+      const carrierId=plan.plannedCarrierId ?? (mode==="BILICO_ESSEPI" ? plan.transportDetailId : null) ?? plan.carrierId;
+      try { return resolveTransport(mode,carrierId); }
+      catch (plannedError) {
+        if (plannedError instanceof ApiError && plannedError.code==="DDT_PREVIEW_DATA_MISSING") throw actualError;
+        throw plannedError;
+      }
+    }
+  })();
   const carrier=transport.documentText;
   const units = db.prepare("SELECT unitType,panelId,packageId FROM LoadingUnits WHERE loadingSessionId=? AND active=1 ORDER BY id").all(sessionId) as Row[];
   if (!units.length) missing("Anteprima DDT: nessuna unità effettivamente caricata.");

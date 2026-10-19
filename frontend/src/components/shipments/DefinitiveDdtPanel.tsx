@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { apiRequest } from "../../services/apiClient";
-import { cancelDdtAndRefresh, issueDefinitiveDdt, originalDdtPdf, type IssuedDdt } from "../../services/definitiveDdtApi";
+import { cancelDdtAndRefresh, issueDefinitiveDdt, originalDdtPdf, originalDdtPdfUrl, type IssuedDdt } from "../../services/definitiveDdtApi";
 import { createDdtRequestKey } from "../../services/ddtRequestKey";
 
 type Document = IssuedDdt;
@@ -49,7 +49,7 @@ function TestDdtPanel({sessionId,operatorId,revision,onLocked,onChanged,archiveO
     finally{pending.current=false;setBusy(false);}
   };
   const show=async(document:Document)=>{if(pending.current)return;pending.current=true;setBusy(true);setError(null);const current=generation.current;
-    try{const blob=await originalDdtPdf(document.id);if(current===generation.current){setViewed(document);setUrl(URL.createObjectURL(blob));}}
+    try{await originalDdtPdf(document.id);if(current===generation.current){setViewed(document);setUrl(originalDdtPdfUrl(document.id));}}
     catch(reason){if(current===generation.current)setError(reason instanceof Error?reason.message:"Ristampa non disponibile");}finally{pending.current=false;setBusy(false);}
   };
   const cancel=async()=>{
@@ -71,6 +71,6 @@ function TestDdtPanel({sessionId,operatorId,revision,onLocked,onChanged,archiveO
     {error&&<Alert severity="error">{error}</Alert>}
     <Dialog open={confirm} onClose={()=>{if(!busy)setConfirm(false);}}><DialogTitle>Emetti DDT definitivo</DialogTitle><DialogContent>Il numero e la data verranno assegnati ora. Il PDF sarà archiviato e il carico verrà bloccato. La partenza non viene confermata.{error&&<Alert severity="error">{error}</Alert>}</DialogContent><DialogActions><Button disabled={busy} onClick={()=>setConfirm(false)}>Annulla</Button><Button disabled={busy||!status?.canIssue} onClick={()=>void emit()}>Conferma emissione</Button></DialogActions></Dialog>
     <Dialog open={cancelTarget!==null} onClose={()=>{if(!busy)setCancelTarget(null);}} fullWidth maxWidth="sm"><DialogTitle>Annulla DDT definitivo</DialogTitle><DialogContent><Typography sx={{mb:2}}>Annullare {cancelTarget?.fullNumber} del {cancelTarget?.documentDate.split("-").reverse().join("/")}? Numero, snapshot e PDF originale saranno conservati. Il carico resterà nello stato attuale e la partenza non verrà registrata.</Typography>{operators.length>0?<TextField select fullWidth required label="Operatore annullamento" value={cancelOperator} disabled={busy} onChange={event=>setCancelOperator(event.target.value)} sx={{mb:2}}>{operators.map(op=><MenuItem key={op.id} value={op.id}>{op.label}</MenuItem>)}</TextField>:<Typography>Operatore: {cancelOperator||"Selezionare un operatore attivo in Carico camion"}</Typography>}<TextField fullWidth required multiline minRows={3} label="Motivazione annullamento" value={reason} disabled={busy} onChange={event=>setReason(event.target.value)} slotProps={{htmlInput:{maxLength:2000}}}/>{error&&<Alert severity="error" sx={{mt:1}}>{error}</Alert>}</DialogContent><DialogActions><Button disabled={busy} onClick={()=>setCancelTarget(null)}>Mantieni DDT</Button><Button variant="contained" color="error" disabled={busy||!reason.trim()||!cancelOperator||!status?.canCancel} onClick={()=>void cancel()}>Conferma annullamento</Button></DialogActions></Dialog>
-    <Dialog open={url!==null} onClose={()=>setUrl(null)} fullWidth maxWidth="lg"><DialogTitle>DDT originale archiviato — {viewed?.fullNumber}{viewed?.status==="ANNULLATO"?" — ANNULLATO":""}</DialogTitle><DialogContent>{viewed?.status==="ANNULLATO"&&<Alert severity="warning" sx={{mb:1}}>DOCUMENTO ANNULLATO — copia dell'originale conservata per lo storico. Il PDF non è stato modificato.</Alert>}<Box component="iframe" title="DDT definitivo archiviato" src={url??""} sx={{width:"100%",height:"65vh",border:0}}/><Button component="a" href={url??""} target="_blank" rel="noopener">Apri / Stampa PDF originale</Button></DialogContent><DialogActions><Button onClick={()=>setUrl(null)}>Chiudi</Button></DialogActions></Dialog>
+    <Dialog open={url!==null} onClose={()=>setUrl(null)} fullWidth maxWidth="lg"><DialogTitle>DDT originale archiviato — {viewed?.fullNumber}{viewed?.status==="ANNULLATO"?" — ANNULLATO":""}</DialogTitle><DialogContent>{viewed?.status==="ANNULLATO"&&<Alert severity="warning" sx={{mb:1}}>DOCUMENTO ANNULLATO — copia dell'originale conservata per lo storico. Il PDF non è stato modificato.</Alert>}<Box component="iframe" title="DDT definitivo archiviato" src={url??""} sx={{width:"100%",height:"65vh",border:0}}/><Button component="a" href={url??""} target="_blank" rel="noopener">Apri / Stampa PDF originale</Button></DialogContent><DialogActions>{url&&<Button component="a" href={`${url}?download=1`}>Scarica PDF</Button>}<Button onClick={()=>setUrl(null)}>Chiudi</Button></DialogActions></Dialog>
   </Stack>;
 }
