@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Alert, Box, Button, ButtonBase, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, ButtonBase, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Stack, Switch, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -9,6 +9,7 @@ import type { ShipmentItem } from "../../services/shipmentsApi";
 import { shipmentTransportPresentation } from "../../services/shipmentTransportPresentation";
 import { shipmentLoadLinkLabel } from "../../services/shipmentLoadLink";
 import { ApiClientError } from "../../services/apiClient";
+import { calendarTodayInRome, completedPastShipmentWeeks } from "../../services/shipmentCalendarWeeks";
 
 import { shipmentHasDeparted } from "../../services/shipmentDeparture";
 export { shipmentHasDeparted } from "../../services/shipmentDeparture";
@@ -25,6 +26,8 @@ const weekdays = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "
 
 export default function ShipmentCalendar({ items, transportDetails, onSelectShipment, onSelectDate, onReschedule }: Props) {
   const [month, setMonth] = useState(() => dayjs().startOf("month"));
+  const testCalendar=import.meta.env.VITE_SISLOG_TEST===true;
+  const [showCompletedWeeks,setShowCompletedWeeks]=useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const dragging = useRef<string | null>(null);
   const suppressClickUntil = useRef(0);
@@ -41,7 +44,7 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
     catch (cause) {setError(cause instanceof ApiClientError ? cause.message : "Impossibile spostare la spedizione. La data precedente resta invariata.");}
     finally {setSaving(false);}
   };
-  const today = dayjs().format("YYYY-MM-DD");
+  const today = testCalendar?calendarTodayInRome():dayjs().format("YYYY-MM-DD");
   const events = useMemo(() => {
     const result = new Map<string, ShipmentItem[]>();
     for (const item of items) {
@@ -58,9 +61,12 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
   const end = month.endOf("month").startOf("day");
   const lastOperationalDay = end.day() === 0 ? end.subtract(1, "day") : end;
   const weekCount = Math.ceil((lastOperationalDay.diff(first, "day") + 1) / 7);
-  const days = Array.from({ length: weekCount }, (_, week) =>
+  const weeks = Array.from({ length: weekCount }, (_, week) =>
     weekdays.map((_, weekday) => first.add(week * 7 + weekday, "day")),
-  ).flat();
+  );
+  const completedWeeks=useMemo(()=>testCalendar?completedPastShipmentWeeks(items,today):new Set<string>(),[items,today,testCalendar]);
+  const hiddenWeekCount=weeks.filter(week=>completedWeeks.has(week[0]!.format("YYYY-MM-DD"))).length;
+  const days=weeks.filter(week=>!testCalendar||showCompletedWeeks||!completedWeeks.has(week[0]!.format("YYYY-MM-DD"))).flat();
 
   return <Box>
     <Stack direction="row" sx={{ alignItems: "center", flexWrap: "wrap", columnGap: 2, rowGap: 0.5, mb: 0.5 }}>
@@ -72,7 +78,9 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
       <Stack direction="row" sx={{ gap: 2, flexWrap: "wrap" }}>
       {Object.values(shipmentTransportPresentation).map(({ label, color }) => <Stack key={label} direction="row" sx={{ alignItems: "center", gap: 0.75 }}><Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: color }} /><Typography variant="caption">{label}</Typography></Stack>)}
       </Stack>
+      {testCalendar&&hiddenWeekCount>0&&<FormControlLabel sx={{m:0}} control={<Switch size="small" checked={showCompletedWeeks} onChange={event=>setShowCompletedWeeks(event.target.checked)}/>} label={<Typography variant="caption">Mostra settimane passate completate ({hiddenWeekCount})</Typography>}/>}
     </Stack>
+    {testCalendar&&!days.length&&<Alert severity="info" sx={{mb:1}}>Tutte le settimane del mese sono completate. Attiva “Mostra settimane passate completate” per consultarle.</Alert>}
     <Box sx={{ overflowX: "auto" }}>
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", minWidth: 900, borderTop: 1, borderLeft: 1, borderColor: "divider" }}>
         {weekdays.map((day) => <Typography key={day} sx={{ p: 1, textAlign: "center", fontWeight: 700, bgcolor: "action.hover", borderRight: 1, borderBottom: 1, borderColor: "divider" }}>{day}</Typography>)}

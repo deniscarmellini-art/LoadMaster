@@ -381,7 +381,7 @@ export default function Shipments({
           </Box>}
           {view === "calendar" ? (
             <>
-              {!!calendarUnplaced.length && <Box sx={{mb:2}}>
+              {import.meta.env.VITE_SISLOG_TEST!==true && !!calendarUnplaced.length && <Box sx={{mb:2}}>
                 <Typography variant="subtitle2" sx={{mb:1}}>Pianificazioni senza data o con partenza di domenica</Typography>
                 <Stack direction="row" sx={{gap:1,flexWrap:"wrap"}}>{calendarUnplaced.map(item =>
                   <Button key={item.id} variant="outlined" onClick={()=>open(item)}>
