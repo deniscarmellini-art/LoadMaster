@@ -3,15 +3,17 @@ import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, 
 import { apiRequest } from "../../services/apiClient";
 import { cancelDdtAndRefresh, issueDefinitiveDdt, originalDdtPdf, originalDdtPdfUrl, type IssuedDdt } from "../../services/definitiveDdtApi";
 import { createDdtRequestKey } from "../../services/ddtRequestKey";
+import HistoricalTransportDialog,{type CompletedHistoricalTransport} from "./HistoricalTransportDialog";
 
 type Document = IssuedDdt;
 interface Status {document:Document|null;canIssue:boolean;canCancel?:boolean;departed?:boolean;history?:Document[];reason?:string}
-interface Props {sessionId:string;operatorId:string;revision:string;onLocked:()=>void;onChanged?:()=>Promise<void>;archiveOnly?:boolean;operators?:Array<{id:string;label:string}>}
+interface Props {sessionId:string;operatorId:string;revision:string;onLocked:()=>void;onChanged?:()=>Promise<void>;archiveOnly?:boolean;operators?:Array<{id:string;label:string}>;carriers?:Array<{id:string;nome:string;attivo:boolean}>;transportDetails?:Array<{id:string;nome:string;attivo:boolean}>;onTransportCompleted?:(value:CompletedHistoricalTransport)=>void}
 export default function DefinitiveDdtPanel(props:Props) {
   if(import.meta.env.VITE_SISLOG_TEST!==true)return null;
   return <TestDdtPanel {...props}/>;
 }
-function TestDdtPanel({sessionId,operatorId,revision,onLocked,onChanged,archiveOnly=false,operators=[]}:Props) {
+function TestDdtPanel({sessionId,operatorId,revision,onLocked,onChanged,archiveOnly=false,operators=[],carriers=[],transportDetails=[],onTransportCompleted}:Props) {
+  const [transportRevision,setTransportRevision]=useState(0);
   const [status,setStatus]=useState<Status|null>(null),[error,setError]=useState<string|null>(null),[busy,setBusy]=useState(false),[confirm,setConfirm]=useState(false),[url,setUrl]=useState<string|null>(null);
   const pending=useRef(false),generation=useRef(0),key=useRef("");
   const [cancelTarget,setCancelTarget]=useState<Document|null>(null),[reason,setReason]=useState(""),[cancelOperator,setCancelOperator]=useState("");
@@ -27,7 +29,7 @@ function TestDdtPanel({sessionId,operatorId,revision,onLocked,onChanged,archiveO
       accept(value);
     }).catch(reason=>{if(current===generation.current)setError(reason instanceof Error?reason.message:"Impossibile verificare il DDT");});
     return()=>{generation.current++;};
-  },[sessionId,revision]);
+  },[sessionId,revision,transportRevision]);
   useEffect(()=>()=>{if(url)URL.revokeObjectURL(url);},[url]);
   const emit=async()=>{
     if(pending.current||!status?.canIssue||!operatorId)return;
@@ -65,6 +67,7 @@ function TestDdtPanel({sessionId,operatorId,revision,onLocked,onChanged,archiveO
     finally{pending.current=false;setBusy(false);}
   };
   return <Stack sx={{gap:1,my:1}}>
+    {!archiveOnly&&!status?.document&&<HistoricalTransportDialog sessionId={sessionId} revision={`${revision}:${transportRevision}`} operators={operators} carriers={carriers} details={transportDetails} onCompleted={async value=>{setStatus(null);setConfirm(false);onTransportCompleted?.(value);setTransportRevision(n=>n+1);await onChanged?.();}}/>}
     {status?.document?<><Alert severity="info">Carico bloccato perché esiste un DDT valido. Per correggerlo è necessario annullare prima il documento.</Alert><Typography>DDT <b>{status.document.fullNumber}</b> del {status.document.documentDate.split("-").reverse().join("/")}</Typography><Button variant="outlined" disabled={busy} onClick={()=>void show(status.document!)}>Visualizza / Ristampa DDT</Button>{!archiveOnly&&status.canCancel&&<Button variant="outlined" color="error" disabled={busy} onClick={()=>{setError(null);setCancelTarget(status.document);setReason("");setCancelOperator(operatorId);}}>Annulla DDT</Button>}</>:!archiveOnly&&<><Button variant="contained" disabled={!sessionId||!operatorId||!status?.canIssue||busy} onClick={()=>{setError(null);setConfirm(true);}}>Emetti DDT definitivo</Button>{status?.reason&&<Typography variant="body2">{status.reason}</Typography>}</>}
     {(status?.history??[]).filter(doc=>doc.status==="ANNULLATO").map(doc=><Box key={doc.id} sx={{border:1,borderColor:"warning.main",p:1.5}}><Typography sx={{fontWeight:700}}>ANNULLATO — {doc.fullNumber} del {doc.documentDate.split("-").reverse().join("/")}</Typography><Typography variant="body2">Motivo: {doc.cancellationReason} · Operatore: {operators.find(op=>op.id===doc.cancelledByOperatorId)?.label??doc.cancelledByOperatorId??"—"} · {doc.cancelledAt?new Date(doc.cancelledAt).toLocaleString("it-IT"):"—"}</Typography>{doc.replacedByDdtId&&<Typography variant="body2">Sostituito da {(status?.history??[]).find(next=>next.id===doc.replacedByDdtId)?.fullNumber??doc.replacedByDdtId}</Typography>}<Button disabled={busy} onClick={()=>void show(doc)}>Visualizza / Ristampa originale annullato</Button></Box>)}
     {!archiveOnly&&!status?.document&&status?.history?.some(doc=>doc.status==="ANNULLATO")&&<Alert severity="warning">Nessun DDT valido: partenza non consentita. Correggere i dati documentali nel Calendario e riemettere, oppure riaprire il carico dalla Dashboard per correggere il materiale. Il carico non è stato riaperto automaticamente.</Alert>}
