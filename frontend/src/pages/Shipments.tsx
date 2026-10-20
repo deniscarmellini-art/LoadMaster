@@ -231,7 +231,7 @@ export default function Shipments({
       await onRefresh();
       setEditing(null);
       setNotice({ severity: "success", text: import.meta.env.VITE_SISLOG_TEST && !saved?.customerId
-        ? "Pianificazione salvata. Per il DDT selezionare esplicitamente il cliente anagrafico: nessuna corrispondenza esatta univoca."
+        ? "Pianificazione salvata senza collegamento cliente. Per il DDT selezionare e confermare il cliente anagrafico."
         : "Pianificazione salvata." });
     } catch (error) {
       setNotice({

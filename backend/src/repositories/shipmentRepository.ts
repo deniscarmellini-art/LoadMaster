@@ -66,6 +66,9 @@ export class ShipmentRepository {
     if (!this.autoRecognizeCustomer) return input.customerId === undefined ? previousId : input.customerId || null;
     if (input.customerId) return input.customerId; // Explicit manual selection takes priority over recognition.
     if (previousId) return previousId; // Never erase or replace an existing association automatically.
+    // The planning form sends null until explicit confirmation; schema coercion may produce "".
+    // Legacy callers omitting customerId retain their existing recognition behaviour.
+    if (input.customerId !== undefined) return null;
     const load = input.loadId ? this.db.prepare("SELECT cliente FROM Loads WHERE id=?").get(input.loadId) : undefined;
     return recognizeCustomer(this.db, load ? String(load.cliente) : input.cliente).customerId;
   }

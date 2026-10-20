@@ -93,9 +93,15 @@ test("customer recognition API: linked import beats form name; association survi
     assert.equal(imported.statusCode,201,imported.body);
     const input={loadId:imported.json()[0].id,commessa:"SL-2604",cliente:"Nome form differente",camion:"DELTA-04",transportType:"RITIRA_CLIENTE",customerId:null};
     const saved=await app.inject({method:"POST",url:"/api/shipments",payload:input});
-    assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().customerId,customer.json().id);
-    const updated=await app.inject({method:"PUT",url:`/api/shipments/${saved.json().id}`,payload:{...input,deliveryAddress:"Via cantiere"}});
+    assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().customerId,null);
+    const confirmed=await app.inject({method:"PUT",url:`/api/shipments/${saved.json().id}`,payload:{...input,customerId:customer.json().id}});
+    assert.equal(confirmed.statusCode,200,confirmed.body);assert.equal(confirmed.json().customerId,customer.json().id);
+    const updated=await app.inject({method:"PUT",url:`/api/shipments/${saved.json().id}`,payload:{...input,customerId:customer.json().id,deliveryAddress:"Via cantiere"}});
     assert.equal(updated.statusCode,200,updated.body);assert.equal(updated.json().customerId,customer.json().id);
     assert.equal(updated.json().cliente,"Linea  Forma Srl");
+    const reopened=await app.inject({method:"GET",url:"/api/shipments"});
+    assert.equal(reopened.json().find((plan:{id:string})=>plan.id===saved.json().id).customerId,customer.json().id);
+    const registry=await app.inject({method:"GET",url:"/api/customers"});
+    assert.equal(registry.json().find((row:{id:string})=>row.id===customer.json().id).denominazione,"LINEA Forma Srl");
   } finally {await app.close();}
 });
