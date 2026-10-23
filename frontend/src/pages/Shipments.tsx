@@ -222,12 +222,18 @@ export default function Shipments({
           carrierId: null,
           loadId: editing === "new" ? null : editing.loadId,
         });
-      else if (editing)
+      else if (editing) {
+        if (!editing.updatedAt) {
+          setNotice({ severity: "error", text: "Revisione non disponibile. Ricarica i dati prima di salvare la pianificazione." });
+          return;
+        }
         saved = await updateShipment(editing.id, {
           ...form,
           trailerId: null,
           carrierId: null,
+          expectedUpdatedAt: editing.updatedAt,
         });
+      }
       await onRefresh();
       setEditing(null);
       setNotice({ severity: "success", text: import.meta.env.VITE_SISLOG_TEST && !saved?.customerId

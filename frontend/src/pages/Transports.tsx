@@ -42,6 +42,7 @@ interface Props {
   shipments: ShipmentItem[];
   carriers: Trasportatore[];
   onRefresh: () => Promise<void>;
+  onEditTrailerInspection: (trailerId: string) => void;
 }
 const labels: Record<TransportStatus, string> = {
   DISPONIBILE: "Disponibile",
@@ -69,7 +70,7 @@ const dateTime = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("it-IT");
 };
 
-export default function Transports({ items, shipments, carriers, onRefresh }: Props) {
+export default function Transports({ items, shipments, carriers, onRefresh, onEditTrailerInspection }: Props) {
   const plannedCarrier = (item: TransportItem) => {
     if (!item.assignmentId) return null;
     const normalize = (value: string | null) => (value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "");
@@ -325,7 +326,16 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {formatOptionalDate(item.nextInspectionDate)}
+                      {item.nextInspectionDate ? (
+                        <Button
+                          size="small"
+                          aria-label={`Modifica revisione rimorchio ${item.plate}`}
+                          onClick={() => onEditTrailerInspection(item.id)}
+                          sx={{ color: inspectionColor, fontWeight: "inherit", minWidth: 0, p: 0, textTransform: "none", justifyContent: "flex-start" }}
+                        >
+                          {formatOptionalDate(item.nextInspectionDate)}
+                        </Button>
+                      ) : formatOptionalDate(item.nextInspectionDate)}
                     </TableCell>
                     <TableCell>
                       <Box
@@ -460,9 +470,20 @@ export default function Transports({ items, shipments, carriers, onRefresh }: Pr
                   )}
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="caption" color="text.secondary">Prossima revisione</Typography>
-                    <Typography sx={{ color: inspectionColor, fontWeight: inspectionDays !== null && inspectionDays <= 30 ? 700 : 400 }}>
-                      {formatOptionalDate(item.nextInspectionDate)}
-                    </Typography>
+                    {item.nextInspectionDate ? (
+                      <Button
+                        size="small"
+                        aria-label={`Modifica revisione rimorchio ${item.plate}`}
+                        onClick={() => onEditTrailerInspection(item.id)}
+                        sx={{ color: inspectionColor, fontWeight: inspectionDays !== null && inspectionDays <= 30 ? 700 : 400, minWidth: 0, p: 0, textTransform: "none", justifyContent: "flex-start" }}
+                      >
+                        {formatOptionalDate(item.nextInspectionDate)}
+                      </Button>
+                    ) : (
+                      <Typography sx={{ color: inspectionColor, fontWeight: inspectionDays !== null && inspectionDays <= 30 ? 700 : 400 }}>
+                        {formatOptionalDate(item.nextInspectionDate)}
+                      </Typography>
+                    )}
                   </Box>
                 </Box>
                 {item.disabledReason && (

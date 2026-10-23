@@ -86,6 +86,7 @@ export default function App() {
     | "shipments"
     | "history"
   >("dashboard");
+  const [trailerInspectionEditId, setTrailerInspectionEditId] = useState<string | null>(null);
   const [scanningTarget, setScanningTarget] = useState<Camion | null>(null);
   const [packages, setPackages] = useState<Pacco[]>([]);
   const [suspendedPackages, setSuspendedPackages] = useState<Pacco[]>([]);
@@ -398,6 +399,14 @@ export default function App() {
     setPage(destination);
     await refreshScanningData().catch(() => undefined);
   };
+  const openTrailerInspectionEdit = (trailerId: string) => {
+    setTrailerInspectionEditId(trailerId);
+    setPage("settings");
+  };
+  const returnToTransportsAfterInspectionSave = async () => {
+    await refreshScanningData();
+    setPage("transports");
+  };
   const activePrimaryPage:PrimaryNavigationPage=page==="scanning"?"scanning-list":page;
   const navigatePrimary=(target:PrimaryNavigationPage)=>{
     const destination:Exclude<PrimaryNavigationPage,"import">=target==="import"?"dashboard":target;
@@ -603,6 +612,9 @@ export default function App() {
             loadErrors={settingsLoadErrors}
             onChange={changeSettings}
             settings={settings}
+            initialTrailerEditId={trailerInspectionEditId}
+            onTrailerEditRequestHandled={() => setTrailerInspectionEditId(null)}
+            onTrailerInspectionSaved={returnToTransportsAfterInspectionSave}
           />
         ) : page === "transports" ? (
           <Transports
@@ -610,6 +622,7 @@ export default function App() {
             shipments={shipmentsWithOperationalStatus}
             carriers={settings.trasportatori}
             onRefresh={refreshScanningData}
+            onEditTrailerInspection={openTrailerInspectionEdit}
           />
         ) : page === "shipments" ? (
           <Shipments

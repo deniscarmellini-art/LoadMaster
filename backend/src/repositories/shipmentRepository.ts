@@ -24,7 +24,7 @@ export interface ShipmentInput {
   notes?: string | null;
 }
 export interface ShipmentDateUpdate { plannedDepartureDate: string; expectedUpdatedAt: string }
-export type ShipmentUpdate = ShipmentInput | ShipmentDateUpdate;
+export type ShipmentUpdate = (ShipmentInput & { expectedUpdatedAt?: string }) | ShipmentDateUpdate;
 export interface ShipmentRecord {
   id: string;
   persisted: boolean;
@@ -218,7 +218,7 @@ export class ShipmentRepository {
     const old = this.find(id, false);
     if (!old || !old.persisted) return null;
     this.assertNotDeparted(id, false);
-    if ("expectedUpdatedAt" in input && input.expectedUpdatedAt !== old.updatedAt) throw new Error("SHIPMENT_STALE");
+    if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== old.updatedAt) throw new Error("SHIPMENT_STALE");
     const now = new Date(Math.max(Date.now(), Date.parse(old.updatedAt ?? "") + 1 || 0)).toISOString();
     const nextPlannedDepartureDate = input.plannedDepartureDate || null;
     const hadOriginalDepartureDate = Boolean(
@@ -233,7 +233,7 @@ export class ShipmentRepository {
       hadOriginalDepartureDate
         ? now
         : old.plannedDepartureDateChangedAt;
-    if ("expectedUpdatedAt" in input) {
+    if (!("commessa" in input)) {
       const customerId = this.customerFor({loadId:old.loadId,cliente:old.cliente}, old.customerId);
       if (nextPlannedDepartureDate === old.plannedDepartureDate && customerId === old.customerId) return old;
       this.db.prepare("UPDATE ShipmentPlans SET plannedDepartureDate=?,originalPlannedDepartureDate=?,plannedDepartureDateChangedAt=?,customerId=?,updatedAt=? WHERE id=?").run(nextPlannedDepartureDate, originalPlannedDepartureDate, plannedDepartureDateChangedAt, customerId, now, id);

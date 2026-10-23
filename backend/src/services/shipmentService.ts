@@ -23,13 +23,17 @@ export class ShipmentService {
     }
   }
   update(id: string, input: ShipmentUpdate) {
-    if ("expectedUpdatedAt" in input) {
+    if ("commessa" in input) {
+      this.validate(input);
+      if (typeof input.expectedUpdatedAt !== "string" || !input.expectedUpdatedAt.trim())
+        throw new ApiError(400,"VALIDATION_ERROR","Revisione pianificazione obbligatoria");
+    } else {
       const date = input.plannedDepartureDate;
       if (typeof date !== "string" || Object.keys(input).some(key=>key!=="plannedDepartureDate"&&key!=="expectedUpdatedAt") || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date)
         throw new ApiError(400,"VALIDATION_ERROR","Data prevista non valida");
-    } else this.validate(input);
+    }
     try {
-      if (!("expectedUpdatedAt" in input)) this.repo.validateTransportDetail(input, this.repo.find(id, false));
+      if ("commessa" in input) this.repo.validateTransportDetail(input, this.repo.find(id, false));
       const value = this.repo.update(id, input);
       if (!value)
         throw new ApiError(404, "RESOURCE_NOT_FOUND", "Spedizione non trovata");
@@ -135,7 +139,7 @@ export class ShipmentService {
     if (error instanceof ApiError) throw error;
     if (error instanceof Error && error.message === "SHIPMENT_ALREADY_LINKED") throw new ApiError(409,"SHIPMENT_ALREADY_LINKED","La pianificazione è già collegata a un altro carico");
     if(error instanceof Error&&error.message==="INVALID_CUSTOMER")throw new ApiError(400,"VALIDATION_ERROR","Cliente anagrafico non disponibile");
-    if (error instanceof Error && error.message === "SHIPMENT_STALE") throw new ApiError(409,"SHIPMENT_STALE","Pianificazione modificata da un altro utente. Aggiornare e riprovare.");
+    if (error instanceof Error && error.message === "SHIPMENT_STALE") throw new ApiError(409,"SHIPMENT_STALE","Questa pianificazione è stata modificata da un'altra postazione. Ricarica i dati prima di salvarla nuovamente.");
     if (error instanceof Error && error.message === "INVALID_TRANSPORT_DETAIL") throw new ApiError(400,"VALIDATION_ERROR","Dettaglio della modalità di trasporto non disponibile o incoerente");
     if (error instanceof Error && error.message === "SHIPMENT_CONSOLIDATED") throw new ApiError(409,"SHIPMENT_CONSOLIDATED","Spedizione già partita o consolidata");
     if (error instanceof Error && error.message === "SHIPMENT_DUPLICATE")

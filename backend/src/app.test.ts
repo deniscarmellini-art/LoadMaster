@@ -695,10 +695,29 @@ test("in produzione rifiuta una cartella frontend assente o senza index.html",as
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
-test("il rientro dopo due giorni lavorativi salta il fine settimana",()=>{
+test("il calendario lavorativo salta il fine settimana",()=>{
   assert.equal(addBusinessDays("2026-08-03T10:00:00.000Z",2),"2026-08-05T10:00:00.000Z");
   assert.equal(addBusinessDays("2026-08-06T10:00:00.000Z",2),"2026-08-10T10:00:00.000Z");
   assert.equal(addBusinessDays("2026-08-07T10:00:00.000Z",2),"2026-08-11T10:00:00.000Z");
+  assert.equal(addBusinessDays("2026-10-23T09:16:57.174Z",1),"2026-10-26T09:16:57.174Z");
+});
+
+test("i bilici in viaggio espongono il rientro a un giorno senza aggiornare i record esistenti",()=>{
+  const {database:db,close}=openSqliteDatabase(":memory:");
+  const trailer="TRAILER-TEST",load="LOAD-TEST",session="SESSION-TEST",departedAt="2026-10-23T09:16:57.174Z",oldAvailable="2026-10-27T09:16:57.174Z";
+  try{
+    db.prepare("INSERT INTO Trailers(id,plate,description,createdAt,updatedAt) VALUES(?, 'AE 09639','',?,?)").run(trailer,departedAt,departedAt);
+    db.prepare("INSERT INTO Loads(id,commessa,cliente,camion,createdAt,updatedAt) VALUES(?, '265484','Wood Solution','C1-',?,?)").run(load,departedAt,departedAt);
+    db.prepare("INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,trailerId,startedAt,createdAt,updatedAt) VALUES(?,?,'SPEDITO','OP','RIMORCHIO_ESSEPI',?,?,?,?)").run(session,load,trailer,departedAt,departedAt,departedAt);
+    db.prepare("INSERT INTO TransportAssignments(id,trailerId,loadId,loadingSessionId,source,stato,assignedAt,departedAt,availableFrom,createdAt,updatedAt) VALUES('ASSIGN-TEST',?,?,?,'LOAD','IN_VIAGGIO',?,?,?,?,?)").run(trailer,load,session,departedAt,departedAt,oldAvailable,departedAt,departedAt);
+    const repository=new TransportRepository(db);
+    const active=repository.list().find(item=>item.id===trailer)!;
+    assert.equal(active.status,"IN_VIAGGIO");
+    assert.equal(active.availableFrom,"2026-10-26T09:16:57.174Z");
+    assert.equal((db.prepare("SELECT availableFrom FROM TransportAssignments WHERE id='ASSIGN-TEST'").get() as {availableFrom:string}).availableFrom,oldAvailable);
+    repository.refreshExpired("2026-10-26T09:16:57.174Z");
+    assert.equal(repository.find(trailer)?.status,"DISPONIBILE");
+  }finally{close();}
 });
 
 test("le spedizioni future manuali sono persistenti e non creano carichi operativi",async()=>{
@@ -717,6 +736,32 @@ test("le spedizioni future manuali sono persistenti e non creano carichi operati
     assert.equal(shipments.length,2);assert.equal(shipments[0]?.commessa,"265700");assert.equal(shipments[0]?.camion,"C1");
     await second.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+test("la modifica completa di una pianificazione richiede la revisione corrente",async()=>{
+  const app=await buildApp(config);
+  try{
+    const created=await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"REVISION-1",cliente:"Cliente iniziale",camion:"C1",plannedDepartureDate:"2026-11-02",transportType:"RITIRA_CLIENTE"}});
+    assert.equal(created.statusCode,200,created.body);
+    const plan=created.json<ShipmentRecord>();
+    assert.ok(plan.updatedAt);
+
+    const valid=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{commessa:plan.commessa,cliente:"Cliente aggiornato",camion:plan.camion,plannedDepartureDate:plan.plannedDepartureDate,transportType:plan.transportType,expectedUpdatedAt:plan.updatedAt}});
+    assert.equal(valid.statusCode,200,valid.body);
+    const updated=valid.json<ShipmentRecord>();
+    assert.equal(updated.cliente,"Cliente aggiornato");
+    assert.notEqual(updated.updatedAt,plan.updatedAt);
+
+    const stale=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{commessa:plan.commessa,cliente:"Modifica obsoleta",camion:plan.camion,plannedDepartureDate:plan.plannedDepartureDate,transportType:plan.transportType,expectedUpdatedAt:plan.updatedAt}});
+    assert.equal(stale.statusCode,409,stale.body);
+    assert.equal(stale.json<{error:{code:string;message:string}}>().error.code,"SHIPMENT_STALE");
+    assert.equal(stale.json<{error:{code:string;message:string}}>().error.message,"Questa pianificazione è stata modificata da un'altra postazione. Ricarica i dati prima di salvarla nuovamente.");
+    assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<ShipmentRecord[]>().find(item=>item.id===plan.id)?.cliente,"Cliente aggiornato");
+
+    const missing=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{commessa:plan.commessa,cliente:"Modifica senza revisione",camion:plan.camion,plannedDepartureDate:plan.plannedDepartureDate,transportType:plan.transportType}});
+    assert.equal(missing.statusCode,400,missing.body);
+    assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json<ShipmentRecord[]>().find(item=>item.id===plan.id)?.cliente,"Cliente aggiornato");
+  }finally{await app.close();}
 });
 
 test("elimina solo una pianificazione non partita e conserva carico ed elementi",async()=>{
@@ -1495,8 +1540,8 @@ test("la sessione di carico persiste, si riapre e viene spedita",async()=>{
     seedDepartureDdtForApp(second,session.id,carrier.id);
     const shipped=await second.inject({method:"POST",url:`/api/loading-sessions/${session.id}/ship`,payload:{carrierId:carrier.id}});assert.equal(shipped.json<{stato:string;carrierId:string}>().stato,"SPEDITO");assert.equal(shipped.json<{carrierId:string}>().carrierId,carrier.id);const departedPlan=(await second.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;shipmentStatus:string;operationalStatus:string;carrierId:string;actualDepartureDate:string|null}>>().find(item=>item.id===shipment.id)!;assert.equal(departedPlan.shipmentStatus,"IN_VIAGGIO");assert.equal(departedPlan.operationalStatus,"SPEDITO");assert.equal(departedPlan.carrierId,carrier.id);assert.ok(departedPlan.actualDepartureDate);
     const travelling=(await second.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string;departedAt:string;availableFrom:string}>>().find(item=>item.id===trailer.id);
-    assert.equal(travelling?.status,"IN_VIAGGIO");assert.ok(travelling?.departedAt);assert.equal(travelling?.availableFrom,addBusinessDays(travelling!.departedAt,2));
-    await second.close();const database=new DatabaseSync(persistentConfig.databasePath);database.prepare("UPDATE TransportAssignments SET availableFrom=? WHERE trailerId=? AND releasedAt IS NULL").run("2020-01-01T00:00:00.000Z",trailer.id);database.close();const third=await buildApp(persistentConfig);const persisted=await third.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(persisted.json<{stato:string}>().stato,"SPEDITO");const available=(await third.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string}>>().find(item=>item.id===trailer.id);assert.equal(available?.status,"DISPONIBILE");await third.close();
+    assert.equal(travelling?.status,"IN_VIAGGIO");assert.ok(travelling?.departedAt);assert.equal(travelling?.availableFrom,addBusinessDays(travelling!.departedAt,1));
+    await second.close();const database=new DatabaseSync(persistentConfig.databasePath);database.prepare("UPDATE TransportAssignments SET availableFrom=?,departedAt=? WHERE trailerId=? AND releasedAt IS NULL").run("2020-01-01T00:00:00.000Z","2019-12-31T00:00:00.000Z",trailer.id);database.close();const third=await buildApp(persistentConfig);const persisted=await third.inject({method:"GET",url:`/api/loads/${load.id}/loading-session`});assert.equal(persisted.json<{stato:string}>().stato,"SPEDITO");const available=(await third.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;status:string}>>().find(item=>item.id===trailer.id);assert.equal(available?.status,"DISPONIBILE");await third.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 

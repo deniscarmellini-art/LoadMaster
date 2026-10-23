@@ -52,11 +52,21 @@ export class TransportRepository {
     }
   }
   refreshExpired(now = new Date().toISOString()): void {
-    this.db
+    const inFlight = this.db
       .prepare(
-        "UPDATE TransportAssignments SET stato='CONCLUSO',releasedAt=?,updatedAt=? WHERE releasedAt IS NULL AND stato='IN_VIAGGIO' AND availableFrom IS NOT NULL AND availableFrom<=?",
+        "SELECT id,departedAt,availableFrom FROM TransportAssignments WHERE releasedAt IS NULL AND stato='IN_VIAGGIO'",
       )
-      .run(now, now, now);
+      .all() as Array<{ id: string; departedAt: string | null; availableFrom: string | null }>;
+    const conclude = this.db.prepare(
+      "UPDATE TransportAssignments SET stato='CONCLUSO',releasedAt=?,updatedAt=? WHERE id=? AND releasedAt IS NULL AND stato='IN_VIAGGIO'",
+    );
+    for (const assignment of inFlight) {
+      const effectiveAvailability = assignment.departedAt
+        ? addBusinessDays(assignment.departedAt, 1)
+        : nullable(assignment.availableFrom);
+      if (effectiveAvailability && effectiveAvailability <= now)
+        conclude.run(now, now, assignment.id);
+    }
   }
   list(): TransportRecord[] {
     this.refreshExpired();
@@ -345,7 +355,7 @@ export class TransportRepository {
       .run(at, sessionId);
   }
   departBySession(sessionId: string, departedAt: string): void {
-    const availableFrom = addBusinessDays(departedAt, 2);
+    const availableFrom = addBusinessDays(departedAt, 1);
     this.db
       .prepare(
         "UPDATE TransportAssignments SET stato='IN_VIAGGIO',departedAt=?,availableFrom=?,updatedAt=? WHERE loadingSessionId=? AND source='LOAD' AND releasedAt IS NULL",
@@ -409,7 +419,10 @@ export class TransportRepository {
       camion: nullable(row.camion),
       plannedDepartureDate: nullable(row.plannedDepartureDate),
       departedAt: nullable(row.departedAt),
-      availableFrom: nullable(row.availableFrom),
+      availableFrom:
+        assignment === "IN_VIAGGIO" && nullable(row.departedAt)
+          ? addBusinessDays(nullable(row.departedAt)!, 1)
+          : nullable(row.availableFrom),
       nextInspectionDate: nullable(row.nextInspectionDate),
       disabledReason: nullable(row.disabledReason),
       loadingSessionId: nullable(row.loadingSessionId),
