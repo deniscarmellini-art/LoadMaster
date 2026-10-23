@@ -10,7 +10,9 @@
     "db:demo:remove": "node scripts/remove-demo-db.mjs",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
-    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "build": "npm run build:verify",
+    "build:verify": "npm --prefix backend run build && npm --prefix frontend run build",
+    "build:production": "npm --prefix backend run build:production && npm --prefix frontend run build:production",
     "type-check": "npm --prefix backend run type-check && npm --prefix frontend run type-check"
   },
   "dependencies": {

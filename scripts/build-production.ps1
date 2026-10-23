@@ -3,8 +3,8 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $frontendPath = Join-Path $projectRoot "frontend"
 $backendPath = Join-Path $projectRoot "backend"
-$frontendIndex = Join-Path $frontendPath "dist\index.html"
-$backendDist = Join-Path $backendPath "dist"
+$frontendIndex = Join-Path $projectRoot ".verification\frontend-release\index.html"
+$backendDist = Join-Path $backendPath ".release-candidate"
 
 function Invoke-NpmCommand {
     param(
@@ -24,17 +24,11 @@ function Invoke-NpmCommand {
     }
 }
 
-Write-Host "[1/4] Installazione dipendenze frontend..."
-Invoke-NpmCommand -WorkingDirectory $frontendPath -Arguments @("ci")
+Write-Host "[1/2] Compilazione candidato frontend (nessuna pubblicazione)..."
+Invoke-NpmCommand -WorkingDirectory $frontendPath -Arguments @("run", "build:production")
 
-Write-Host "[2/4] Build frontend di produzione..."
-Invoke-NpmCommand -WorkingDirectory $frontendPath -Arguments @("run", "build")
-
-Write-Host "[3/4] Installazione dipendenze backend..."
-Invoke-NpmCommand -WorkingDirectory $backendPath -Arguments @("ci")
-
-Write-Host "[4/4] Build backend..."
-Invoke-NpmCommand -WorkingDirectory $backendPath -Arguments @("run", "build")
+Write-Host "[2/2] Compilazione candidato backend (nessuna pubblicazione)..."
+Invoke-NpmCommand -WorkingDirectory $backendPath -Arguments @("run", "build:production")
 
 if (-not (Test-Path -LiteralPath $frontendIndex -PathType Leaf)) {
     throw "Build frontend incompleta: file non trovato $frontendIndex"
@@ -43,6 +37,6 @@ if (-not (Test-Path -LiteralPath $backendDist -PathType Container)) {
     throw "Build backend incompleta: cartella non trovata $backendDist"
 }
 
-Write-Host "Build di produzione completata correttamente." -ForegroundColor Green
-Write-Host "Frontend: $frontendIndex"
-Write-Host "Backend:  $backendDist"
+Write-Host "Candidato di rilascio compilato. Nessun file dist attivo e nessun servizio sono stati modificati." -ForegroundColor Green
+Write-Host "Frontend candidato: $frontendIndex"
+Write-Host "Backend candidato:  $backendDist"

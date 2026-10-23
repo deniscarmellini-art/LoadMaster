@@ -25,6 +25,9 @@ export default defineConfig(({ command, mode }) => {
     throw new Error("Per PRODUZIONE usare scripts/start-production.ps1; Vite serve solo TEST");
   return {
     plugins: [react()],
+    // All ordinary builds are verification-only. A release candidate is built
+    // only by the explicit build:production script into its separate staging dir.
+    build: { outDir: "../.verification/frontend-build", emptyOutDir: true },
     // SSR test helpers use Vite's default .vite cache with a different dependency
     // graph. Keep the running TEST browser's optimized modules independent.
     cacheDir: test

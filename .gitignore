@@ -14,6 +14,8 @@ backend/data/*.sqlite-*
 backend/dist/
 backend/node_modules/
 backend/.test-dist/
+backend/.verification-dist/
+backend/.release-candidate/
 .verification/
 backend/data/.sislog-test.lock
 backend/data/backups/

@@ -28,20 +28,15 @@ Copy-Item .env.example .env
 
 Non inserire password o segreti nel file `.env`.
 
-## Avvio in produzione
+## Preparazione di un candidato per la produzione
 
-Compilare il frontend con `frontend/.env.production`, copiare `backend/.env.production.example` in `backend/.env`, adeguare i percorsi assoluti al server e avviare il backend:
+Le compilazioni ordinarie sono destinate alla verifica e scrivono in `backend/.verification-dist` e `.verification/frontend-build`. Per preparare esplicitamente un candidato di rilascio dalla root del repository usare `scripts/build-production.ps1`, che scrive in `.verification/frontend-release` e `backend/.release-candidate`, senza copiare nei `dist` attivi né avviare servizi. La pubblicazione resta una procedura separata da autorizzare.
 
 ```powershell
-cd frontend
-npm.cmd run build
-cd ..\backend
-Copy-Item .env.production.example .env
-npm.cmd run build
-npm.cmd start
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\build-production.ps1
 ```
 
-Con `NODE_ENV=production`, Fastify pubblica la SPA dalla directory indicata da `FRONTEND_DIST_PATH`; API e health check rimangono sotto `/api`. Se la directory non esiste o non contiene `index.html`, l'avvio viene interrotto con un errore.
+Il backend production, quando avviato separatamente, pubblica la SPA dalla directory indicata da `FRONTEND_DIST_PATH`; API e health check rimangono sotto `/api`. Se la directory non esiste o non contiene `index.html`, l'avvio viene interrotto con un errore.
 
 ## Comandi
 
@@ -49,12 +44,15 @@ Con `NODE_ENV=production`, Fastify pubblica la SPA dalla directory indicata da `
 npm run dev
 npm run type-check
 npm run build
+npm run build:production
 npm run start
 npm test
 npm run test:health
 ```
 
 `npm run test:health` richiede che il backend sia già in esecuzione sulla porta configurata.
+
+`npm run build` è sicuro per verifiche e non aggiorna `dist`; `npm run build:production` prepara esplicitamente un candidato isolato, senza pubblicarlo.
 
 ## Endpoint
 

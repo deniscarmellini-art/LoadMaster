@@ -69,13 +69,12 @@ La produzione gia attiva non va riavviata per usare TEST. Lo script production c
 ```powershell
 npm.cmd run type-check
 npm.cmd --prefix backend test
-# Compilazioni di verifica production, senza toccare i dist attivi:
-node backend/node_modules/typescript/bin/tsc -p backend/tsconfig.json --outDir backend/.test-dist
-npm.cmd --prefix frontend run build -- --outDir ../.verification/frontend-production
+# Build di verifica: output separati dai dist production.
+npm.cmd run build
 ```
 
-I test backend compilano in `backend/.test-dist`, non in `backend/dist`. `.verification` e gli output di test sono ignorati da Git. La build frontend di verifica usa comunque la modalita production.
+I test backend compilano in `backend/.test-dist`; la build backend ordinaria usa `backend/.verification-dist`; la build frontend ordinaria usa `.verification/frontend-build`. Questi comandi non scrivono in `backend/dist` o `frontend/dist`. Le cartelle di verifica sono ignorate da Git.
 
-`scripts/build-production.ps1` e `npm.cmd run build` restano comandi di **pubblicazione esplicita**: riscrivono i `dist` production. Non usarli per lo sviluppo con operatori connessi. La pubblicazione richiede una finestra dedicata; un eventuale cambio schema verra applicato al DB reale solo avviando il backend production aggiornato. Una verifica build non pubblica automaticamente TEST.
+Per preparare esplicitamente un candidato di rilascio, usare `npm.cmd run build:production` oppure `scripts/build-production.ps1`: gli output restano in `.verification/frontend-release` e `backend/.release-candidate`. Non aggiornano `frontend/dist` o `backend/dist`, non installano dipendenze e non avviano servizi. La pubblicazione richiederà una procedura separata e autorizzata. Per le verifiche ordinarie usare `npm.cmd run build`.
 
 Database, backup, lock, `.env` macchina-specifici e certificati non vanno aggiunti a Git. I file `.env.example` restano modelli versionabili; TEST non richiede un secondo `.env` locale.
