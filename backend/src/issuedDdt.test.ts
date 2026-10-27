@@ -208,7 +208,8 @@ test("Fase 2C: annullamento audit, correzione documentale e sostituzione senza r
     assert.equal(f.db.prepare("SELECT COUNT(*) n FROM OperationalEvents WHERE type='DDT_CANCELLED'").get()!.n,1);
     assert.equal(f.db.prepare("SELECT cancellationReason FROM DdtDocuments WHERE id=?").get(first.id)!.cancellationReason,"Correzione indirizzo");
     for(const url of ["/api/loading-sessions/S/ship","/api/shipments/PLAN/depart"]){const r=await f.app.inject({method:"POST",url,payload:{operatorId:f.operator}});assert.equal(r.statusCode,409);assert.equal(r.json().error.code,"DDT_VALID_REQUIRED");}
-    const correction=await f.app.inject({method:"PUT",url:"/api/shipments/PLAN",payload:{loadId:"L",commessa:"DDT-TEST",cliente:"Cliente fixture",camion:"C1",customerId:"CUSTOM",transportType:"RITIRA_CLIENTE",deliveryAddress:"Destinazione corretta",notes:"Correzione documentale"}});
+    const currentPlan=(await f.app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;updatedAt:string}>>().find(plan=>plan.id==="PLAN")!;
+    const correction=await f.app.inject({method:"PUT",url:"/api/shipments/PLAN",payload:{loadId:"L",commessa:"DDT-TEST",cliente:"Cliente fixture",camion:"C1",customerId:"CUSTOM",transportType:"RITIRA_CLIENTE",deliveryAddress:"Destinazione corretta",notes:"Correzione documentale",expectedUpdatedAt:currentPlan.updatedAt}});
     assert.equal(correction.statusCode,200,correction.body);
     assert.equal((await f.app.inject({method:"GET",url:"/api/loading-sessions/S/ddt"})).json().canIssue,true);
     const second=(await f.issue()).json();assert.equal(second.sequence,first.sequence+1);assert.notEqual(second.id,first.id);

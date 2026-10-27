@@ -426,21 +426,22 @@ test("trasportatore previsto separato dall'effettivo, modificabile e cancellabil
     const trailer=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
     const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("PLAN-CARRIER","C1")])})).json<Array<{id:string;commessa:string;cliente:string;camion:string;pannelli:Array<{id:string}>}>>()[0]!;
     const input={loadId:load.id,commessa:load.commessa,cliente:load.cliente,camion:load.camion,transportType:"BILICO_ESSEPI",plannedCarrierId:carriers[0]!.id};
+    const updatePlan=async(id:string,payload:object)=>{const current=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;updatedAt:string}>>().find(item=>item.id===id)!;return app.inject({method:"PUT",url:`/api/shipments/${id}`,payload:{...payload,expectedUpdatedAt:current.updatedAt}});};
     const created=await app.inject({method:"POST",url:"/api/shipments",payload:input});
     assert.equal(created.statusCode,200);
     const plan=created.json<{id:string;plannedCarrierId:string;carrierId:null;trailerId:null}>();
     assert.equal(plan.plannedCarrierId,carriers[0]!.id);assert.equal(plan.carrierId,null);assert.equal(plan.trailerId,null);
-    const update=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedCarrierId:carriers[1]!.id}});
+    const update=await updatePlan(plan.id,{...input,plannedCarrierId:carriers[1]!.id});
     assert.equal(update.statusCode,200);assert.equal(update.json().plannedCarrierId,carriers[1]!.id);
-    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedCarrierId:"missing"}})).statusCode,400);
-    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,transportType:"RITIRA_CLIENTE"}})).statusCode,400);
+    assert.equal((await updatePlan(plan.id,{...input,plannedCarrierId:"missing"})).statusCode,400);
+    assert.equal((await updatePlan(plan.id,{...input,transportType:"RITIRA_CLIENTE"})).statusCode,400);
     assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`})).statusCode,200);
     const second=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json<{id:string}>();
     await app.inject({method:"PATCH",url:`/api/panels/${load.pannelli[0]!.id}/close-single`,payload:{operatorId:operator.id}});
     const session=(await app.inject({method:"POST",url:`/api/loads/${load.id}/loading-session`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",trailerId:trailer.id}})).json<{id:string}>();
     await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/units`,payload:{unitType:"PANEL",panelId:load.pannelli[0]!.id,operatorId:operator.id}});
     assert.equal((await app.inject({method:"POST",url:`/api/loading-sessions/${session.id}/complete`})).statusCode,200);
-    const edited=await app.inject({method:"PUT",url:`/api/shipments/${second.id}`,payload:{...input,plannedCarrierId:carriers[1]!.id}});
+    const edited=await updatePlan(second.id,{...input,plannedCarrierId:carriers[1]!.id});
     assert.equal(edited.statusCode,200);assert.equal(edited.json().trailerId,trailer.id);assert.equal(edited.json().carrierId,null);
     assert.equal((await app.inject({method:"POST",url:`/api/shipments/${second.id}/depart`,payload:{carrierId:carriers[0]!.id}})).statusCode,400,"No mode may be inferred from planning");
     assert.equal((await app.inject({method:"PATCH",url:`/api/loading-sessions/${session.id}`,payload:{operatorId:operator.id,destinationType:"RIMORCHIO_ESSEPI",transportMode:"BILICO_ESSEPI",carrierId:carriers[0]!.id}})).statusCode,200);
@@ -448,7 +449,7 @@ test("trasportatore previsto separato dall'effettivo, modificabile e cancellabil
     assert.equal((await app.inject({method:"POST",url:`/api/shipments/${second.id}/depart`,payload:{carrierId:carriers[0]!.id}})).statusCode,200);
     const final=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;carrierId:string;plannedCarrierId:string}>>().find(p=>p.id===second.id)!;
     assert.equal(final.carrierId,carriers[0]!.id);assert.equal(final.plannedCarrierId,carriers[1]!.id);
-    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${second.id}`,payload:input})).statusCode,409);
+    assert.equal((await updatePlan(second.id,input)).statusCode,409);
     assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${second.id}`})).statusCode,409);
   } finally {await app.close();}
 });
@@ -478,7 +479,8 @@ test("riferimento pianificazione indipendente, facoltativo e persistente anche d
     const plan=created.json<{id:string;orderReference:string|null}>();
     assert.equal(plan.orderReference,"RIF-01");
     const update=async(value:Record<string,unknown>)=>{
-      const response=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,...value}});
+      const current=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;updatedAt:string}>>().find(p=>p.id===plan.id)!;
+      const response=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,...value,expectedUpdatedAt:current.updatedAt}});
       assert.equal(response.statusCode,200);return response.json<{orderReference:string|null}>();
     };
     assert.equal((await update({orderReference:"  RIF-MANUALE  "})).orderReference,"RIF-MANUALE");
@@ -702,7 +704,8 @@ test("il calendario lavorativo salta il fine settimana",()=>{
   assert.equal(addBusinessDays("2026-10-23T09:16:57.174Z",1),"2026-10-26T09:16:57.174Z");
 });
 
-test("i bilici in viaggio espongono il rientro a un giorno senza aggiornare i record esistenti",()=>{
+test("i bilici in viaggio espongono il rientro a un giorno senza aggiornare i record esistenti",(t)=>{
+  t.mock.timers.enable({apis:["Date"],now:new Date("2026-10-22T09:16:57.174Z")});
   const {database:db,close}=openSqliteDatabase(":memory:");
   const trailer="TRAILER-TEST",load="LOAD-TEST",session="SESSION-TEST",departedAt="2026-10-23T09:16:57.174Z",oldAvailable="2026-10-27T09:16:57.174Z";
   try{
@@ -801,10 +804,10 @@ test("la prima partenza prevista resta originale e le modifiche sono persistenti
   const directory=mkdtempSync(join(tmpdir(),"shipment-departure-history-"));const persistentConfig={...config,databasePath:join(directory,"shipment-history.sqlite")};
   try{const first=await buildApp(persistentConfig);
     const base={commessa:"HISTORY-1",cliente:"Cliente",camion:"C1",transportType:"BILICO_ESSEPI",trailerId:null,carrierId:null};
-    const created=(await first.inject({method:"POST",url:"/api/shipments",payload:{...base,plannedDepartureDate:"2026-08-29"}})).json<{id:string;plannedDepartureDate:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(created.plannedDepartureDate,"2026-08-29");assert.equal(created.originalPlannedDepartureDate,"2026-08-29");assert.equal(created.plannedDepartureDateChangedAt,null);
-    const changed=(await first.inject({method:"PUT",url:`/api/shipments/${created.id}`,payload:{...base,plannedDepartureDate:"2026-08-31"}})).json<{originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(changed.originalPlannedDepartureDate,"2026-08-29");assert.ok(changed.plannedDepartureDateChangedAt);
-    const changedAgain=(await first.inject({method:"PUT",url:`/api/shipments/${created.id}`,payload:{...base,plannedDepartureDate:"2026-09-02"}})).json<{plannedDepartureDate:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(changedAgain.plannedDepartureDate,"2026-09-02");assert.equal(changedAgain.originalPlannedDepartureDate,"2026-08-29");assert.ok(changedAgain.plannedDepartureDateChangedAt);
-    const laterBase={commessa:"HISTORY-2",cliente:"Cliente",camion:"C2",transportType:"RITIRA_CLIENTE",trailerId:null,carrierId:null};const withoutDate=(await first.inject({method:"POST",url:"/api/shipments",payload:{...laterBase,plannedDepartureDate:null}})).json<{id:string}>();const firstDate=(await first.inject({method:"PUT",url:`/api/shipments/${withoutDate.id}`,payload:{...laterBase,plannedDepartureDate:"2026-09-10"}})).json<{originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(firstDate.originalPlannedDepartureDate,"2026-09-10");assert.equal(firstDate.plannedDepartureDateChangedAt,null);
+    const created=(await first.inject({method:"POST",url:"/api/shipments",payload:{...base,plannedDepartureDate:"2026-08-29"}})).json<{id:string;updatedAt:string;plannedDepartureDate:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(created.plannedDepartureDate,"2026-08-29");assert.equal(created.originalPlannedDepartureDate,"2026-08-29");assert.equal(created.plannedDepartureDateChangedAt,null);
+    const changedResponse=await first.inject({method:"PUT",url:`/api/shipments/${created.id}`,payload:{...base,plannedDepartureDate:"2026-08-31",expectedUpdatedAt:created.updatedAt}});assert.equal(changedResponse.statusCode,200,changedResponse.body);const changed=changedResponse.json<{updatedAt:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(changed.originalPlannedDepartureDate,"2026-08-29");assert.ok(changed.plannedDepartureDateChangedAt);
+    const changedAgainResponse=await first.inject({method:"PUT",url:`/api/shipments/${created.id}`,payload:{...base,plannedDepartureDate:"2026-09-02",expectedUpdatedAt:changed.updatedAt}});assert.equal(changedAgainResponse.statusCode,200,changedAgainResponse.body);const changedAgain=changedAgainResponse.json<{plannedDepartureDate:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(changedAgain.plannedDepartureDate,"2026-09-02");assert.equal(changedAgain.originalPlannedDepartureDate,"2026-08-29");assert.ok(changedAgain.plannedDepartureDateChangedAt);
+    const laterBase={commessa:"HISTORY-2",cliente:"Cliente",camion:"C2",transportType:"RITIRA_CLIENTE",trailerId:null,carrierId:null};const withoutDate=(await first.inject({method:"POST",url:"/api/shipments",payload:{...laterBase,plannedDepartureDate:null}})).json<{id:string;updatedAt:string}>();const firstDateResponse=await first.inject({method:"PUT",url:`/api/shipments/${withoutDate.id}`,payload:{...laterBase,plannedDepartureDate:"2026-09-10",expectedUpdatedAt:withoutDate.updatedAt}});assert.equal(firstDateResponse.statusCode,200,firstDateResponse.body);const firstDate=firstDateResponse.json<{originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>();assert.equal(firstDate.originalPlannedDepartureDate,"2026-09-10");assert.equal(firstDate.plannedDepartureDateChangedAt,null);
     await first.close();const second=await buildApp(persistentConfig);const restored=(await second.inject({method:"GET",url:"/api/shipments"})).json<Array<{commessa:string;plannedDepartureDate:string;originalPlannedDepartureDate:string;plannedDepartureDateChangedAt:string|null}>>().find(item=>item.commessa==="HISTORY-1")!;assert.equal(restored.plannedDepartureDate,"2026-09-02");assert.equal(restored.originalPlannedDepartureDate,"2026-08-29");assert.ok(restored.plannedDepartureDateChangedAt);await second.close();
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
@@ -816,7 +819,8 @@ test("le prenotazioni manuali persistono e vengono convertite nel carico reale",
     const reserved=await first.inject({method:"POST",url:`/api/trailers/${trailer.id}/reservation`,payload:{commessa:"COMM-TEST",cliente:"Cliente Test",carico:"C1",plannedDepartureDate:"2026-09-15"}});const reservation=reserved.json<{status:string;source:string;assignmentId:string;plannedDepartureDate:string}>();assert.equal(reservation.status,"IMPEGNATO");assert.equal(reservation.source,"MANUAL");assert.equal(reservation.plannedDepartureDate,"2026-09-15");
     assert.equal((await first.inject({method:"POST",url:`/api/trailers/${trailer.id}/reservation`,payload:{commessa:"ALTRO",cliente:"Cliente",carico:"C9"}})).statusCode,409);
     const edited=await first.inject({method:"PUT",url:`/api/trailers/${trailer.id}/reservation`,payload:{commessa:"COMM-TEST",cliente:"Cliente Test aggiornato",carico:"C1",plannedDepartureDate:"2026-09-16"}});const editedReservation=edited.json<{cliente:string;plannedDepartureDate:string}>();assert.equal(editedReservation.cliente,"Cliente Test aggiornato");assert.equal(editedReservation.plannedDepartureDate,"2026-09-15");
-    const updatedShipment=await first.inject({method:"PUT",url:`/api/shipments/${shipment.id}`,payload:{commessa:"COMM-TEST",cliente:"Cliente Test",camion:"C1",plannedDepartureDate:"2026-09-16",transportType:"BILICO_ESSEPI",trailerId:null,carrierId:null}});assert.equal(updatedShipment.statusCode,200);assert.equal((await first.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;plannedDepartureDate:string|null}>>().find(item=>item.id===trailer.id)?.plannedDepartureDate,"2026-09-16");
+    const currentShipment=(await first.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;updatedAt:string}>>().find(item=>item.id===shipment.id)!;
+    const updatedShipment=await first.inject({method:"PUT",url:`/api/shipments/${shipment.id}`,payload:{commessa:"COMM-TEST",cliente:"Cliente Test",camion:"C1",plannedDepartureDate:"2026-09-16",transportType:"BILICO_ESSEPI",trailerId:null,carrierId:null,expectedUpdatedAt:currentShipment.updatedAt}});assert.equal(updatedShipment.statusCode,200);assert.equal((await first.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;plannedDepartureDate:string|null}>>().find(item=>item.id===trailer.id)?.plannedDepartureDate,"2026-09-16");
     assert.equal((await first.inject({method:"PUT",url:`/api/trailers/${trailer.id}/reservation`,payload:{commessa:"COMM-TEST",cliente:"Cliente Test",carico:"C1",plannedDepartureDate:"2026-02-30"}})).statusCode,400);
     await first.inject({method:"POST",url:`/api/trailers/${freeTrailer.id}/reservation`,payload:{commessa:"LIBERA",cliente:"Cliente",carico:"C2"}});assert.equal((await first.inject({method:"DELETE",url:`/api/trailers/${freeTrailer.id}/reservation`})).json<{status:string}>().status,"DISPONIBILE");
     await first.close();const second=await buildApp(persistentConfig);const persisted=(await second.inject({method:"GET",url:"/api/transports"})).json<Array<{id:string;source:string;assignmentId:string;plannedDepartureDate:string|null}>>().find(item=>item.id===trailer.id)!;assert.equal(persisted.source,"MANUAL");assert.equal(persisted.assignmentId,reservation.assignmentId);assert.equal(persisted.plannedDepartureDate,"2026-09-16");
@@ -961,6 +965,7 @@ test("le nuove anagrafiche trasporti persistono e non modificano i trasportatori
 test("le pianificazioni validano macro-categoria, dettaglio opzionale e voci disattivate",async()=>{
   const app=await buildApp(config);
   try{
+    const updatePlan=async(id:string,payload:object)=>{const current=(await app.inject({method:"GET",url:"/api/shipments"})).json<Array<{id:string;updatedAt:string}>>().find(item=>item.id===id)!;return app.inject({method:"PUT",url:`/api/shipments/${id}`,payload:{...payload,expectedUpdatedAt:current.updatedAt}});};
     const carrier=(await app.inject({method:"GET",url:"/api/carriers"})).json<Array<{id:string;name:string}>>()[0]!;
     const vehicle=(await app.inject({method:"POST",url:"/api/client-vehicle-types",payload:{name:"Motrice",active:true,sortOrder:0}})).json<{id:string}>();
     const thirdParty=(await app.inject({method:"POST",url:"/api/third-party-transport-modes",payload:{name:"Vettore dedicato",active:true,sortOrder:0}})).json<{id:string}>();
@@ -974,9 +979,9 @@ test("le pianificazioni validano macro-categoria, dettaglio opzionale e voci dis
     assert.equal((await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MODE-BAD",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:carrier.id}})).statusCode,400);
     await app.inject({method:"PATCH",url:`/api/client-vehicle-types/${vehicle.id}`,payload:{active:false}});
     const pickupRecord=pickup.json<{id:string;transportDetailId:string}>();
-    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${pickupRecord.id}`,payload:{commessa:"MODE-R",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:vehicle.id}})).statusCode,200);
+    assert.equal((await updatePlan(pickupRecord.id,{commessa:"MODE-R",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:vehicle.id})).statusCode,200);
     assert.equal((await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"MODE-INACTIVE",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:vehicle.id}})).statusCode,400);
-    const changed=await app.inject({method:"PUT",url:`/api/shipments/${bilico.json<{id:string}>().id}`,payload:{commessa:"MODE-B",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:null}});
+    const changed=await updatePlan(bilico.json<{id:string}>().id,{commessa:"MODE-B",cliente:"Cliente",camion:"C1",transportType:"RITIRA_CLIENTE",transportDetailId:null});
     assert.equal(changed.statusCode,200);assert.equal(changed.json<{transportDetailId:null}>().transportDetailId,null);
   }finally{await app.close();}
 });
@@ -1643,8 +1648,8 @@ for(const deleteOrder of [false,true])test("audit reversibile 265587 e pianifica
   try{
     const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:{...importedLoad([importedPanel("1","C1-")]),commessa:"265587"}})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
     const input={loadId:load.id,commessa:"265587",cliente:"Cliente Test",camion:"C1-",plannedDepartureDate:"2026-09-20",transportType:"RITIRA_CLIENTE"};
-    const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json<{id:string}>();
-    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedDepartureDate:"2026-09-21"}})).statusCode,200);
+    const plan=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json<{id:string;updatedAt:string}>();
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,plannedDepartureDate:"2026-09-21",expectedUpdatedAt:plan.updatedAt}})).statusCode,200);
     const trailer=(await app.inject({method:"GET",url:"/api/trailers"})).json<Array<{id:string}>>()[0]!;
     assert.equal((await app.inject({method:"POST",url:`/api/trailers/${trailer.id}/reservation`,payload:{commessa:"265587",cliente:"Cliente Test",carico:"C1",plannedDepartureDate:"2026-09-21"}})).statusCode,200);
     assert.equal((await app.inject({method:"DELETE",url:`/api/shipments/${plan.id}`})).statusCode,200);

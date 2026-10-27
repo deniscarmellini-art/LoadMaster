@@ -83,9 +83,10 @@ test("customer links: no automatic matching, separate delivery address, omission
   const customer=(await app.inject({method:"POST",url:"/api/customers",payload:data()})).json();
   const input={commessa:"CUSTOMER-LINK",cliente:"Testo cliente storico diverso",transportType:"RITIRA_CLIENTE",plannedDepartureDate:"2026-10-20",deliveryAddress:"Cantiere di consegna"};
   const legacy=(await app.inject({method:"POST",url:"/api/shipments",payload:input})).json();assert.equal(legacy.customerId,null);
-  const linked=await app.inject({method:"PUT",url:`/api/shipments/${legacy.id}`,payload:{...input,customerId:customer.id}});assert.equal(linked.statusCode,200,linked.body);assert.equal(linked.json().cliente,input.cliente);assert.equal(linked.json().deliveryAddress,input.deliveryAddress);
-  assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${legacy.id}`,payload:{...input,customerId:"missing"}})).statusCode,400);
-  const omitted=(await app.inject({method:"PUT",url:`/api/shipments/${legacy.id}`,payload:input})).json();assert.equal(omitted.customerId,customer.id);
+  const updatePlan=async(payload:object)=>{const current=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((plan:{id:string})=>plan.id===legacy.id)!;return app.inject({method:"PUT",url:`/api/shipments/${legacy.id}`,payload:{...payload,expectedUpdatedAt:current.updatedAt}});};
+  const linked=await updatePlan({...input,customerId:customer.id});assert.equal(linked.statusCode,200,linked.body);assert.equal(linked.json().cliente,input.cliente);assert.equal(linked.json().deliveryAddress,input.deliveryAddress);
+  assert.equal((await updatePlan({...input,customerId:"missing"})).statusCode,400);
+  const omitted=(await updatePlan(input)).json();assert.equal(omitted.customerId,customer.id);
   const date=await app.inject({method:"PUT",url:`/api/shipments/${legacy.id}`,payload:{plannedDepartureDate:"2026-10-21",expectedUpdatedAt:omitted.updatedAt}});assert.equal(date.json().customerId,customer.id);
   const imported=await app.inject({method:"POST",url:"/api/loads/import",payload:{commessa:input.commessa,cliente:input.cliente,numeroCliente:"",riferimentoOrdine:"",pannelli:[{numeroPannello:"1",numeroCliente:"",numeroMasterPanel:"1",camion:"C1",lato1:"",lato2:"",tipoPannello:"TEST",quantita:1,spessore:100,lunghezza:1000,altezza:1000,superficie:1,volume:.1,peso:50}]}});assert.equal(imported.statusCode,201,imported.body);const load=imported.json()[0];
   const link=await app.inject({method:"PATCH",url:`/api/shipments/${legacy.id}/link`,payload:{loadId:load.id}});assert.equal(link.statusCode,200,link.body);assert.equal(link.json().customerId,customer.id);

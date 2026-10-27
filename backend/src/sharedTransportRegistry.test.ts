@@ -20,25 +20,26 @@ test("Ritira Cliente: modifica piano legacy con vettore previsto residuo, cambio
   const input={loadId:'PICKUP-L',commessa:'PICKUP',cliente:'Cliente TEST',camion:'C1',transportType:'RITIRA_CLIENTE',plannedCarrierId:null,carrierId:null,notes:'Conservare'};
   const created=await app.inject({method:"POST",url:"/api/shipments",payload:input});assert.equal(created.statusCode,200,created.body);
   const id=created.json().id,url=`/api/shipments/${id}`;
+  const update=async(payload:object)=>{const current=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((plan:{id:string})=>plan.id===id)!;return app.inject({method:"PUT",url,payload:{...payload,expectedUpdatedAt:current.updatedAt}});};
   // Isolated fixture reproduces the existing TEST record, never an operational DB.
   db.prepare("UPDATE ShipmentPlans SET plannedCarrierId=? WHERE id=?").run(carrier,id);
   const beforePlan=db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(id);
   const dependencies=()=>JSON.stringify([db.prepare("SELECT * FROM TransportAssignments").all(),db.prepare("SELECT * FROM LoadingSessions").all(),db.prepare("SELECT * FROM DdtDocuments").all(),db.prepare("SELECT * FROM Loads").all()]);
   const beforeDependencies=dependencies();
-  const rejected=await app.inject({method:"PUT",url,payload:{...input,plannedCarrierId:carrier}});
+  const rejected=await update({...input,plannedCarrierId:carrier});
   assert.equal(rejected.statusCode,400);assert.match(rejected.body,/Trasportatore consentito solo/);
   assert.deepEqual(db.prepare("SELECT * FROM ShipmentPlans WHERE id=?").get(id),beforePlan);
-  const saved=await app.inject({method:"PUT",url,payload:{...input,notes:'Modifica esplicita TEST'}});
+  const saved=await update({...input,notes:'Modifica esplicita TEST'});
   assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().plannedCarrierId,null);assert.equal(saved.json().carrierId,null);
   assert.equal(saved.json().transportType,'RITIRA_CLIENTE');assert.equal(dependencies(),beforeDependencies);
   // Other transport modes keep their own validation and predictions.
-  const invalidActual=await app.inject({method:"PUT",url,payload:{...input,carrierId:carrier}});assert.equal(invalidActual.statusCode,400);
-  const bilico=await app.inject({method:"PUT",url,payload:{...input,transportType:'BILICO_ESSEPI',transportDetailId:carrier}});
+  const invalidActual=await update({...input,carrierId:carrier});assert.equal(invalidActual.statusCode,400);
+  const bilico=await update({...input,transportType:'BILICO_ESSEPI',transportDetailId:carrier});
   assert.equal(bilico.statusCode,200,bilico.body);assert.equal(bilico.json().plannedCarrierId,carrier);
-  const pickup=await app.inject({method:"PUT",url,payload:input});assert.equal(pickup.statusCode,200,pickup.body);assert.equal(pickup.json().plannedCarrierId,null);
-  const terzi=await app.inject({method:"PUT",url,payload:{...input,transportType:'TERZI_PER_ESSEPI',plannedCarrierId:carrier}});
+  const pickup=await update(input);assert.equal(pickup.statusCode,200,pickup.body);assert.equal(pickup.json().plannedCarrierId,null);
+  const terzi=await update({...input,transportType:'TERZI_PER_ESSEPI',plannedCarrierId:carrier});
   assert.equal(terzi.statusCode,200,terzi.body);assert.equal(terzi.json().plannedCarrierId,carrier);
-  const invalid=await app.inject({method:"PUT",url,payload:{...input,transportType:'TERZI_PER_ESSEPI',plannedCarrierId:'unknown'}});assert.equal(invalid.statusCode,400);
+  const invalid=await update({...input,transportType:'TERZI_PER_ESSEPI',plannedCarrierId:'unknown'});assert.equal(invalid.statusCode,400);
   assert.equal(dependencies(),beforeDependencies);
  }finally{db.close();await app.close();rmSync(dir,{recursive:true,force:true});}
 });
@@ -104,11 +105,12 @@ test("shared carrier API: independent combinations, edit, restart, inactive and 
   const input={commessa:"SHARED",cliente:"Cliente",transportType:"TERZI_PER_ESSEPI",plannedCarrierId:carrier.id,vehicleTypeId:type.id};
   const response=await app.inject({method:"POST",url:"/api/shipments",payload:input});assert.equal(response.statusCode,200,response.body);
   const plan=response.json();assert.equal(plan.plannedCarrierId,carrier.id);assert.equal(plan.vehicleTypeId,type.id);assert.equal(plan.transportDetailId,null);
-  const invalid=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,vehicleTypeId:"unknown"}});assert.equal(invalid.statusCode,400);
+  const invalid=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,vehicleTypeId:"unknown",expectedUpdatedAt:plan.updatedAt}});assert.equal(invalid.statusCode,400);
   const bilico=await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"BILICO",cliente:"Cliente",transportType:"BILICO_ESSEPI",transportDetailId:carrier.id}});assert.equal(bilico.statusCode,200);assert.equal(bilico.json().plannedCarrierId,plan.plannedCarrierId);
   const optional=await app.inject({method:"POST",url:"/api/shipments",payload:{commessa:"OPTIONAL",cliente:"Cliente",transportType:"TERZI_PER_ESSEPI"}});assert.equal(optional.statusCode,200);
   const db=new DatabaseSync(config.databasePath);db.prepare("UPDATE Carriers SET active=0 WHERE id=?").run(carrier.id);db.prepare("UPDATE ClientVehicleTypes SET active=0 WHERE id=?").run(type.id);db.close();
-  const retained=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,notes:"Updated"}});assert.equal(retained.statusCode,200,retained.body);
+  const current=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((p:{id:string})=>p.id===plan.id)!;
+  const retained=await app.inject({method:"PUT",url:`/api/shipments/${plan.id}`,payload:{...input,notes:"Updated",expectedUpdatedAt:current.updatedAt}});assert.equal(retained.statusCode,200,retained.body);
   const inactive=await app.inject({method:"POST",url:"/api/shipments",payload:{...input,commessa:"INACTIVE"}});assert.equal(inactive.statusCode,400);
   await app.close();app=await buildApp(config);
   const restored=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((p:{id:string})=>p.id===plan.id);

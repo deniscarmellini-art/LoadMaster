@@ -39,7 +39,8 @@ test("vehicle types: inactive selection retained on saved plans, excluded from n
   assert.equal((await app.inject({method:"PUT",url:`/api/client-vehicle-types/${type.id}`,payload:{name:"Autotreno lungo"}})).statusCode,200);
   assert.equal((await app.inject({method:"PATCH",url:`/api/client-vehicle-types/${type.id}`,payload:{active:false}})).statusCode,200);
   const rejected=await app.inject({method:"POST",url:"/api/shipments",payload:{...input,commessa:"NEW"}});assert.equal(rejected.statusCode,400);
-  const retained=await app.inject({method:"PUT",url:`/api/shipments/${id}`,payload:{...input,notes:"Saved inactive selection"}});assert.equal(retained.statusCode,200,retained.body);
+  const current=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((p:{id:string})=>p.id===id)!;
+  const retained=await app.inject({method:"PUT",url:`/api/shipments/${id}`,payload:{...input,notes:"Saved inactive selection",expectedUpdatedAt:current.updatedAt}});assert.equal(retained.statusCode,200,retained.body);
   await app.close();app=await buildApp(cfg);
   const restoredType=(await app.inject({method:"GET",url:"/api/client-vehicle-types"})).json().find((t:{id:string})=>t.id===type.id);assert.equal(restoredType.name,"Autotreno lungo");assert.equal(restoredType.active,false);
   const restored=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((p:{id:string})=>p.id===id);assert.equal(restored.vehicleTypeId,type.id);assert.equal(restored.plannedCarrierId,carrier.id);

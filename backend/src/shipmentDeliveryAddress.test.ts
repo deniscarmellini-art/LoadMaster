@@ -31,7 +31,10 @@ test("indirizzo API: facoltativo, modifica, omissione legacy, cancellazione e va
     const empty = await app.inject({method:"POST",url:"/api/shipments",payload:input});
     assert.equal(empty.statusCode,200);assert.equal(empty.json().deliveryAddress,null);
     const id = empty.json().id;
-    const update = async (body:object) => app.inject({method:"PUT",url:`/api/shipments/${id}`,payload:body});
+    const update = async (body:object) => {
+      const current=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((plan:{id:string})=>plan.id===id)!;
+      return app.inject({method:"PUT",url:`/api/shipments/${id}`,payload:{...body,expectedUpdatedAt:current.updatedAt}});
+    };
     assert.equal((await update({...input,deliveryAddress:`  ${address}  `})).json().deliveryAddress,address);
     assert.equal((await update({...input,cliente:"Cliente modificato"})).json().deliveryAddress,address);
     assert.equal((await update({...input,deliveryAddress:{street:"invalid object"}})).statusCode,400);
@@ -72,7 +75,8 @@ test("indirizzo: pianificazione manuale, collegamento al carico, partenza reale 
     const final = plans.find((p:{id:string})=>p.id===id);
     assert.equal(final.deliveryAddress,address);assert.equal(final.cliente,input.cliente);
     assert.equal(final.shipmentStatus,"CONCLUSA");assert.ok(final.actualDepartureDate);
-    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${id}`,payload:{...input,loadId:load.id,deliveryAddress:"Alterazione dopo partenza"}})).statusCode,409);
+    const current=(await app.inject({method:"GET",url:"/api/shipments"})).json().find((plan:{id:string})=>plan.id===id)!;
+    assert.equal((await app.inject({method:"PUT",url:`/api/shipments/${id}`,payload:{...input,loadId:load.id,deliveryAddress:"Alterazione dopo partenza",expectedUpdatedAt:current.updatedAt}})).statusCode,409);
     assert.equal((await app.inject({method:"GET",url:"/api/shipments"})).json().find((p:{id:string})=>p.id===id).deliveryAddress,address);
   } finally { await app.close(); }
 });
