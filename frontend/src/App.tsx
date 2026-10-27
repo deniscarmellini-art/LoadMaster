@@ -650,9 +650,14 @@ export default function App() {
               await scanningRefreshRef.current;
               await refreshScanningData();
             }}
-            key={`${resumeLoad?.loadId ?? "loading-list"}:${loadingInstance}`}
+            key={loadingInstance}
             readOnly={loadingReadOnly}
             initialLoad={resumeLoad}
+            onReturnToLoads={() => {
+              setResumeLoad(null);
+              setLoadingReadOnly(false);
+              setLoadingInstance((value) => value + 1);
+            }}
             shipments={shipmentsWithOperationalStatus}
             clientVehicleTypes={settings.tipiMezzoCliente}
             thirdPartyTransportModes={settings.modalitaTerziEssepi}
@@ -702,7 +707,7 @@ export default function App() {
                   ? [...current, normalized]
                   : current.map((item, i) => (i === index ? normalized : item));
               });
-              setResumeLoad(null);
+              setResumeLoad(normalized);
               const numbers = new Set(
                 units.flatMap((unit) =>
                   unit.pannelli.map((panel) => panel.numeroPannello),

@@ -1,6 +1,5 @@
 import { useMemo } from "react";
-import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
-import { Box, Paper, Stack, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Paper, useMediaQuery, useTheme } from "@mui/material";
 
 import type { Camion } from "../../models/Camion";
 import type { Trasportatore } from "../../models/Settings";
@@ -44,7 +43,6 @@ export default function DashboardContent({ rows, referenceFor, onDelete, onOpenS
     () => rows.filter((row) => row.stato !== "Partita"),
     [rows],
   );
-  const activeRowCount = visibleRows.length;
   const shipmentFor = (row: Camion) =>
     shipments.find((shipment) => shipment.loadId === row.id) ??
     shipments.find(
@@ -55,16 +53,10 @@ export default function DashboardContent({ rows, referenceFor, onDelete, onOpenS
     dashboardTransportPresentation(shipmentFor(row), transports, carriers);
 
   return (
-    <Paper elevation={0} sx={{ bgcolor: dashboardColors.surface, border: 1, borderColor: "divider", p: 1.5 }}>
-      <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
-        <LocalShippingOutlinedIcon color="primary" sx={{ fontSize: 21 }} />
-        <Typography component="h2" noWrap sx={{ minWidth: 0, fontSize: "1.08rem", fontWeight: 700, letterSpacing: 0.3 }}>
-          Commesse attive ({activeRowCount})
-        </Typography>
-      </Stack>
+    <Paper elevation={0} sx={{ bgcolor: dashboardColors.surface, border: 1, borderColor: "divider", p: 1.5, pt: 1 }}>
       {mobile
         ? <DashboardMobileCards onReopen={onReopen} hasPackages={hasPackages} onViewLoad={onViewLoad} onViewDdt={onViewDdt} sessionIdFor={sessionIdFor} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onStartLoad={onStartLoad} rows={visibleRows} shipmentFor={shipmentFor} transportFor={transportFor} />
-        : <Box sx={{ height: 620, width: "100%" }}><DashboardGrid referenceFor={referenceFor} hasPackages={hasPackages} onViewLoad={onViewLoad} onViewDdt={onViewDdt} sessionIdFor={sessionIdFor} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} shipmentFor={shipmentFor} transportFor={transportFor} /></Box>}
+        : <Box sx={{ height: { sm: "min(676px, calc(100vh - 280px))", md: "min(676px, calc(100vh - 240px))" }, width: "100%" }}><DashboardGrid referenceFor={referenceFor} hasPackages={hasPackages} onViewLoad={onViewLoad} onViewDdt={onViewDdt} sessionIdFor={sessionIdFor} onConfirmDeparture={onConfirmDeparture} onContinueLoad={onContinueLoad} onDelete={onDelete} onOpenHistory={onOpenHistory} onOpenScanning={onOpenScanning} onPrintPackages={onPrintPackages} onReopen={onReopen} onStartLoad={onStartLoad} onUpdate={onUpdate} rows={visibleRows} shipmentFor={shipmentFor} transportFor={transportFor} /></Box>}
     </Paper>
   );
 }

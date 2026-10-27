@@ -9,7 +9,6 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 import type { ShipmentItem, ShipmentStatus } from "../../services/shipmentsApi";
 import type { Trasportatore } from "../../models/Settings";
@@ -73,18 +72,10 @@ export default function UpcomingShipments({
         border: 1,
         borderColor: "divider",
         p: 1.5,
-        mb: 2,
+        pt: 1,
+        mb: 1,
       }}
     >
-      <Stack direction="row" sx={{ alignItems: "center", gap: 1, mb: 1.5 }}>
-        <CalendarMonthOutlinedIcon color="primary" sx={{ fontSize: 21 }} />
-        <Typography
-          component="h2"
-          sx={{ fontSize: "1.08rem", fontWeight: 700, letterSpacing: 0.3 }}
-        >
-          Spedizioni scadute e prossimi 4 giorni lavorativi
-        </Typography>
-      </Stack>
       <Box
         sx={{
           display: "grid",

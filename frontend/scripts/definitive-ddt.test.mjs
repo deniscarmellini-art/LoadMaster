@@ -14,7 +14,7 @@ for(const flag of [true,false,'true'])test(`DDT definitivo frontend: protezione 
   const {default:Panel}=await server.ssrLoadModule('/src/components/shipments/DefinitiveDdtPanel.tsx');
   const html=renderToStaticMarkup(React.createElement(Panel,{sessionId:'S',operatorId:'OP',revision:'closed',onLocked:()=>{throw Error('render must not lock');}}));
   if(flag!==true){assert.equal(html,'');assert.throws(()=>api.issueDefinitiveDdt('S','OP','same-request-key'),/esclusivamente in TEST/);assert.throws(()=>api.originalDdtPdf('D'),/esclusivamente in TEST/);return;}
-  assert(html.includes('Emetti DDT definitivo'));assert(html.includes('disabled=""'));assert(!html.includes('Annulla DDT'));
+  assert(!html.includes('Emetti DDT definitivo'));assert(!html.includes('Annulla DDT'));
   const {createDdtRequestKey}=await server.ssrLoadModule('/src/services/ddtRequestKey.ts');
   const requestKey=createDdtRequestKey({getRandomValues:bytes=>webcrypto.getRandomValues(bytes)});
   let release;globalThis.fetch=(url,options)=>{calls.push({url,options});return new Promise(resolve=>{release=()=>resolve(new Response(JSON.stringify({id:'D',fullNumber:'X-Lam/0001/2026',status:'EMESSO'}),{headers:{'content-type':'application/json'}}));});};

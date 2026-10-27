@@ -282,6 +282,8 @@ export default function Transports({ items, shipments, carriers, onRefresh, onEd
                     inspection === null
                       ? null
                       : Math.ceil((inspection - Date.now()) / 86400000),
+                  inspectionActionColor =
+                    days !== null && days < 0 ? "error.main" : "primary.main",
                   inspectionColor =
                     days !== null && days < 0
                       ? "error.main"
@@ -329,9 +331,26 @@ export default function Transports({ items, shipments, carriers, onRefresh, onEd
                       {item.nextInspectionDate ? (
                         <Button
                           size="small"
+                          variant="outlined"
                           aria-label={`Modifica revisione rimorchio ${item.plate}`}
                           onClick={() => onEditTrailerInspection(item.id)}
-                          sx={{ color: inspectionColor, fontWeight: "inherit", minWidth: 0, p: 0, textTransform: "none", justifyContent: "flex-start" }}
+                          sx={{
+                            color: inspectionActionColor,
+                            borderColor: inspectionActionColor,
+                            borderRadius: 1,
+                            cursor: "pointer",
+                            fontWeight: "inherit",
+                            minWidth: 0,
+                            px: 0.75,
+                            py: "1px",
+                            lineHeight: 1.5,
+                            textTransform: "none",
+                            justifyContent: "flex-start",
+                            "&:hover": {
+                              borderColor: inspectionActionColor,
+                              bgcolor: days !== null && days < 0 ? "rgba(211,47,47,0.08)" : "rgba(25,118,210,0.08)",
+                            },
+                          }}
                         >
                           {formatOptionalDate(item.nextInspectionDate)}
                         </Button>

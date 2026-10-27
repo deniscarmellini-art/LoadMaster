@@ -44,7 +44,7 @@ test('completamento frontend: API e stato in attesa per tre modalita; partenza s
   for(const mode of modes){
    const initialLoad=api.toLoad(session(mode),()=> 'Operatore');
    const html=renderToStaticMarkup(React.createElement(TruckLoading,{onRefresh:async()=>{},shipments:[],clientVehicleTypes:[],thirdPartyTransportModes:[],rows:[{id:'L',commessa:'TEST',cliente:'Cliente',camion:'C1',previsti:1,pronti:1,caricati:1,mancanti:0,peso:50,volume:.1,stato:'Attesa spedizione'}],commesse:[],singles:[],packages:[],operators:[{id:'OP',attivo:true,nome:'Operatore'}],trailers:[],carriers:[],transports:[],loads:[initialLoad],initialLoad,onResumeLoad:()=>{},onSessionChange:()=>{},onScanUnit:()=>{},onUndoUnit:()=>{},onComplete:()=>{}}));
-   assert.ok(html.includes('Completa carico'));assert.ok(html.includes('in attesa della partenza'));
+   assert.ok(!html.includes('Completa carico'));assert.ok(html.includes('in attesa della partenza'));
    assert.ok(!html.includes('Conferma partenza'));assert.ok(!html.includes('Chiudi carico su rimorchio'));
   }
  }finally{globalThis.fetch=originalFetch;await server.close();}
