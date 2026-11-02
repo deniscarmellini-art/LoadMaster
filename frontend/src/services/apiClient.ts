@@ -1,3 +1,5 @@
+import { classifyWriteResponse, reloadSafety } from "./reloadSafety";
+
 export interface ApiHealth {
   status: "ok";
   service: "Sistema Logistico API";
@@ -40,6 +42,8 @@ const isApiError = (value: unknown): value is ApiErrorPayload => {
 };
 
 export const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const finishWrite = !["GET", "HEAD", "OPTIONS"].includes(method) ? reloadSafety.beginWrite() : undefined;
   let response: Response;
   try {
     response = await fetch(`${apiUrl}${path}`, {
@@ -47,15 +51,19 @@ export const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T
       headers: { Accept: "application/json", ...(init?.body ? { "Content-Type": "application/json" } : {}), ...init?.headers },
     });
   } catch (error: unknown) {
+    finishWrite?.("uncertain");
     const message = error instanceof Error ? error.message : "Backend non raggiungibile";
     throw new ApiClientError("NETWORK_ERROR", message);
   }
 
   const payload: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
+    const code = payload && typeof payload === "object" && "code" in payload && typeof payload.code === "string" ? payload.code : undefined;
+    finishWrite?.(classifyWriteResponse(response.status, code));
     if (isApiError(payload)) throw new ApiClientError(payload.error.code, payload.error.message, response.status);
     throw new ApiClientError("HTTP_ERROR", `Richiesta non riuscita (${response.status})`, response.status);
   }
+  finishWrite?.(payload === undefined ? "uncertain" : "confirmed");
   return payload as T;
 };
 

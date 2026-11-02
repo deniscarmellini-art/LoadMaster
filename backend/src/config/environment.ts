@@ -11,6 +11,8 @@ export interface AppConfig {
   frontendDistPath: string | null;
   httpsKeyPath: string | null;
   httpsCertPath: string | null;
+  /** Persistent TEST-only notice state, stored outside disposable build folders. */
+  maintenanceStatePath?: string | null;
 }
 
 const parsePort = (value: string | undefined): number => {
@@ -75,5 +77,8 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     frontendDistPath:parseFrontendDistPath(environment.FRONTEND_DIST_PATH,nodeEnvironment),
     httpsKeyPath:https.keyPath,
     httpsCertPath:https.certPath,
+    maintenanceStatePath: nodeEnvironment === "test"
+      ? resolve(environment.SISLOG_TEST_MAINTENANCE_STATE_PATH?.trim() || `${environment.ProgramData || "C:\\ProgramData"}/SisLog/TEST/maintenance-state.json`)
+      : null,
   };
 };

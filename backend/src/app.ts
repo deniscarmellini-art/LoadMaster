@@ -48,6 +48,7 @@ import { shipmentRoutes } from "./routes/shipmentRoutes.js";
 import { TransportRegistryRepository } from "./repositories/transportRegistryRepository.js";
 import { TransportRegistryService } from "./services/transportRegistryService.js";
 import { transportRegistryRoutes } from "./routes/transportRegistryRoutes.js";
+import { isMaintenanceActive } from "./services/maintenanceNotice.js";
 
 export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   if(config.environment==="production"){
@@ -82,6 +83,20 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
       methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     });
   registerErrorHandlers(app);
+  if (config.environment === "test") {
+    // Admission barrier for new writes. Requests that have already passed this
+    // hook continue through their existing handlers and transactions.
+    app.addHook("onRequest", async (request, reply) => {
+      if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return;
+      try {
+        if (isMaintenanceActive(config.maintenanceStatePath)) {
+          return reply.code(503).send({ code: "MAINTENANCE_ACTIVE", message: "Aggiornamento SisLog in corso. Attendere la riapertura." });
+        }
+      } catch {
+        return reply.code(503).send({ code: "MAINTENANCE_STATE_UNAVAILABLE", message: "Stato manutenzione non verificabile: operazioni di scrittura temporaneamente sospese." });
+      }
+    });
+  }
   if(config.environment==="test")definitiveDdtRoutes(app,connection.database);
   if(config.environment==="test")app.get<{Params:{id:string}}>("/api/loading-sessions/:id/ddt-preview/availability",async(request,reply)=>{
     reply.header("Cache-Control","no-store");

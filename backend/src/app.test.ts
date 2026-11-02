@@ -3,6 +3,7 @@ import "./materialAvailability.test.js";
 import "./shipmentDeliveryAddress.test.js";
 import "./shippedShipments.test.js";
 import "./loadingCompletion.test.js";
+import "./maintenanceNotice.test.js";
 import "./loadingSimulation.test.js";
 import "./dashboardDeparture.test.js";
 import test from "node:test";

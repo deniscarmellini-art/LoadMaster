@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="it">
+  <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>SisLog TEST — avviso manutenzione</title></head>
+  <body style="margin:0;background:#202124;color:#fff;font-family:Arial,sans-serif">
+    <div id="root"></div>
+    <script>
+      const realFetch = window.fetch.bind(window);
+      const params = new URLSearchParams(location.search);
+      const mode = params.get('state') === 'idle' ? 'idle' : 'scheduled';
+      const key = 'sislog-maintenance-multitab-deadline';
+      let deadline = Number(localStorage.getItem(key));
+      if (!deadline || !Number.isFinite(deadline)) { deadline = Date.now() + 120000; localStorage.setItem(key, String(deadline)); }
+      window.fetch = (input, init) => {
+        if (new URL(typeof input === 'string' ? input : input.url, location.href).pathname === '/api/maintenance') {
+          const now = Date.now();
+          const body = mode === 'idle'
+            ? { formatVersion: 1, state: 'idle', message: null, scheduledAt: null, serverTime: new Date(now).toISOString(), remainingSeconds: null }
+            : { formatVersion: 1, state: 'scheduled', message: 'Aggiornamento TEST programmato (API simulata)', scheduledAt: new Date(deadline).toISOString(), serverTime: new Date(now).toISOString(), remainingSeconds: Math.max(0, Math.ceil((deadline-now)/1000)) };
+          return Promise.resolve(Response.json(body, { headers: { 'Cache-Control': 'no-store' } }));
+        }
+        return realFetch(input, init);
+      };
+    </script>
+    <script type="module" src="/scripts/fixtures/maintenance-notice-multitab.tsx"></script>
+  </body>
+</html>
