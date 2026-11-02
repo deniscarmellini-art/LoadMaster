@@ -7,7 +7,7 @@ import ShipmentDateFilter from "../components/shipments/ShipmentDateFilter";
 import type { CaricoCamion } from "../models/Loading";
 import { shipmentListDetails } from "../services/shipmentListPresentation";
 import { shipmentCalendarTransportDetails } from "../services/shipmentCalendarPresentation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import {
   Alert,
@@ -58,6 +58,8 @@ import { ApiClientError } from "../services/apiClient";
 import { shipmentTransportLabel } from "../services/shipmentTransportPresentation";
 interface Props {
   items: ShipmentItem[];
+  initialShipmentId?: string | null;
+  onReturnToDashboard?: () => void;
   loads?: CaricoCamion[];
   trailers: Rimorchio[];
   carriers: Trasportatore[];
@@ -118,6 +120,8 @@ const OperationalStatusChip = ({
 };
 export default function Shipments({
   items,
+  initialShipmentId,
+  onReturnToDashboard,
   loads = [],
   transports,
   trailers,
@@ -148,16 +152,26 @@ export default function Shipments({
   };
   const [editing, setEditing] = useState<ShipmentItem | null | "new">(null),
     [form, setForm] = useState<ShipmentInput>(empty),
+    [readOnlyDashboardDetail, setReadOnlyDashboardDetail] = useState(false),
     [deleteItem, setDeleteItem] = useState<ShipmentItem | null>(null),
     [notice, setNotice] = useState<{
       severity: "success" | "error";
       text: string;
     } | null>(null);
+  const initialShipmentHandled = useRef<string | null>(null);
+  const closeEditor = useCallback(() => {
+    setEditing(null);
+    setReadOnlyDashboardDetail(false);
+    if (initialShipmentHandled.current) {
+      initialShipmentHandled.current = null;
+      onReturnToDashboard?.();
+    }
+  }, [onReturnToDashboard]);
   useEffect(() => {
     const departed = (item: ShipmentItem) => shipmentHasDeparted(item) || items.some(current=>current.id===item.id&&shipmentHasDeparted(current));
-    if(editing && editing!=="new" && departed(editing))setEditing(null);
+    if(editing && editing!=="new" && departed(editing) && !readOnlyDashboardDetail)closeEditor();
     if(deleteItem && departed(deleteItem))setDeleteItem(null);
-  }, [items, editing, deleteItem]);
+  }, [items, editing, deleteItem, closeEditor, readOnlyDashboardDetail]);
   const legacyCount = useMemo(
     () =>
       items.filter(
@@ -180,8 +194,9 @@ export default function Shipments({
     () => filterShipmentList(visibleItems,listDetails,{search,type,carrierFilter,from,to}),
     [visibleItems, search, type, carrierFilter, from, to, listDetails],
   );
-  const open = (item?: ShipmentItem, date?: string) => {
-    if(item && hasDeparted(item))return;
+  const open = (item?: ShipmentItem, date?: string, readOnly=false) => {
+    if(item && hasDeparted(item) && !readOnly)return;
+    setReadOnlyDashboardDetail(readOnly);
     setCalendarDate(date ?? null);
     setEditing(item ?? "new");
     setForm(
@@ -207,11 +222,19 @@ export default function Shipments({
         : { ...empty, orderReference: "", deliveryAddress: "", plannedDepartureDate: date ?? empty.plannedDepartureDate }),
     );
   };
+  useEffect(() => {
+    if (!initialShipmentId || initialShipmentHandled.current === initialShipmentId) return;
+    const shipment = items.find(item => item.id === initialShipmentId);
+    if (!shipment) return;
+    initialShipmentHandled.current = initialShipmentId;
+    const departed = shipmentHasDeparted(shipment);
+    open(shipment, undefined, departed);
+  }, [initialShipmentId, items]);
   const valid = Boolean(
     form.commessa?.trim() && form.cliente?.trim() && form.transportType,
   );
   const save = async () => {
-    if (!valid) return;
+    if (!valid || readOnlyDashboardDetail) return;
     if(editing && editing!=="new" && hasDeparted(editing))return;
     try {
       let saved: ShipmentItem | undefined;
@@ -235,7 +258,7 @@ export default function Shipments({
         });
       }
       await onRefresh();
-      setEditing(null);
+      closeEditor();
       setNotice({ severity: "success", text: import.meta.env.VITE_SISLOG_TEST && !saved?.customerId
         ? "Pianificazione salvata senza collegamento cliente. Per il DDT selezionare e confermare il cliente anagrafico."
         : "Pianificazione salvata." });
@@ -252,7 +275,7 @@ export default function Shipments({
       await deleteShipment(item.id);
       await onRefresh();
       setDeleteItem(null);
-      setEditing(null);
+      closeEditor();
       setNotice({ severity: "success", text: "Spedizione eliminata." });
     } catch (error:unknown) {
       setNotice({
@@ -274,7 +297,7 @@ export default function Shipments({
         severity: "success",
         text: "Spedizione collegata al carico reale.",
       });
-      setEditing(null);
+      closeEditor();
     } catch (error) {
       setNotice({
         severity: "error",
@@ -430,13 +453,15 @@ export default function Shipments({
         </Paper>
         <Dialog
           open={editing !== null}
-          onClose={() => setEditing(null)}
+          onClose={closeEditor}
           fullWidth
           maxWidth={false}
           slotProps={{paper:{sx:{width:{xs:"calc(100% - 16px)",sm:780},maxWidth:"calc(100% - 32px)",maxHeight:"calc(100% - 32px)",m:2}}}}
         >
           <DialogTitle sx={{py:1.5}}>
-            {editing === "new" || (editing && !editing.persisted)
+            {readOnlyDashboardDetail
+              ? "Dettaglio spedizione"
+              : editing === "new" || (editing && !editing.persisted)
               ? "Pianifica spedizione"
               : "Modifica pianificazione"}
           </DialogTitle>
@@ -458,7 +483,7 @@ export default function Shipments({
                 size="small"
                 required
                 label="Commessa"
-                disabled={editing !== "new" && Boolean(editing?.loadId)}
+                disabled={readOnlyDashboardDetail || (editing !== "new" && Boolean(editing?.loadId))}
                 value={form.commessa}
                 onChange={(e) => setForm({ ...form, commessa: e.target.value })}
               />
@@ -466,14 +491,15 @@ export default function Shipments({
                 size="small"
                 required
                 label="Cliente"
-                disabled={editing !== "new" && Boolean(editing?.loadId)}
+                disabled={readOnlyDashboardDetail || (editing !== "new" && Boolean(editing?.loadId))}
                 value={form.cliente}
                 onChange={(e) => setForm({ ...form, cliente: e.target.value })}
               />
-              {editing!==null && <ShipmentCustomerPicker value={form.customerId} customerName={editing!=="new"&&editing.loadId?editing.cliente:form.cliente} onChange={customerId=>setForm({...form,customerId})}/>}
+              {editing!==null && <ShipmentCustomerPicker readOnly={readOnlyDashboardDetail} value={form.customerId} customerName={editing!=="new"&&editing.loadId?editing.cliente:form.cliente} onChange={customerId=>setForm({...form,customerId})}/>}
               <TextField
                 size="small"
                 label="Riferimento ordine"
+                disabled={readOnlyDashboardDetail}
                 value={form.orderReference ?? ""}
                 onChange={(event) => setForm({ ...form, orderReference: event.target.value })}
               />
@@ -487,6 +513,7 @@ export default function Shipments({
               <TextField
                 size="small"
                 label="Indirizzo di consegna"
+                disabled={readOnlyDashboardDetail}
                 sx={{gridColumn:"1 / -1"}}
                 multiline
                 minRows={2}
@@ -497,6 +524,7 @@ export default function Shipments({
               <DatePicker
                 label="Partenza prevista"
                 format="DD/MM/YYYY"
+                disabled={readOnlyDashboardDetail}
                 value={
                   form.plannedDepartureDate
                     ? dayjs(form.plannedDepartureDate)
@@ -519,6 +547,7 @@ export default function Shipments({
                 select
                 required
                 label="Modalità di trasporto"
+                disabled={readOnlyDashboardDetail}
                 value={form.transportType ?? ""}
                 onChange={(e) => {
                   const value = e.target.value as ShipmentTransportType;
@@ -540,17 +569,17 @@ export default function Shipments({
                 <MenuItem value="RITIRA_CLIENTE">Ritira Cliente</MenuItem>
                 <MenuItem value="TERZI_PER_ESSEPI">Terzi per Essepi</MenuItem>
               </TextField>
-              {form.transportType && form.transportType!=="TERZI_PER_ESSEPI" &&<TextField size="small" select label={detailLabel} value={form.transportDetailId??""} sx={{gridColumn:"1 / -1"}} onChange={e=>setForm({...form,transportDetailId:e.target.value||null,plannedCarrierId:null})}>
+              {form.transportType && form.transportType!=="TERZI_PER_ESSEPI" &&<TextField size="small" select label={detailLabel} disabled={readOnlyDashboardDetail} value={form.transportDetailId??""} sx={{gridColumn:"1 / -1"}} onChange={e=>setForm({...form,transportDetailId:e.target.value||null,plannedCarrierId:null})}>
                 <MenuItem value="">Non specificato</MenuItem>
                 {detailOptions.filter(item=>item.attivo||item.id===form.transportDetailId).map(item=><MenuItem key={item.id} value={item.id} disabled={!item.attivo}>{item.nome}{!item.attivo?" (non attivo)":""}</MenuItem>)}
                 {form.transportDetailId&&!detailOptions.some(item=>item.id===form.transportDetailId)&&<MenuItem value={form.transportDetailId} disabled>{editing&&editing!=="new"?editing.transportDetailLabel??"Voce storica":"Voce storica"} (non disponibile)</MenuItem>}
               </TextField>}
               {form.transportType==="TERZI_PER_ESSEPI" && <>
-                <TextField size="small" select label="Trasportatore" value={form.plannedCarrierId??""} onChange={e=>setForm({...form,plannedCarrierId:e.target.value||null})}>
+                <TextField size="small" select label="Trasportatore" disabled={readOnlyDashboardDetail} value={form.plannedCarrierId??""} onChange={e=>setForm({...form,plannedCarrierId:e.target.value||null})}>
                   <MenuItem value="">Non specificato</MenuItem>
                   {carriers.filter(item=>item.attivo||item.id===form.plannedCarrierId).map(item=><MenuItem key={item.id} value={item.id} disabled={!item.attivo}>{item.nome}{!item.attivo?" (non attivo)":""}</MenuItem>)}
                 </TextField>
-                <TextField size="small" select label="Tipo mezzo" value={form.vehicleTypeId??""} onChange={e=>setForm({...form,vehicleTypeId:e.target.value||null})}>
+                <TextField size="small" select label="Tipo mezzo" disabled={readOnlyDashboardDetail} value={form.vehicleTypeId??""} onChange={e=>setForm({...form,vehicleTypeId:e.target.value||null})}>
                   <MenuItem value="">Non specificato</MenuItem>
                   {clientVehicleTypes.filter(item=>item.attivo||item.id===form.vehicleTypeId).map(item=><MenuItem key={item.id} value={item.id} disabled={!item.attivo}>{item.nome}{!item.attivo?" (non attivo)":""}</MenuItem>)}
                 </TextField>
@@ -563,28 +592,29 @@ export default function Shipments({
                 sx={{gridColumn:"1 / -1"}}
                 maxRows={3}
                 label="Note"
+                disabled={readOnlyDashboardDetail}
                 value={form.notes ?? ""}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
               />
             </Box>
-          {editing && editing!=="new" && editing.persisted && !editing.loadId && !hasDeparted(editing) && <Box sx={{mt:1.5}}>
+          {!readOnlyDashboardDetail && editing && editing!=="new" && editing.persisted && !editing.loadId && !hasDeparted(editing) && <Box sx={{mt:1.5}}>
             <Typography variant="subtitle2">Possibili carichi da collegare - conferma richiesta</Typography>
             <Typography variant="caption" color="text.secondary">La commessa suggerisce i candidati; verifica il carico prima di confermare. Nessun collegamento viene applicato dall'importazione.</Typography>
             <Stack sx={{gap:1,mt:1}}>{shipmentLinkSuggestions(editing,items).map(target=><Button key={target.loadId} variant="outlined" disabled={!!planningDirty} sx={{justifyContent:"flex-start",textAlign:"left",overflowWrap:"anywhere"}} onClick={()=>void connect(editing,target)}>Conferma collegamento: {target.commessa} / Carico {target.camion ?? "-"} / {target.cliente} / ID: {target.loadId}</Button>)}</Stack>
             {!shipmentLinkSuggestions(editing,items).length && <Typography variant="body2" color="text.secondary">Nessun carico disponibile suggerito. I carichi già collegati o spediti sono esclusi.</Typography>}
           </Box>}
-          {editing!=="new"&&editing?.persisted&&<Box sx={{mt:1.5,pt:1,borderTop:1,borderColor:"divider"}}><Button color="error" variant="outlined" startIcon={<DeleteOutlinedIcon/>} onClick={()=>setDeleteItem(editing)}>Elimina spedizione</Button></Box>}
+          {!readOnlyDashboardDetail&&editing!=="new"&&editing?.persisted&&<Box sx={{mt:1.5,pt:1,borderTop:1,borderColor:"divider"}}><Button color="error" variant="outlined" startIcon={<DeleteOutlinedIcon/>} onClick={()=>setDeleteItem(editing)}>Elimina spedizione</Button></Box>}
           {editing && editing!=="new" && <Stack direction="row" sx={{mt:1,gap:1,flexWrap:"wrap",alignItems:"center"}}>{planningDirty&&<Typography variant="caption" color="text.secondary">Salva le modifiche prima di collegare il carico.</Typography>}</Stack>}
           </DialogContent>
           <DialogActions sx={{px:{xs:2,sm:3},py:1.25,flexShrink:0,borderTop:1,borderColor:"divider"}}>
-            <Button onClick={() => setEditing(null)}>Annulla</Button>
-            <Button
+            <Button onClick={closeEditor}>{readOnlyDashboardDetail ? "Chiudi" : "Annulla"}</Button>
+            {!readOnlyDashboardDetail && <Button
               variant="contained"
               disabled={!valid}
               onClick={() => void save()}
             >
               Salva
-            </Button>
+            </Button>}
           </DialogActions>
         </Dialog>
         <Dialog open={deleteItem!==null} onClose={()=>setDeleteItem(null)} fullWidth maxWidth="xs">

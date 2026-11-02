@@ -14,6 +14,7 @@ export const suspendPackageApi=(packageId:string)=>apiRequest<ApiPackage|null>(`
 export const resumePackageApi=(packageId:string)=>apiRequest<ApiPackage|null>(`/packages/${packageId}/resume`,{method:"POST"});
 export const scanPanel=(panelId:string,operatorId:string)=>apiRequest<ApiPanel>(`/panels/${panelId}/scan`,{method:"PATCH",body:JSON.stringify({operatorId})});
 export const closeSinglePanel=(panelId:string,operatorId:string)=>apiRequest<ApiPanel>(`/panels/${panelId}/close-single`,{method:"PATCH",body:JSON.stringify({operatorId})});
+export const registerSinglePanel=(panelId:string,operatorId:string)=>apiRequest<ApiPanel>(`/panels/${panelId}/register-single`,{method:"PATCH",body:JSON.stringify({operatorId})});
 export const updatePanelManualLocation=(panelId:string,location:string)=>apiRequest<ApiPanel>(`/panels/${panelId}/location`,{method:"PATCH",body:JSON.stringify({location})});
 export const updatePackageManualLocation=(packageId:string,location:string)=>apiRequest<ApiPackage>(`/packages/${packageId}/location`,{method:"PATCH",body:JSON.stringify({location})});
 export const addPanelToPackage=(packageId:string,panelId:string,operatorId:string)=>apiRequest<ApiPackage>(`/packages/${packageId}/panels`,{method:"POST",body:JSON.stringify({panelId,operatorId})});

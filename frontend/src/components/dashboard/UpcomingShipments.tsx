@@ -5,12 +5,13 @@ import {
   Chip,
   Paper,
   Stack,
+  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
-import type { ShipmentItem, ShipmentStatus } from "../../services/shipmentsApi";
+import type { ShipmentItem } from "../../services/shipmentsApi";
 import type { Trasportatore } from "../../models/Settings";
 import type { TransportItem } from "../../services/transportsApi";
 import { dashboardColors } from "../../theme/theme";
@@ -22,24 +23,13 @@ interface Props {
   shipments: ShipmentItem[];
   carriers: Trasportatore[];
   transports: TransportItem[];
-  onOpenShipments: () => void;
+  onOpenShipments: (shipment?: ShipmentItem) => void;
 }
 
-const statusLabels: Partial<Record<ShipmentStatus, string>> = {
-  PRONTA: "Pronta",
-  IN_VIAGGIO: "In viaggio",
-};
-const statusColors: Partial<
-  Record<ShipmentStatus, "warning" | "success" | "info">
-> = {
-  PRONTA: "success",
-  IN_VIAGGIO: "info",
-};
-
 const statusChipSx = {
-  height: 24,
-  fontSize: "0.78rem",
-  "& .MuiChip-label": { px: 1.25 },
+  height: 20,
+  fontSize: "0.7rem",
+  "& .MuiChip-label": { px: 0.75 },
 };
 
 export const getOverdueShipments = (shipments: ShipmentItem[], today: Date) => {
@@ -100,7 +90,7 @@ export default function UpcomingShipments({
                   </Stack>
                 </Box>
               ))}
-              {overdue.length > 3 && <Button size="small" onClick={onOpenShipments} sx={{ alignSelf: "flex-start", minHeight: 24, py: 0 }}>Vedi tutte ({overdue.length})</Button>}
+              {overdue.length > 3 && <Button size="small" onClick={() => onOpenShipments()} sx={{ alignSelf: "flex-start", minHeight: 24, py: 0 }}>Vedi tutte ({overdue.length})</Button>}
             </Stack>
           )}
         </Box>
@@ -146,7 +136,7 @@ export default function UpcomingShipments({
                   Nessuna spedizione
                 </Typography>
               ) : (
-                <Stack sx={{ gap: 0.5 }}>
+                <Stack sx={{ gap: 0.375 }}>
                   {dayShipments.map((shipment) => {
                     const detail = shipment.transportType === "BILICO_ESSEPI"
                       ? carriers.find(carrier => carrier.id === shipment.carrierId)?.nome
@@ -157,75 +147,53 @@ export default function UpcomingShipments({
                       ? [shipmentTransportLabel(shipment.transportType), detail?.trim()].filter(Boolean).join(" · ")
                       : "";
                     const heading = `${shipment.commessa} / ${shipment.camion ?? "—"} - ${shipment.cliente}`;
+                    const operationalStatus = shipment.operationalStatus
+                      ? operationalStatusPresentation(shipment.operationalStatus)
+                      : undefined;
+                    const note = shipment.notes?.trim();
                     return (
+                    <Tooltip key={shipment.id} title={note ?? ""} placement="top" describeChild>
                     <CardActionArea
-                      key={shipment.id}
-                      onClick={onOpenShipments}
+                      onClick={() => onOpenShipments(shipment)}
+                      aria-label={note ? `${heading}. ${transportText}. Nota: ${note}` : undefined}
                       sx={{
                         border: 1,
                         borderColor: dashboardColors.divider,
                         borderRadius: 1,
                         bgcolor: dashboardColors.grid,
-                        p: 0.875,
+                        p: 1.5,
+                        "& > * + *": { mt: 0.25 },
                         transition: "background-color 180ms ease",
                         "&:hover": { bgcolor: dashboardColors.rowHover },
                       }}
                     >
-                      <Stack
-                        direction="row"
-                        sx={{
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 0.5,
-                        }}
-                      >
+                      <Stack direction="row" sx={{ alignItems: "center", gap: 0.5, minWidth: 0 }}>
                         <Typography
                           variant="body2"
-                          sx={{ flex: 1, minWidth: 0 }}
+                          sx={{ flex: 1, minWidth: 0, lineHeight: 1.25 }}
                           title={heading}
                           noWrap
                         >
                           <Box component="span" sx={{ fontWeight: 800 }}>{shipment.commessa} / {shipment.camion ?? "—"}</Box> - {shipment.cliente}
                         </Typography>
-                        {statusLabels[shipment.shipmentStatus] && (
-                          <Chip
-                            size="small"
-                            label={statusLabels[shipment.shipmentStatus]}
-                            color={statusColors[shipment.shipmentStatus]}
-                            sx={{
-                              ...statusChipSx,
-                              flexShrink: 0,
-                            }}
-                          />
-                        )}
                       </Stack>
-                      {transportText && <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: "block" }}
-                        noWrap
-                        title={transportText}
-                      >
-                        {transportText}
-                      </Typography>}
-                      {shipment.operationalStatus && (
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          color={
-                            operationalStatusPresentation(
-                              shipment.operationalStatus,
-                            ).color
-                          }
-                          label={
-                            operationalStatusPresentation(
-                              shipment.operationalStatus,
-                            ).label
-                          }
-                          sx={{ ...statusChipSx, mt: 0.5 }}
-                        />
+                      <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 0.5, minWidth: 0 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ flex: 1, minWidth: 0, lineHeight: 1.2 }} noWrap title={transportText}>
+                          {transportText}
+                        </Typography>
+                        <Stack direction="row" sx={{ alignItems: "center", justifyContent: "flex-end", flexShrink: 0, gap: 0.25, pl: 0.5, borderLeft: 1, borderColor: "divider" }}>
+                          {operationalStatus && (
+                            <Chip size="small" variant="outlined" color={operationalStatus.color} label={operationalStatus.label} sx={{ ...statusChipSx, flexShrink: 0 }} />
+                          )}
+                        </Stack>
+                      </Stack>
+                      {note && (
+                        <Typography variant="caption" component="div" sx={{ display: "block", lineHeight: 1.2 }} noWrap title={note}>
+                          {note}
+                        </Typography>
                       )}
                     </CardActionArea>
+                    </Tooltip>
                   );})}
                 </Stack>
               )}

@@ -1424,6 +1424,79 @@ test("scansioni, singoli e pacchi persistono con associazioni e dimensioni",asyn
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
+test("registrazione singolo atomica mantiene risultato e audit del flusso precedente",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"single-atomic-parity-")),databasePath=join(directory,"single.sqlite");
+  const app=await buildApp({...config,databasePath});
+  try{
+    const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("OLD-FLOW","C1"),importedPanel("NEW-FLOW","C1"),importedPanel("RECOVER-FLOW","C1")])})).json<Array<{id:string;pannelli:Array<{id:string}>}>>()[0]!;
+    const [oldPanel,newPanel,recoveredPanel]=load.pannelli;
+    await app.inject({method:"PATCH",url:`/api/panels/${oldPanel!.id}/scan`,payload:{operatorId:operator.id}});
+    const oldResult=(await app.inject({method:"PATCH",url:`/api/panels/${oldPanel!.id}/close-single`,payload:{operatorId:operator.id}})).json<{stato:string;packageId:string|null;scannedByOperatorId:string|null;scannedAt:string|null}>();
+    const newResponse=await app.inject({method:"PATCH",url:`/api/panels/${newPanel!.id}/register-single`,payload:{operatorId:operator.id}});
+    assert.equal(newResponse.statusCode,200,newResponse.body);
+    const newResult=newResponse.json<typeof oldResult>();
+    assert.equal(newResult.stato,oldResult.stato);assert.equal(newResult.packageId,oldResult.packageId);assert.equal(newResult.scannedByOperatorId,oldResult.scannedByOperatorId);assert.ok(newResult.scannedAt);
+    const eventsFor=(id:string)=>app.inject({method:"GET",url:"/api/warehouse"}).then(response=>response.json<{singles:Array<{id:string}>}>()).then(()=>{
+      const db=new DatabaseSync(databasePath);try{return db.prepare("SELECT type FROM OperationalEvents WHERE panelId=? ORDER BY rowid").all(id).map(item=>(item as {type:string}).type);}finally{db.close();}
+    });
+    assert.deepEqual(await eventsFor(oldPanel!.id),await eventsFor(newPanel!.id));
+    const before=(await eventsFor(newPanel!.id)).length;
+    const duplicate=await app.inject({method:"PATCH",url:`/api/panels/${newPanel!.id}/register-single`,payload:{operatorId:operator.id}});
+    assert.equal(duplicate.statusCode,409);assert.equal(duplicate.json<{error:{code:string}}>().error.code,"PANEL_NOT_AVAILABLE");assert.equal((await eventsFor(newPanel!.id)).length,before);
+    await app.inject({method:"PATCH",url:`/api/panels/${recoveredPanel!.id}/scan`,payload:{operatorId:operator.id}});
+    const recovered=await app.inject({method:"PATCH",url:`/api/panels/${recoveredPanel!.id}/register-single`,payload:{operatorId:operator.id}});
+    assert.equal(recovered.statusCode,200);assert.deepEqual(await eventsFor(recoveredPanel!.id),["PANEL_SCANNED","SINGLE_CLOSED"]);
+  }finally{await app.close();rmSync(directory,{recursive:true,force:true});}
+});
+
+test("registrazione singolo atomica impedisce duplicati concorrenti da due postazioni",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"single-atomic-race-")),databasePath=join(directory,"single.sqlite");
+  const first=await buildApp({...config,databasePath}),second=await buildApp({...config,databasePath});
+  try{
+    const operator=(await first.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const load=(await first.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("RACE-SINGLE","C1")])})).json<Array<{pannelli:Array<{id:string}>}>>()[0]!;
+    const panelId=load.pannelli[0]!.id;
+    const responses=await Promise.all([first,second].map(app=>app.inject({method:"PATCH",url:`/api/panels/${panelId}/register-single`,payload:{operatorId:operator.id}})));
+    assert.deepEqual(responses.map(response=>response.statusCode).sort(),[200,409]);
+    const db=new DatabaseSync(databasePath);try{assert.equal(db.prepare("SELECT COUNT(*) count FROM OperationalEvents WHERE panelId=? AND type='SINGLE_CLOSED'").get(panelId)!.count,1);assert.equal(db.prepare("SELECT stato FROM Panels WHERE id=?").get(panelId)!.stato,"DISPONIBILE");}finally{db.close();}
+  }finally{await Promise.all([first.close(),second.close()]);rmSync(directory,{recursive:true,force:true});}
+});
+
+test("errore durante la registrazione singolo atomica annulla anche la scansione e l'audit",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"single-atomic-rollback-")),databasePath=join(directory,"single.sqlite");
+  const app=await buildApp({...config,databasePath}),db=new DatabaseSync(databasePath);
+  try{
+    const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad([importedPanel("ROLLBACK-SINGLE","C1")])})).json<Array<{pannelli:Array<{id:string}>}>>()[0]!;
+    const panelId=load.pannelli[0]!.id;
+    db.exec("CREATE TRIGGER fail_single_close BEFORE INSERT ON OperationalEvents WHEN NEW.type='SINGLE_CLOSED' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+    const response=await app.inject({method:"PATCH",url:`/api/panels/${panelId}/register-single`,payload:{operatorId:operator.id}});
+    assert.equal(response.statusCode,500);
+    const panel=db.prepare("SELECT stato,scannedAt,scannedByOperatorId FROM Panels WHERE id=?").get(panelId) as {stato:string;scannedAt:string|null;scannedByOperatorId:string|null};
+    assert.equal(panel.stato,"MANCANTE");assert.equal(panel.scannedAt,null);assert.equal(panel.scannedByOperatorId,null);
+    assert.equal(db.prepare("SELECT COUNT(*) count FROM OperationalEvents WHERE panelId=? AND type IN ('PANEL_SCANNED','SINGLE_CLOSED')").get(panelId)!.count,0);
+  }finally{db.close();await app.close();rmSync(directory,{recursive:true,force:true});}
+});
+
+test("benchmark isolato: registrazione singolo con una richiesta rispetto al flusso a due richieste",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"single-atomic-benchmark-")),databasePath=join(directory,"single.sqlite");
+  const app=await buildApp({...config,databasePath});
+  try{
+    const operator=(await app.inject({method:"GET",url:"/api/operators"})).json<Array<{id:string}>>()[0]!;
+    const panels=Array.from({length:50},(_,index)=>importedPanel(`BENCH-${index}`,"C1"));
+    const load=(await app.inject({method:"POST",url:"/api/loads/import",payload:importedLoad(panels)})).json<Array<{pannelli:Array<{id:string}>}>>()[0]!;
+    const oldPanels=load.pannelli.slice(0,25),newPanels=load.pannelli.slice(25);
+    const oldStart=performance.now();
+    for(const panel of oldPanels){await app.inject({method:"PATCH",url:`/api/panels/${panel!.id}/scan`,payload:{operatorId:operator.id}});await app.inject({method:"PATCH",url:`/api/panels/${panel!.id}/close-single`,payload:{operatorId:operator.id}});}
+    const oldMs=performance.now()-oldStart;
+    const newStart=performance.now();
+    for(const panel of newPanels)await app.inject({method:"PATCH",url:`/api/panels/${panel!.id}/register-single`,payload:{operatorId:operator.id}});
+    const newMs=performance.now()-newStart;
+    console.info(`Benchmark SQLite temporaneo/Fastify inject, 25 elementi per flusso: vecchio=${oldMs.toFixed(2)} ms (${(oldMs/25).toFixed(3)} ms/elemento), nuovo=${newMs.toFixed(2)} ms (${(newMs/25).toFixed(3)} ms/elemento), richieste=${oldPanels.length*2} vs ${newPanels.length}`);
+  }finally{await app.close();rmSync(directory,{recursive:true,force:true});}
+});
+
 test("gestisce N pacchi in lavorazione mantenendone uno solo attivo",async()=>{
   const directory=mkdtempSync(join(tmpdir(),"package-multi-"));const persistentConfig={...config,databasePath:join(directory,"multi.sqlite")};
   try{

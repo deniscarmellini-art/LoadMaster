@@ -9,6 +9,7 @@ export class ScanningController{
  resumePackage=async(r:FastifyRequest<{Params:Id}>)=>this.service.resumePackage(r.params.id);
  scan=async(r:FastifyRequest<{Params:Id;Body:{operatorId:string}}>)=>this.service.scan(r.params.id,r.body);
  closeSingle=async(r:FastifyRequest<{Params:Id;Body:{operatorId:string}}>)=>this.service.closeSingle(r.params.id,r.body);
+ registerSingle=async(r:FastifyRequest<{Params:Id;Body:{operatorId:string}}>)=>this.service.registerSingle(r.params.id,r.body);
  updateManualLocation=async(r:FastifyRequest<{Params:Id;Body:{location:string}}>)=>this.service.updateManualLocation(r.params.id,r.body);
  updatePackageManualLocation=async(r:FastifyRequest<{Params:Id;Body:{location:string}}>)=>this.service.updatePackageManualLocation(r.params.id,r.body);
  addPanel=async(r:FastifyRequest<{Params:Id;Body:{panelId:string;operatorId:string}}>)=>this.service.addPanel(r.params.id,r.body);

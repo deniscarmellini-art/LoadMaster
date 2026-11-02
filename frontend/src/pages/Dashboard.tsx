@@ -42,7 +42,7 @@ interface DashboardProps {
   onImportClick:()=>void;
   onDeleteLoad: (row: Camion, confirmPlanning?: boolean) => Promise<void>;
   onOpenScanning: (row: Camion) => void;
-  onOpenShipments: () => void;
+  onOpenShipments: (shipment?: ShipmentItem) => void;
   onOpenHistory: (row?: Camion) => void;
   truckLoads: CaricoCamion[];
   packages: Pacco[];

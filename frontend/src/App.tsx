@@ -86,6 +86,7 @@ export default function App() {
     | "shipments"
     | "history"
   >("dashboard");
+  const [dashboardShipmentId, setDashboardShipmentId] = useState<string | null>(null);
   const [trailerInspectionEditId, setTrailerInspectionEditId] = useState<string | null>(null);
   const [scanningTarget, setScanningTarget] = useState<Camion | null>(null);
   const [packages, setPackages] = useState<Pacco[]>([]);
@@ -414,6 +415,7 @@ export default function App() {
       setHistoryLoadId(undefined);
       setResumeLoad(null);
       setScanningTarget(null);
+      setDashboardShipmentId(null);
       setPage(destination);
       if(target==="import")openImportPicker();
     };
@@ -459,7 +461,10 @@ export default function App() {
               await refreshScanningData();
             }}
             onOpenScanning={openScanning}
-            onOpenShipments={() => setPage("shipments")}
+            onOpenShipments={(shipment) => {
+              setDashboardShipmentId(shipment?.id ?? null);
+              setPage("shipments");
+            }}
             shipments={shipmentsWithOperationalStatus}
             onOpenHistory={(row) => {
               setHistoryLoadId(
@@ -628,6 +633,8 @@ export default function App() {
           <Shipments
             loads={truckLoads}
             items={shipmentsWithOperationalStatus}
+            initialShipmentId={dashboardShipmentId}
+            onReturnToDashboard={dashboardShipmentId ? () => { setDashboardShipmentId(null); setPage("dashboard"); } : undefined}
             trailers={settings.rimorchi}
             carriers={settings.trasportatori}
             clientVehicleTypes={settings.tipiMezzoCliente}

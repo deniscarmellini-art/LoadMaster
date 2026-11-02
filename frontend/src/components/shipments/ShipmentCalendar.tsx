@@ -22,9 +22,9 @@ interface Props {
 
 const weekdays = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
 const calendarShipmentColors:Record<string,{accent:string;background:string}>={
-  BILICO_ESSEPI:{accent:"#66a978",background:"#e8f5e9"},
-  RITIRA_CLIENTE:{accent:"#dc8585",background:"#ffebee"},
-  TERZI_PER_ESSEPI:{accent:"#78a9d2",background:"#e3f2fd"},
+  BILICO_ESSEPI:{accent:"#4F9E66",background:"#D7EAD9"},
+  RITIRA_CLIENTE:{accent:"#D96C77",background:"#F8D6DC"},
+  TERZI_PER_ESSEPI:{accent:"#5A9DD2",background:"#CFE6F8"},
 };
 
 export default function ShipmentCalendar({ items, transportDetails, onSelectShipment, onSelectDate, onReschedule }: Props) {
@@ -170,7 +170,7 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
   };
 
   return <Box>
-    <Box ref={scrollerRef} onScroll={handleScroll} sx={{ height: { xs: "65dvh", md: "min(72dvh, calc(100dvh - 320px))" }, minHeight: 360, overflow: "auto", overscrollBehaviorY: "contain", position: "relative", bgcolor: "#ffffff", color: "#263238" }}>
+    <Box ref={scrollerRef} onScroll={handleScroll} sx={{ height: { xs: "65dvh", md: "min(72dvh, calc(100dvh - 320px))" }, minHeight: 360, overflow: "auto", overscrollBehaviorY: "contain", position: "relative", bgcolor: "#F0F2F5", color: "#263238" }}>
       <Box sx={{ minWidth: 900 }}>
         <Box ref={stickyHeaderRef} sx={{ position: "sticky", top: 0, zIndex: 4, bgcolor: "#ffffff", color: "#263238", borderBottom: "1px solid #d9dee2" }}>
     <Stack direction="row" sx={{ alignItems: "center", flexWrap: "wrap", columnGap: 2, rowGap: 0.5, mb: 0.5 }}>
@@ -185,7 +185,7 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
       {testCalendar&&hiddenWeekCount>0&&<FormControlLabel sx={{m:0}} control={<Switch size="small" checked={showCompletedWeeks} onChange={event=>changeCompletedWeeksVisibility(event.target.checked)}/>} label={<Typography variant="caption">Mostra settimane passate completate ({hiddenWeekCount})</Typography>}/>}
     </Stack>
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", borderTop: "1px solid #d9dee2", borderLeft: "1px solid #d9dee2" }}>
-            {weekdays.map((day) => <Typography key={day} sx={{ p: 1, textAlign: "center", fontWeight: 700, color: "#37474f", bgcolor: "#f3f5f6", borderRight: "1px solid #d9dee2", borderBottom: "1px solid #d9dee2" }}>{day}</Typography>)}
+            {weekdays.map((day) => <Typography key={day} sx={{ p: 1, textAlign: "center", fontWeight: 700, color: "#37474f", bgcolor: "#E2E6EB", borderRight: "1px solid #cbd2d9", borderBottom: "1px solid #cbd2d9" }}>{day}</Typography>)}
           </Box>
         </Box>
         {testCalendar&&weeks.some(week=>week.ownerMonth===month.format("YYYY-MM")&&completedWeeks.has(week.key))&&weeks.filter(week=>week.ownerMonth===month.format("YYYY-MM")).every(week=>completedWeeks.has(week.key))&&!showCompletedWeeks&&<Alert severity="info" sx={{m:1,bgcolor:"#eaf3f9",color:"#263238","& .MuiAlert-icon":{color:"#527a96"}}}>Tutte le settimane del mese sono completate. Attiva “Mostra settimane passate completate” per consultarle.</Alert>}
@@ -199,7 +199,7 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
             onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setTargetDate(null);}}
             onDrop={event=>{event.preventDefault();event.stopPropagation();const item=items.find(item=>item.id===dragging.current);finishDrag();if(!item||!canDrag(item)||dayjs(item.plannedDepartureDate).format("YYYY-MM-DD")===date)return;setError(null);setMove({item,date});}}
             onClick={() => {if(Date.now()>=suppressClickUntil.current)onSelectDate(date);}}
-            sx={{ position: "relative", outline:targetDate===date?"2px solid":"none",outlineColor:"#78909c",outlineOffset:-2,minHeight: { xs: 155, md: 145 }, p: 0.75, borderRight: "1px solid #d9dee2", borderBottom: "1px solid #d9dee2", borderColor: "#d9dee2", bgcolor: targetDate===date?"#eaf2f8":current ? "#f7fbff" : "#ffffff", cursor: "pointer" }}>
+            sx={{ position: "relative", outline:targetDate===date?"2px solid":"none",outlineColor:"#78909c",outlineOffset:-2,minHeight: { xs: 155, md: 145 }, p: 0.75, borderRight: "1px solid #cbd2d9", borderBottom: "1px solid #cbd2d9", borderColor: "#cbd2d9", bgcolor: "#F0F2F5", cursor: "pointer" }}>
             <Button size="small" aria-label={`Pianifica spedizione il ${day.format("DD/MM/YYYY")}`} aria-current={current ? "date" : undefined} onClick={(event) => { event.stopPropagation(); onSelectDate(date); }} sx={{ minWidth: 30, mb: 0.5, borderRadius: "50%", color: day.format("YYYY-MM") === month.format("YYYY-MM") ? "#263238" : "#607d8b", bgcolor: current ? "#dcebf7" : undefined, boxShadow: current ? "0 0 0 1px #a8c7df" : "none", "&:hover": { bgcolor: current ? "#dcebf7" : "#edf1f3" } }}>{day.date()}</Button>
             <Stack sx={{ gap: 0.75 }}>
               {(events.get(date) ?? []).map((item) => {
@@ -218,7 +218,7 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
                   onDragStart={event=>{if(!canDrag(item)){event.preventDefault();return;}dragging.current=item.id;setDragId(item.id);event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",item.id);}}
                   onDragEnd={finishDrag}
                   onClick={(event) => { event.stopPropagation();if(departed||Date.now()<suppressClickUntil.current)return;onSelectShipment(item); }}
-                  sx={{ display: "block", cursor:departed?"default":dragId===item.id?"grabbing":canDrag(item)?"grab":"pointer",opacity:dragId===item.id?.65:1,width: "100%", textAlign: "left", p: 0.75, borderRadius: 1, borderLeft: `3px solid ${colors.accent}`, color:"#263238", bgcolor: colors.background, "&:hover": { bgcolor: colors.background, filter: "brightness(0.97)" }, "&.Mui-focusVisible": { outline: `2px solid ${colors.accent}` }, minWidth:0 }}>
+                  sx={{ display: "block", cursor:departed?"default":dragId===item.id?"grabbing":canDrag(item)?"grab":"pointer",opacity:dragId===item.id?.65:1,width: "100%", textAlign: "left", p: 0.75, borderRadius: 1, borderLeft: `4px solid ${colors.accent}`, color:"#263238", bgcolor: colors.background, "&:hover": { bgcolor: colors.background, filter: "brightness(0.97)" }, "&.Mui-focusVisible": { outline: `2px solid ${colors.accent}` }, minWidth:0 }}>
                   <Box sx={{display:"flex",alignItems:"center",gap:.5}}><Typography variant="body2" sx={{fontWeight:800,flex:1,minWidth:0,color:"#263238",...compactText}}>{heading}</Typography>{departed&&<Box component="span" sx={{flexShrink:0,fontSize:"0.65rem",fontWeight:800,lineHeight:1.5,px:.5,border:1,borderColor:"#5b9b6d",bgcolor:"#d8efdd",borderRadius:.5,color:"#245c34"}}>✓ SPEDITA</Box>}</Box>
                   {reference&&<Typography variant="caption" component="div" sx={{...compactText,color:"#37474f"}}>Rif. {reference}</Typography>}
                   <Typography variant="caption" component="div" data-calendar-transport-details sx={{color:"#455a64",whiteSpace:"normal",overflowWrap:"anywhere"}}>{transportText}</Typography>
