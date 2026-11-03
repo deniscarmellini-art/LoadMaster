@@ -159,7 +159,9 @@ test("DDT definitivo: corruzione PDF blocca la ristampa via API",async()=>{
 for(const environment of ["development","demo","production"] as const)test(`DDT definitivo: nessuna API o schema attivato in ${environment}`,async()=>{
   const dir=mkdtempSync(join(tmpdir(),"sislog-ddt-disabled-")),databasePath=join(dir,"isolated.sqlite"),frontendDistPath=join(dir,"frontend");
   mkdirSync(frontendDistPath);writeFileSync(join(frontendDistPath,"index.html"),"test fixture");
-  const app=await buildApp({environment,databasePath,port:3198,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath,httpsKeyPath:null,httpsCertPath:null});
+  const maintenanceStatePath=environment==="production"?join(dir,"maintenance-state.json"):undefined;
+  if(maintenanceStatePath)writeFileSync(maintenanceStatePath,JSON.stringify({formatVersion:1,updateRevision:0,state:"idle",message:null,scheduledAt:null}));
+  const app=await buildApp({environment,databasePath,port:3198,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath,httpsKeyPath:null,httpsCertPath:null,...(maintenanceStatePath?{maintenanceStatePath}:{})});
   const db=new DatabaseSync(databasePath,{readOnly:true});try{
     assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='DdtDocuments'").get()!.n,0);
     for(const [method,url,payload] of [["GET","/api/loading-sessions/S/ddt",undefined],["POST","/api/loading-sessions/S/ddt",{operatorId:"OP",requestKey:crypto.randomUUID()}],["GET","/api/ddt/D/pdf",undefined],["POST","/api/ddt/D/cancel",{operatorId:"OP",reason:"test"}]] as const){assert.equal((await app.inject({method,url,...(payload?{payload}:{})})).statusCode,404);}

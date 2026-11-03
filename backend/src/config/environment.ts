@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from "node:path";
+import { existsSync, realpathSync, statSync } from "node:fs";
 
 export type NodeEnvironment = "development" | "test" | "demo" | "production";
 
@@ -11,9 +12,33 @@ export interface AppConfig {
   frontendDistPath: string | null;
   httpsKeyPath: string | null;
   httpsCertPath: string | null;
-  /** Persistent TEST-only notice state, stored outside disposable build folders. */
+  /** Persistent environment-specific maintenance state, outside build folders. */
   maintenanceStatePath?: string | null;
 }
+
+export interface MaintenanceStatePaths {
+  test: string;
+  production: string;
+}
+
+export const maintenanceStatePaths = (environment: NodeJS.ProcessEnv = process.env): MaintenanceStatePaths => {
+  const programData = environment.ProgramData?.trim() || "C:\\ProgramData";
+  const test = resolve(environment.SISLOG_TEST_MAINTENANCE_STATE_PATH?.trim() || `${programData}/SisLog/TEST/maintenance-state.json`);
+  const production = resolve(environment.SISLOG_PROD_MAINTENANCE_STATE_PATH?.trim() || `${programData}/SisLog/PROD/maintenance-state.json`);
+  if (test.toLowerCase() === production.toLowerCase()) {
+    throw new Error("I file di manutenzione TEST e PROD devono essere distinti");
+  }
+  // Also reject aliases to the same existing file, including hard links.
+  if (existsSync(test) && existsSync(production)) {
+    const testStats = statSync(test);
+    const productionStats = statSync(production);
+    if (realpathSync(test).toLowerCase() === realpathSync(production).toLowerCase() ||
+      (testStats.dev === productionStats.dev && testStats.ino === productionStats.ino)) {
+      throw new Error("I file di manutenzione TEST e PROD non possono riferirsi allo stesso file");
+    }
+  }
+  return { test, production };
+};
 
 const parsePort = (value: string | undefined): number => {
   const port = Number(value ?? "3001");
@@ -68,6 +93,7 @@ const parseHttpsPaths=(keyValue:string|undefined,certValue:string|undefined,node
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppConfig => {
   const nodeEnvironment=parseEnvironment(environment.NODE_ENV);
   const https=parseHttpsPaths(environment.HTTPS_KEY_PATH,environment.HTTPS_CERT_PATH,nodeEnvironment);
+  const maintenancePaths = maintenanceStatePaths(environment);
   return{
     port:parsePort(environment.PORT),
     host:environment.HOST?.trim()||"127.0.0.1",
@@ -78,7 +104,7 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     httpsKeyPath:https.keyPath,
     httpsCertPath:https.certPath,
     maintenanceStatePath: nodeEnvironment === "test"
-      ? resolve(environment.SISLOG_TEST_MAINTENANCE_STATE_PATH?.trim() || `${environment.ProgramData || "C:\\ProgramData"}/SisLog/TEST/maintenance-state.json`)
-      : null,
+      ? maintenancePaths.test
+      : nodeEnvironment === "production" ? maintenancePaths.production : null,
   };
 };

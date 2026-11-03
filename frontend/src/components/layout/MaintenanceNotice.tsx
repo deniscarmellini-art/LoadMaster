@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Typography } from "@mui/material";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getMaintenanceNotice, type MaintenanceNotice as MaintenanceState } from "../../services/maintenanceApi";
+import { getMaintenanceNotice, maintenanceCountdownSeconds, type MaintenanceNotice as MaintenanceState } from "../../services/maintenanceApi";
 import { canReload, maintenanceResumeCycle, reloadSafety } from "../../services/reloadSafety";
 import { markUpdateRevisionApplied, observeUpdateRevision, revisionCycle, revisionFromCycle, type RevisionStorage } from "../../services/maintenanceRevision";
 
@@ -121,9 +121,7 @@ export default function MaintenanceNotice() {
     window.location.reload();
   };
 
-  const scheduledSeconds = notice?.scheduledAt
-    ? Math.max(0, Math.ceil((Date.parse(notice.scheduledAt) - (clock + serverOffsetMs)) / 1000))
-    : null;
+  const scheduledSeconds = maintenanceCountdownSeconds(notice?.scheduledAt ?? null, clock, serverOffsetMs);
   const blocked = notice?.state === "maintenance" || (notice?.state === "scheduled" && scheduledSeconds === 0);
 
   useEffect(() => {

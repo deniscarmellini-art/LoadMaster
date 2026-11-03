@@ -15,8 +15,21 @@ export type MaintenanceNoticeResponse = Omit<MaintenanceNoticeFile, "state"> & {
   remainingSeconds: number | null;
 };
 
-export const readMaintenanceNotice = (path: string | null | undefined, now = new Date()): MaintenanceNoticeResponse => {
+export interface MaintenanceReadOptions {
+  /** PROD must never interpret a missing state file as permission to write. */
+  missingIsError?: boolean;
+}
+
+export class MaintenanceStateUnavailableError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "MaintenanceStateUnavailableError";
+  }
+}
+
+export const readMaintenanceNotice = (path: string | null | undefined, now = new Date(), options: MaintenanceReadOptions = {}): MaintenanceNoticeResponse => {
   let state: MaintenanceNoticeFile = { formatVersion: 1, updateRevision: 0, state: "idle", message: null, scheduledAt: null };
+  if (!path && options.missingIsError) throw new MaintenanceStateUnavailableError("File di stato manutenzione PROD non configurato");
   if (path) {
     try {
       const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -35,9 +48,10 @@ export const readMaintenanceNotice = (path: string | null | undefined, now = new
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        // An absent first-run state file means no notice has been scheduled.
+        if (options.missingIsError) throw new MaintenanceStateUnavailableError("File di stato manutenzione PROD assente", { cause: error });
+        // In TEST an absent first-run state file means no notice is scheduled.
       } else {
-        throw new Error("Stato manutenzione TEST illeggibile o danneggiato", { cause: error });
+        throw new MaintenanceStateUnavailableError("File di stato manutenzione illeggibile o danneggiato", { cause: error });
       }
     }
   }
@@ -53,7 +67,32 @@ export const readMaintenanceNotice = (path: string | null | undefined, now = new
   };
 };
 
-export const isMaintenanceActive = (path: string | null | undefined, now = new Date()): boolean => {
-  const status = readMaintenanceNotice(path, now);
-  return status.state === "maintenance";
-};
+/**
+ * Synchronous check-and-count admission gate. Fastify invokes the onRequest
+ * hook on Node's event loop; no await occurs between reading the state and
+ * incrementing this process-local counter.
+ */
+export class MaintenanceWriteGate {
+  private activeWriteRequests = 0;
+
+  constructor(private readonly statePath: string | null | undefined, private readonly missingIsError = false) {}
+
+  tryBeginWrite(now = new Date()): boolean {
+    const status = readMaintenanceNotice(this.statePath, now, { missingIsError: this.missingIsError });
+    if (status.state === "maintenance") return false;
+    this.activeWriteRequests += 1;
+    return true;
+  }
+
+  finishWrite(): void {
+    if (this.activeWriteRequests > 0) this.activeWriteRequests -= 1;
+  }
+
+  getActiveWriteRequests(): number {
+    return this.activeWriteRequests;
+  }
+
+  getStatus(now = new Date()): MaintenanceNoticeResponse & { activeWriteRequests: number } {
+    return { ...readMaintenanceNotice(this.statePath, now, { missingIsError: this.missingIsError }), activeWriteRequests: this.activeWriteRequests };
+  }
+}

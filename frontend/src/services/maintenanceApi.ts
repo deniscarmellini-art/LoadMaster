@@ -8,6 +8,13 @@ export type MaintenanceNotice = {
   remainingSeconds: number | null;
 };
 
+export function maintenanceCountdownSeconds(scheduledAt: string | null, clientNowMs: number, serverOffsetMs: number): number | null {
+  if (!scheduledAt) return null;
+  const deadline = Date.parse(scheduledAt);
+  if (!Number.isFinite(deadline)) return null;
+  return Math.max(0, Math.ceil((deadline - (clientNowMs + serverOffsetMs)) / 1000));
+}
+
 export async function getMaintenanceNotice(signal?: AbortSignal): Promise<MaintenanceNotice> {
   const response = await fetch("/api/maintenance", { cache: "no-store", signal });
   if (!response.ok) throw new Error(`Stato manutenzione non disponibile (${response.status})`);

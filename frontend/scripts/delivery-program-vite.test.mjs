@@ -1,10 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {mkdtempSync,rmSync} from 'node:fs';
+import {createServer as createNetServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createServer,resolveConfig} from 'vite';
+
+async function findFreePort(){
+ const reservation=createNetServer();
+ await new Promise((resolve,reject)=>{
+  reservation.once('error',reject);
+  reservation.listen(0,'127.0.0.1',resolve);
+ });
+ const address=reservation.address();
+ assert.equal(typeof address,'object');
+ const port=address.port;
+ await new Promise((resolve,reject)=>reservation.close(error=>error?reject(error):resolve()));
+ return port;
+}
 
 test('PDF client: cache TEST separata, import e risorse HTTP validi anche dopo un test Vite SSR',async()=>{
  const root=fileURLToPath(new URL('..',import.meta.url)),configFile=join(root,'vite.config.ts');
@@ -13,11 +27,13 @@ test('PDF client: cache TEST separata, import e risorse HTTP validi anche dopo u
  assert.notEqual(liveConfig.cacheDir,ssrConfig.cacheDir,'Interactive TEST and SSR helpers must never share optimized modules');
  assert.match(liveConfig.cacheDir,/\.vite-sislog-test$/);
  const dir=mkdtempSync(join(tmpdir(),'sislog-pdf-client-import-'));
- const browser=await createServer({root,configFile,mode:'test',cacheDir:join(dir,'browser'),server:{host:'127.0.0.1',port:0,strictPort:false,https:undefined,watch:null,ws:false},optimizeDeps:{include:['jspdf','jspdf-autotable']}});
+ const port=await findFreePort();
+ const browser=await createServer({root,configFile,mode:'test',cacheDir:join(dir,'browser'),server:{host:'127.0.0.1',port,strictPort:true,https:false,watch:null,ws:false},optimizeDeps:{include:['jspdf','jspdf-autotable']}});
  let ssr;
  try{
   await browser.listen();
   const address=browser.httpServer.address();assert.equal(typeof address,'object');
+  assert.equal(address.port,port,'Vite must listen on the dynamically selected port');
   const base=`http://127.0.0.1:${address.port}`;
   const get=async path=>{const response=await fetch(new URL(path,base));assert.equal(response.status,200,`${path}: ${response.status} ${response.statusText}`);return response;};
   const controller=await (await get('/src/components/shipments/DeliveryProgramExport.tsx')).text();
@@ -38,5 +54,8 @@ test('PDF client: cache TEST separata, import e risorse HTTP validi anche dopo u
   await ssr.close();ssr=undefined;
   // Reuse the browser's original versioned URLs; they must not become 504 Outdated Optimize Dep.
   for(const path of dependencies)await get(path);
- }finally{await ssr?.close();await browser.close();rmSync(dir,{recursive:true,force:true});}
+ }finally{
+  try{await ssr?.close();}
+  finally{try{await browser.close();}finally{rmSync(dir,{recursive:true,force:true});}}
+ }
 });

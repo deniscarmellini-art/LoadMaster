@@ -15,7 +15,7 @@ export default function MainLayout({ children,activePage,onNavigate }: Props) {
   return (
     <Box sx={{ minHeight: "100vh" }}>
       {(import.meta.env.VITE_SISLOG_TEST || import.meta.env.VITE_SISLOG_DEMO) && <Box component="header" sx={{ position: "sticky", top: 0, zIndex: 1200, bgcolor: "warning.main", color: "warning.contrastText", py: .5, px: 2, textAlign: "center", fontWeight: 800, fontSize: ".8rem", "@media print": { display: "none" } }}>{import.meta.env.VITE_SISLOG_DEMO ? "AMBIENTE DEMO — DATI FITTIZI" : "AMBIENTE TEST"}</Box>}
-      {import.meta.env.VITE_SISLOG_TEST && <MaintenanceNotice />}
+      {(import.meta.env.PROD || import.meta.env.VITE_SISLOG_TEST) && <MaintenanceNotice />}
       <Box component="main" sx={{ py: { xs: 1.5, md: 2.5 } }}>
         <Container maxWidth={false} sx={{ px: { xs: 1.5, md: 3 } }}>
           <DashboardHeader title={sectionTitleFor(activePage)} />
@@ -48,7 +48,7 @@ export default function MainLayout({ children,activePage,onNavigate }: Props) {
         }}
       >
         <Typography sx={{ fontSize: "inherit" }}>{demoBranding.application}</Typography>
-        <Typography sx={{ fontSize: "inherit", textAlign: "center" }}>Versione 1.0 By C.D.</Typography>
+        <Typography sx={{ fontSize: "inherit", textAlign: "center" }}>Versione {import.meta.env.VITE_SISLOG_VERSION} By C.D.</Typography>
         <Typography sx={{ fontSize: "inherit", textAlign: { xs: "center", sm: "right" } }}>© 2026 {demoBranding.company}</Typography>
       </Box>
     </Box>

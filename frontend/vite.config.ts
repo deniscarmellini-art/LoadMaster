@@ -3,6 +3,10 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const applicationVersion = (JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+) as { version: string }).version;
+
 export default defineConfig(({ command, mode }) => {
   const development = command === "serve";
   const demo = development && mode === "demo";
@@ -37,6 +41,7 @@ export default defineConfig(({ command, mode }) => {
     define: {
       "import.meta.env.VITE_SISLOG_TEST": JSON.stringify(test),
       "import.meta.env.VITE_SISLOG_DEMO": JSON.stringify(demo),
+      "import.meta.env.VITE_SISLOG_VERSION": JSON.stringify(applicationVersion),
       ...(development ? { "import.meta.env.VITE_API_URL": JSON.stringify("/api") } : {}),
     },
     server: {

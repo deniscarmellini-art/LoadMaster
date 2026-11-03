@@ -1,12 +1,12 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AppConfig } from "./environment.js";
+import { maintenanceStatePaths, type AppConfig } from "./environment.js";
 
 export const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const productionDatabase = resolve(backendRoot, "data/sistema-logistico.sqlite");
 export const testDatabase = resolve(backendRoot, "data/sistema-logistico-test.sqlite");
-export const testMaintenanceState = resolve(process.env.ProgramData || "C:\\ProgramData", "SisLog/TEST/maintenance-state.json");
+export const testMaintenanceState = maintenanceStatePaths(process.env).test;
 
 // Never accept DATABASE_URL, PORT or dotenv defaults in the interactive TEST server.
 export function assertTestDatabase(path = testDatabase): void {
@@ -33,6 +33,6 @@ export function testConfig(): AppConfig {
     environment: "test", port: 3002, host: "127.0.0.1",
     databasePath: testDatabase, frontendOrigin: "https://localhost:5174",
     frontendDistPath: null, httpsKeyPath: null, httpsCertPath: null,
-    maintenanceStatePath: resolve(process.env.SISLOG_TEST_MAINTENANCE_STATE_PATH || testMaintenanceState),
+    maintenanceStatePath: testMaintenanceState,
   };
 }

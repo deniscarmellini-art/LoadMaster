@@ -6,7 +6,7 @@ import { ApiError } from "./utils/apiError.js";
 import { loadingSimulationCandidates } from "./repositories/loadingSimulation.js";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
-import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { historyPage } from "./repositories/historyRepository.js";
 import { shipmentDocument } from "./repositories/shipmentDocumentRepository.js";
@@ -48,7 +48,7 @@ import { shipmentRoutes } from "./routes/shipmentRoutes.js";
 import { TransportRegistryRepository } from "./repositories/transportRegistryRepository.js";
 import { TransportRegistryService } from "./services/transportRegistryService.js";
 import { transportRegistryRoutes } from "./routes/transportRegistryRoutes.js";
-import { isMaintenanceActive } from "./services/maintenanceNotice.js";
+import { MaintenanceWriteGate } from "./services/maintenanceNotice.js";
 
 export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   if(config.environment==="production"){
@@ -83,19 +83,36 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
       methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     });
   registerErrorHandlers(app);
-  if (config.environment === "test") {
-    // Admission barrier for new writes. Requests that have already passed this
-    // hook continue through their existing handlers and transactions.
+  const maintenanceGate = config.environment === "test" || config.environment === "production"
+    ? new MaintenanceWriteGate(config.maintenanceStatePath, config.environment === "production")
+    : null;
+  const countedWriteRequests = new WeakSet<FastifyRequest>();
+  const finishCountedWrite = (request: FastifyRequest): void => {
+    if (countedWriteRequests.delete(request)) maintenanceGate?.finishWrite();
+  };
+  if (maintenanceGate) {
+    // Admission and count increment are synchronous in this hook. A request
+    // admitted before the deadline keeps running and remains counted until
+    // Fastify finishes processing it, regardless of client disconnection.
     app.addHook("onRequest", async (request, reply) => {
       if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return;
       try {
-        if (isMaintenanceActive(config.maintenanceStatePath)) {
+        if (!maintenanceGate.tryBeginWrite()) {
           return reply.code(503).send({ code: "MAINTENANCE_ACTIVE", message: "Aggiornamento SisLog in corso. Attendere la riapertura." });
         }
+        countedWriteRequests.add(request);
       } catch {
         return reply.code(503).send({ code: "MAINTENANCE_STATE_UNAVAILABLE", message: "Stato manutenzione non verificabile: operazioni di scrittura temporaneamente sospese." });
       }
     });
+    // Fastify may skip onResponse when the client disconnects. If the handler
+    // has reached onSend, its application work is complete; release only in
+    // that case and only when the response socket is already gone.
+    app.addHook("onSend", async (request, reply, payload) => {
+      if (reply.raw.destroyed) finishCountedWrite(request);
+      return payload;
+    });
+    app.addHook("onResponse", async (request) => { finishCountedWrite(request); });
   }
   if(config.environment==="test")definitiveDdtRoutes(app,connection.database);
   if(config.environment==="test")app.get<{Params:{id:string}}>("/api/loading-sessions/:id/ddt-preview/availability",async(request,reply)=>{
@@ -119,7 +136,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   });
   app.get<{Params:{id:string}}>("/api/history/:id/document",async request=>shipmentDocument(connection.database,request.params.id));
   app.get<{Querystring:{search?:string;from?:string;to?:string;client?:string;sort?:string;asc?:boolean;page?:number;pageSize?:number}}>("/api/history",{schema:{querystring:{type:"object",additionalProperties:false,properties:{search:{type:"string"},from:{type:"string",pattern:"^\\d{4}-\\d{2}-\\d{2}$"},to:{type:"string",pattern:"^\\d{4}-\\d{2}-\\d{2}$"},client:{type:"string"},sort:{enum:["date","commessa","cliente","camion","panels","packs","weight","volume"]},asc:{type:"boolean"},page:{type:"integer",minimum:0},pageSize:{type:"integer",minimum:1,maximum:100}}}}},async request=>historyPage(connection.database,request.query));
-  await app.register(systemRoutes, { prefix: "/api", config });
+  await app.register(systemRoutes, { prefix: "/api", config, maintenanceGate });
   await app.register(customerRoutes,{prefix:"/api/customers",database:connection.database});
   await app.register(operatorRoutes, { prefix: "/api/operators", service: operatorService });
   await app.register(trailerRoutes, { prefix: "/api/trailers", service: trailerService });

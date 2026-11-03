@@ -44,7 +44,9 @@ test("simulatore TEST: QR reali, disponibilità, pacchi, scansioni normali e ass
 
 for(const environment of ["development","demo","production"] as const)test(`simulatore assente nel backend ${environment}, anche tramite richiesta diretta`,async()=>{
   const dir=mkdtempSync(join(tmpdir(),"sislog-qr-gate-"));writeFileSync(join(dir,"index.html"),"<html>Fixture TEST</html>");
-  const app=await buildApp({environment,databasePath:":memory:",port:3198,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath:environment==="production"?dir:null,httpsKeyPath:null,httpsCertPath:null});
+  const maintenanceStatePath=environment==="production"?join(dir,"maintenance-state.json"):undefined;
+  if(maintenanceStatePath)writeFileSync(maintenanceStatePath,JSON.stringify({formatVersion:1,updateRevision:0,state:"idle",message:null,scheduledAt:null}));
+  const app=await buildApp({environment,databasePath:":memory:",port:3198,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath:environment==="production"?dir:null,httpsKeyPath:null,httpsCertPath:null,...(maintenanceStatePath?{maintenanceStatePath}:{})});
   try{
     for(const method of ["GET","POST"] as const){const response=await app.inject({method,url:"/api/loading-sessions/S/test-qr-candidates"});assert.equal(response.statusCode,404);assert.ok(!response.body.includes('"qr":'));}
   }finally{await app.close();rmSync(dir,{recursive:true,force:true});}
