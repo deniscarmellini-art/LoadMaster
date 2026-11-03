@@ -12,4 +12,6 @@ Stato: versione attualmente identificata in PROD dal footer precedente, che most
 
 ## [1.1.0] - NON ANCORA PUBBLICATA
 
-Data, commit di rilascio e modifiche saranno registrati soltanto dopo la pubblicazione effettiva.
+Stato: in preparazione per il primo aggiornamento controllato. Non è ancora disponibile agli utenti.
+
+Data di rilascio, commit distribuito e note definitive saranno registrati soltanto dopo la pubblicazione effettiva.
