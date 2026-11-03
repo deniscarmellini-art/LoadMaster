@@ -705,6 +705,34 @@ test("il calendario lavorativo salta il fine settimana",()=>{
   assert.equal(addBusinessDays("2026-10-23T09:16:57.174Z",1),"2026-10-26T09:16:57.174Z");
 });
 
+test("la migrazione ricostruisce i rientri Essepi con la stessa regola di un giorno lavorativo",(t)=>{
+  const directory=mkdtempSync(join(tmpdir(),"transport-assignment-migration-")),databasePath=join(directory,"legacy.sqlite");
+  const departureDay="2026-11-02T07:35:20.038Z",laterDeparture="2026-11-03T12:00:00.000Z",migrationNow="2026-11-03T10:30:00.000Z";
+  try{
+    assert.equal(addBusinessDays(departureDay,1),"2026-11-03T07:35:20.038Z");
+    const initial=openSqliteDatabase(databasePath),db=initial.database;
+    for(const [suffix,departure] of [["PAST",departureDay],["FUTURE",laterDeparture]] as const){
+      const trailer=`TRAILER-${suffix}`,load=`LOAD-${suffix}`,session=`SESSION-${suffix}`;
+      db.prepare("INSERT INTO Trailers(id,plate,createdAt,updatedAt) VALUES(?,?,?,?)").run(trailer,`AE ${suffix}`,departure,departure);
+      db.prepare("INSERT INTO Loads(id,commessa,cliente,camion,stato,createdAt,updatedAt) VALUES(?,?,?,'C1-','SPEDITO',?,?)").run(load,suffix,"Cliente",departure,departure);
+      db.prepare("INSERT INTO LoadingSessions(id,loadId,stato,operatorId,destinationType,trailerId,startedAt,shippedAt,createdAt,updatedAt) VALUES(?,?,'SPEDITO','OP','RIMORCHIO_ESSEPI',?,?,?,?,?)").run(session,load,trailer,departure,departure,departure,departure);
+    }
+    initial.close();
+    t.mock.timers.enable({apis:["Date"],now:new Date(migrationNow)});
+    const migrated=openSqliteDatabase(databasePath),result=migrated.database;
+    try{
+      const due=result.prepare("SELECT id FROM TransportAssignments WHERE loadingSessionId='SESSION-PAST'").get();
+      assert.equal(due,undefined,"la ricostruzione non deve lasciare IN_VIAGGIO un mezzo già disponibile");
+      const future=result.prepare("SELECT stato,departedAt,availableFrom FROM TransportAssignments WHERE loadingSessionId='SESSION-FUTURE'").get() as {stato:string;departedAt:string;availableFrom:string}|undefined;
+      assert.ok(future);
+      assert.equal(future.stato,"IN_VIAGGIO");
+      assert.equal(future.departedAt,laterDeparture);
+      assert.equal(future.availableFrom,addBusinessDays(laterDeparture,1));
+      assert.equal(future?.availableFrom,"2026-11-04T12:00:00.000Z");
+    }finally{migrated.close();}
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
 test("i bilici in viaggio espongono il rientro a un giorno senza aggiornare i record esistenti",(t)=>{
   t.mock.timers.enable({apis:["Date"],now:new Date("2026-10-22T09:16:57.174Z")});
   const {database:db,close}=openSqliteDatabase(":memory:");

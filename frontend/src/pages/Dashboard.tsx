@@ -2,6 +2,7 @@ import DashboardDepartureIdentity from "../components/dashboard/DashboardDepartu
 import DdtPreviewButton from "../components/shipments/DdtPreviewButton";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { definitiveDdtStatus, type DdtStatus } from "../services/definitiveDdtApi";
+import { definitiveDdtEnabled } from "../services/ddtAvailability";
 import { demoBranding } from "../services/demoBranding";
 import {
   Alert,
@@ -142,12 +143,12 @@ function Dashboard({
   const [departureDdtError,setDepartureDdtError]=useState("");
   useEffect(()=>{
     let current=true;setDepartureDdt(null);setDepartureDdtError("");
-    if(import.meta.env.VITE_SISLOG_TEST!==true||!departureLoad)return;
+    if(!definitiveDdtEnabled()||!departureLoad)return;
     const sessionId=departureLoad.loadId;
     void definitiveDdtStatus(sessionId).then(value=>{if(current)setDepartureDdt({sessionId,value});}).catch(error=>{if(current)setDepartureDdtError(error instanceof Error?error.message:"Verifica DDT non disponibile");});
     return()=>{current=false;};
   },[departureLoad?.loadId,departureRow?.id]);
-  const departureDdtValid=import.meta.env.VITE_SISLOG_TEST!==true||!!(departureDdt?.sessionId===departureLoad?.loadId&&departureDdt?.value.document?.status==="EMESSO"&&!departureDdt.value.departed);
+  const departureDdtValid=!definitiveDdtEnabled()||!!(departureDdt?.sessionId===departureLoad?.loadId&&departureDdt?.value.document?.status==="EMESSO"&&!departureDdt.value.departed);
   const departureTrailer = trailers.find(
     (trailer) => trailer.id === departureTrailerId(departureLoad, transports),
   );

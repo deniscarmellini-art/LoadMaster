@@ -133,7 +133,7 @@ test("DDT: indice valido unico e identità sessione/carico protetti anche nel re
 
 test("DDT: carico chiuso, operatore, trasporto effettivo e protezione fuori TEST",()=>{
   const f=fixture();try{
-    for(const env of ["production","demo","development"]){const s=new DefinitiveDdtService(f.repo,env);assert.throws(()=>s.issue("S1",f.operator,snapshot,render),/TEST_ONLY/);assert.throws(()=>s.cancel("absent",f.operator,"Motivo"),/TEST_ONLY/);}
+    for(const env of ["demo","development"]){const s=new DefinitiveDdtService(f.repo,env);assert.throws(()=>s.issue("S1",f.operator,snapshot,render),/DDT_DISABLED/);assert.throws(()=>s.cancel("absent",f.operator,"Motivo"),/DDT_DISABLED/);}
     assert.throws(()=>f.service.issue("S1","missing",snapshot,render),/ACTIVE_OPERATOR/);
     f.db.exec("UPDATE OperationalEvents SET type='LOADING_REOPENED' WHERE loadingSessionId='S1'");assert.throws(()=>f.issue(),/CLOSED_LOAD/);
     f.db.exec("UPDATE OperationalEvents SET type='LOADING_CLOSURE_CONFIRMED' WHERE loadingSessionId='S1'");

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack } from "@mui/material";
 import { apiPdfRequest, apiRequest } from "../../services/apiClient";
+import { definitiveDdtEnabled } from "../../services/ddtAvailability";
 
 export default function DdtPreviewButton({ sessionId, disabled, preferArchived=false, autoOpen=false, showButton=true, onClosed }: { sessionId: string; disabled: boolean; preferArchived?:boolean; autoOpen?:boolean;showButton?:boolean;onClosed?:()=>void }) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
@@ -16,7 +17,7 @@ export default function DdtPreviewButton({ sessionId, disabled, preferArchived=f
     setOpen(true);setBusy(true);setError(null);setUrl(null);
     try {
       let archiveId:string|null=null;
-      if(preferArchived&&import.meta.env.VITE_SISLOG_TEST===true){const status=await apiRequest<{document:{id:string}|null}>(`/loading-sessions/${encodeURIComponent(sessionId)}/ddt`);archiveId=status.document?.id??null;}
+      if(preferArchived&&definitiveDdtEnabled()){const status=await apiRequest<{document:{id:string}|null}>(`/loading-sessions/${encodeURIComponent(sessionId)}/ddt`);archiveId=status.document?.id??null;}
       const blob=await apiPdfRequest(archiveId?`/ddt/${encodeURIComponent(archiveId)}/pdf`:`/loading-sessions/${encodeURIComponent(sessionId)}/ddt-preview`);
       if(current===generation.current)setArchived(Boolean(archiveId));
       if(current===generation.current)setUrl(archiveId?`/api/ddt/${encodeURIComponent(archiveId)}/pdf`:import.meta.env.VITE_SISLOG_TEST===true?`/api/loading-sessions/${encodeURIComponent(sessionId)}/ddt-preview`:URL.createObjectURL(blob));

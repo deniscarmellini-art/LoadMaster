@@ -100,6 +100,52 @@ test("blocco TEST: ammette prima della scadenza, rifiuta le nuove scritture dopo
   } finally { finish(); await app.close(); }
 });
 
+test("PROD: le GET con riconciliazione sono bloccate e conteggiate, le GET di sola lettura restano disponibili", async () => {
+  const staticRoot = join(root, "prod-get-gate-static");
+  mkdirSync(staticRoot, { recursive: true });
+  writeFileSync(join(staticRoot, "index.html"), "ok");
+  const statePath = join(root, "prod-get-gate.json");
+  writeFileSync(statePath, JSON.stringify({ formatVersion: 1, updateRevision: 0, state: "scheduled", message: "test", scheduledAt: new Date(Date.now() + 60_000).toISOString() }));
+  const config: AppConfig = { environment: "production", port: 3001, host: "127.0.0.1", databasePath: ":memory:", frontendOrigin: "http://localhost", frontendDistPath: staticRoot, httpsKeyPath: null, httpsCertPath: null, maintenanceStatePath: statePath };
+  const app = await buildApp(config);
+  let markStarted!: () => void, finish!: () => void;
+  const started = new Promise<void>(resolve => { markStarted = resolve; });
+  const hold = new Promise<void>(resolve => { finish = resolve; });
+  app.addHook("preHandler", async request => {
+    if (request.method === "GET" && request.routeOptions.config.maintenanceWrite === true && request.url === "/api/transports") {
+      markStarted();
+      await hold;
+    }
+  });
+  try {
+    const inFlightGet = app.inject({ method: "GET", url: "/api/transports" });
+    await started;
+    assert.equal((await app.inject({ method: "GET", url: "/api/maintenance" })).json().activeWriteRequests, 1,
+      "una GET mutante ammessa deve entrare nel contatore prima del handler");
+
+    writeFileSync(statePath, JSON.stringify({ formatVersion: 1, updateRevision: 0, state: "scheduled", message: "test", scheduledAt: "2020-01-01T00:00:00.000Z" }));
+    const mutatingGets = [
+      "/api/loads", "/api/loads/UNKNOWN", "/api/loads/UNKNOWN/panels", "/api/shipments",
+      "/api/transports", "/api/transports/UNKNOWN", "/api/loading-sessions", "/api/loads/UNKNOWN/loading-session",
+    ];
+    for (const url of mutatingGets) {
+      const response = await app.inject({ method: "GET", url });
+      assert.equal(response.statusCode, 503, `${url} deve essere bloccata durante la manutenzione`);
+      assert.equal(response.json().code, "MAINTENANCE_ACTIVE");
+    }
+    assert.equal((await app.inject({ method: "GET", url: "/api/maintenance" })).json().activeWriteRequests, 1,
+      "le richieste rifiutate non alterano il conteggio della GET gia ammessa");
+    assert.equal((await app.inject({ method: "GET", url: "/api/health" })).statusCode, 200);
+    assert.equal((await app.inject({ method: "GET", url: "/api/trailers" })).statusCode, 200,
+      "le GET di sola lettura restano disponibili");
+
+    finish();
+    assert.equal((await inFlightGet).statusCode, 200);
+    assert.equal((await app.inject({ method: "GET", url: "/api/maintenance" })).json().activeWriteRequests, 0,
+      "il conteggio viene rilasciato solo a elaborazione completata");
+  } finally { finish(); await app.close(); }
+});
+
 test("blocco TEST: scadenza persistente blocca le scritture anche dopo riavvio e Resume riabilita", async () => {
   const statePath = join(root, "restart.json");
   writeFileSync(statePath, JSON.stringify({ formatVersion: 1, state: "scheduled", message: "test", scheduledAt: "2020-01-01T00:00:00.000Z" }));

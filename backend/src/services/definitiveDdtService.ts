@@ -9,7 +9,7 @@ export interface DdtIssuanceContext {
 /** TEST-only lifecycle. Issuance and cancellation share the departure transaction lock. */
 export class DefinitiveDdtService {
   constructor(private readonly repo: DefinitiveDdtRepository, private readonly environment: string, private readonly clock=()=>new Date()) {}
-  private testOnly(){if(this.environment!=="test")throw new Error("DDT_TEST_ONLY");}
+  private assertEnabled(){if(this.environment!=="test"&&this.environment!=="production")throw new Error("DDT_DISABLED");}
   private operator(id:string){if(!this.repo.db.prepare("SELECT 1 FROM Operators WHERE id=? AND active=1").get(id))throw new Error("DDT_ACTIVE_OPERATOR_REQUIRED");}
   private notDeparted(sessionId:string){
     const row=this.repo.db.prepare(`SELECT s.*,l.stato loadStatus FROM LoadingSessions s JOIN Loads l ON l.id=s.loadId WHERE s.id=?`).get(sessionId);
@@ -18,12 +18,12 @@ export class DefinitiveDdtService {
     return row;
   }
   issue(sessionId:string,operatorId:string,buildSnapshot:(context:DdtIssuanceContext)=>Record<string,unknown>,render:(snapshot:Record<string,unknown>,context:DdtIssuanceContext)=>Uint8Array,requestKey?:string):DefinitiveDdt {
-    this.testOnly();
+    this.assertEnabled();
     return this.repo.transaction(()=>{
       this.operator(operatorId);
       if(requestKey){
         const existing=this.repo.db.prepare("SELECT id,loadingSessionId FROM DdtDocuments WHERE requestKey=?").get(requestKey);
-        if(existing){if(existing.loadingSessionId!==sessionId)throw new Error("DDT_REQUEST_CONFLICT");return this.repo.find(String(existing.id))!;}
+        if(existing){if(existing.loadingSessionId!==sessionId)throw new Error("DDT_REQUEST_CONFLICT");const previous=this.repo.find(String(existing.id));if(previous?.issuedByOperatorId!==operatorId)throw new Error("DDT_REQUEST_CONFLICT");return previous!;}
       }
       const session=this.notDeparted(sessionId);
       const closure=this.repo.db.prepare("SELECT type FROM OperationalEvents WHERE loadingSessionId=? AND (type IN ('LOADING_CLOSURE_CONFIRMED','LOADING_REOPENED','UNIT_UNLOADED') OR (type='LOADING_COMPLETED' AND note IS NULL)) ORDER BY rowid DESC LIMIT 1").get(sessionId);
@@ -46,7 +46,7 @@ export class DefinitiveDdtService {
     });
   }
   cancel(id:string,operatorId:string,reason:string):DefinitiveDdt {
-    this.testOnly();
+    this.assertEnabled();
     return this.repo.transaction(()=>{
       this.operator(operatorId);
       if(!reason.trim())throw new Error("DDT_CANCELLATION_REASON_REQUIRED");

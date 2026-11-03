@@ -1,13 +1,14 @@
 import {useEffect,useRef,useState} from "react";
 import {Alert,Button,Checkbox,Dialog,DialogActions,DialogContent,DialogTitle,FormControlLabel,MenuItem,Stack,TextField,Typography} from "@mui/material";
 import {apiRequest} from "../../services/apiClient";
+import { definitiveDdtEnabled } from "../../services/ddtAvailability";
 import type {ShipmentTransportType} from "../../services/shipmentsApi";
 
 interface Status {candidate:boolean;eligible:boolean;reason:string;revision:string;destinationType:string;trailerPlate:string|null;transportMode:ShipmentTransportType|"";carrierId:string|null;transportDetailId:string|null}
 export interface CompletedHistoricalTransport {transportMode:ShipmentTransportType;carrierId:string|null;transportDetailId:string|null;transportDetailLabel:string|null}
 interface Props {sessionId:string;revision:string;operators:Array<{id:string;label:string}>;carriers:Array<{id:string;nome:string;attivo:boolean}>;details:Array<{id:string;nome:string;attivo:boolean}>;onCompleted:(value:CompletedHistoricalTransport)=>Promise<void>}
 export default function HistoricalTransportDialog(props:Props){
- if(import.meta.env.VITE_SISLOG_TEST!==true)return null;
+ if(!definitiveDdtEnabled())return null;
  return <TestHistoricalTransport {...props}/>;
 }
 function TestHistoricalTransport({sessionId,revision,operators,carriers,details,onCompleted}:Props){

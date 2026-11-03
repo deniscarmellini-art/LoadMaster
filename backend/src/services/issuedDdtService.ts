@@ -11,7 +11,7 @@ import { recognizeCustomer } from "../repositories/customerRecognition.js";
 export class IssuedDdtService {
   readonly repo:DefinitiveDdtRepository;
   readonly documents:DefinitiveDdtService;
-  constructor(private readonly db:DatabaseSync){this.repo=new DefinitiveDdtRepository(db);this.documents=new DefinitiveDdtService(this.repo,"test");}
+  constructor(private readonly db:DatabaseSync,environment:"test"|"production"="test"){this.repo=new DefinitiveDdtRepository(db);this.documents=new DefinitiveDdtService(this.repo,environment);}
   private model(sessionId:string,now:Date):DdtPreview {
     const session=this.db.prepare("SELECT * FROM LoadingSessions WHERE id=?").get(sessionId);
     if(!session)throw new ApiError(404,"RESOURCE_NOT_FOUND","Carico non trovato");
@@ -34,6 +34,10 @@ export class IssuedDdtService {
       try{const model=this.model(sessionId,new Date());renderDefinitiveDdt(model,true);this.db.exec("COMMIT");return {document:null,history,canCancel:false,departed,canIssue:true};}
       catch(error){if(error instanceof ApiError){this.db.exec("COMMIT");return {document:null,history,canCancel:false,departed,canIssue:false,reason:error.message};}throw error;}
     }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
+  requestStatus(sessionId:string,requestKey:string){
+    const row=this.db.prepare("SELECT id,fullNumber,status FROM DdtDocuments WHERE loadingSessionId=? AND requestKey=?").get(sessionId,requestKey) as {id:string;fullNumber:string;status:"EMESSO"|"ANNULLATO"}|undefined;
+    return row?{status:"CONFIRMED" as const,document:row}:{status:"UNKNOWN" as const,document:null};
   }
   issue(sessionId:string,operatorId:string,requestKey:string){
     return this.documents.issue(sessionId,operatorId,(context:DdtIssuanceContext)=>{

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { MenuItem, ListItemText } from "@mui/material";
 import { apiRequest } from "../../services/apiClient";
 import { definitiveDdtStatus } from "../../services/definitiveDdtApi";
+import { definitiveDdtEnabled } from "../../services/ddtAvailability";
 
 interface Props {sessionId?:string;onViewLoad:()=>void;onViewDdt:()=>void;onConfirmDeparture:()=>void}
 export function DashboardWaitingActionsList({sessionId,available,reason,canDepart,documentNumber,onViewLoad,onViewDdt,onConfirmDeparture}:Props&{available:boolean;reason:string;canDepart:boolean;documentNumber?:string}) {
@@ -16,7 +17,7 @@ export default function DashboardWaitingActions({sessionId,onViewLoad,onViewDdt,
   const [canDepart,setCanDepart]=useState(false),[documentNumber,setDocumentNumber]=useState<string|undefined>();
   useEffect(()=>{
     let current=true;setAvailable(false);setCanDepart(false);setDocumentNumber(undefined);
-    if(import.meta.env.VITE_SISLOG_TEST!==true||!sessionId){setReason("Anteprima DDT non disponibile");setCanDepart(import.meta.env.VITE_SISLOG_TEST!==true&&!!sessionId);return;}
+    if(!definitiveDdtEnabled()||!sessionId){setReason("Anteprima DDT non disponibile");setCanDepart(!definitiveDdtEnabled()&&!!sessionId);return;}
     void Promise.allSettled([definitiveDdtStatus(sessionId),apiRequest<{available:boolean;reason?:string}>(`/loading-sessions/${encodeURIComponent(sessionId)}/ddt-preview/availability`)]).then(([ddt,preview])=>{
       if(!current)return;
       const valid=ddt.status==="fulfilled"&&ddt.value.document?.status==="EMESSO"&&!ddt.value.departed;

@@ -67,8 +67,8 @@ test('anteprima DDT resta prima dell’emissione e si nasconde con un documento 
   const history = await readFile(new URL('../src/pages/History.tsx', import.meta.url), 'utf8');
   const historyDialog = await readFile(new URL('../src/components/history/ShipmentDocumentDialog.tsx', import.meta.url), 'utf8');
   assert.match(panel, /status&&!status\.document&&<DdtPreviewButton/);
-  assert.match(panel, /status\?\.document\?/);
-  assert.match(panel, /!archiveOnly&&status&&<>.*!status\.canIssue/);
+  assert.match(panel, /status\?\.document&&<>/);
+  assert.match(panel, /!archiveOnly&&status&&!status\.document&&!uncertainKey&&<>[\s\S]*!status\.canIssue/);
   assert.match(panel, /archiveOnly&&\(status\?\.history/);
   assert.doesNotMatch(truckLoading, /<DdtPreviewButton/);
   assert.match(panel, /borderTop:1,borderColor:"divider"/);

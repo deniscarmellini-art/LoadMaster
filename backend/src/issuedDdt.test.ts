@@ -156,16 +156,55 @@ test("DDT definitivo: corruzione PDF blocca la ristampa via API",async()=>{
   }finally{await f.close();}
 });
 
-for(const environment of ["development","demo","production"] as const)test(`DDT definitivo: nessuna API o schema attivato in ${environment}`,async()=>{
+for(const environment of ["development","demo"] as const)test(`DDT definitivo: nessuna API o schema attivato in ${environment}`,async()=>{
   const dir=mkdtempSync(join(tmpdir(),"sislog-ddt-disabled-")),databasePath=join(dir,"isolated.sqlite"),frontendDistPath=join(dir,"frontend");
   mkdirSync(frontendDistPath);writeFileSync(join(frontendDistPath,"index.html"),"test fixture");
-  const maintenanceStatePath=environment==="production"?join(dir,"maintenance-state.json"):undefined;
-  if(maintenanceStatePath)writeFileSync(maintenanceStatePath,JSON.stringify({formatVersion:1,updateRevision:0,state:"idle",message:null,scheduledAt:null}));
-  const app=await buildApp({environment,databasePath,port:3198,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath,httpsKeyPath:null,httpsCertPath:null,...(maintenanceStatePath?{maintenanceStatePath}:{})});
+  const app=await buildApp({environment,databasePath,port:3198,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath,httpsKeyPath:null,httpsCertPath:null});
   const db=new DatabaseSync(databasePath,{readOnly:true});try{
     assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='DdtDocuments'").get()!.n,0);
     for(const [method,url,payload] of [["GET","/api/loading-sessions/S/ddt",undefined],["POST","/api/loading-sessions/S/ddt",{operatorId:"OP",requestKey:crypto.randomUUID()}],["GET","/api/ddt/D/pdf",undefined],["POST","/api/ddt/D/cancel",{operatorId:"OP",reason:"test"}]] as const){assert.equal((await app.inject({method,url,...(payload?{payload}:{})})).statusCode,404);}
   }finally{db.close();await app.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test("DDT definitivo PROD: migrazioni/API, anteprima, riconciliazione, archivio e annullamento",async()=>{
+  const f=await fixture();const directory=mkdtempSync(join(tmpdir(),"sislog-ddt-prod-api-")),frontendDistPath=join(directory,"frontend"),maintenanceStatePath=join(directory,"maintenance-state.json");
+  mkdirSync(frontendDistPath);writeFileSync(join(frontendDistPath,"index.html"),"fixture");
+  writeFileSync(maintenanceStatePath,JSON.stringify({formatVersion:1,updateRevision:0,state:"idle",message:null,scheduledAt:null}));
+  const app=await buildApp({...f.config,environment:"production",frontendDistPath,maintenanceStatePath});
+  try{
+    const year=Number(new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Rome",year:"numeric"}).format(new Date()));
+    const key=crypto.randomUUID(),issued=await app.inject({method:"POST",url:"/api/loading-sessions/S/ddt",payload:{operatorId:f.operator,requestKey:key}});
+    assert.equal(issued.statusCode,200,issued.body);const document=issued.json();
+    const reconciliation=await app.inject({method:"GET",url:`/api/loading-sessions/S/ddt/requests/${key}`});
+    assert.equal(reconciliation.statusCode,200);assert.equal(reconciliation.headers["cache-control"],"no-store, max-age=0");assert.deepEqual(reconciliation.json(),{status:"CONFIRMED",document:{id:document.id,fullNumber:`X-Lam/0001/${year}`,status:"EMESSO"}});
+    const otherSession=await app.inject({method:"GET",url:`/api/loading-sessions/OTHER/ddt/requests/${key}`});assert.deepEqual(otherSession.json(),{status:"UNKNOWN",document:null});
+    assert.equal((await app.inject({method:"GET",url:"/api/loading-sessions/S/ddt-preview"})).statusCode,200);
+    const pdf=await app.inject({method:"GET",url:`/api/ddt/${document.id}/pdf`});assert.equal(pdf.statusCode,200);assert.equal(pdf.headers["content-type"],"application/pdf");
+    const cancelled=await app.inject({method:"POST",url:`/api/ddt/${document.id}/cancel`,payload:{operatorId:f.operator,reason:"Correzione fixture"}});assert.equal(cancelled.statusCode,200,cancelled.body);
+    const afterCancel=await app.inject({method:"GET",url:`/api/loading-sessions/S/ddt/requests/${key}`});assert.equal(afterCancel.json().document.status,"ANNULLATO");
+    assert.equal(f.db.prepare("SELECT lastNumber FROM DdtSequences WHERE year=?").get(year)!.lastNumber,1);
+    assert.equal(f.db.prepare("SELECT COUNT(*) n FROM DdtDocuments").get()!.n,1);
+  }finally{await app.close();await f.close();rmSync(directory,{recursive:true,force:true});}
+});
+
+test("DDT PROD: emissione e annullamento rispettano il blocco manutenzione",async()=>{
+  const f=await fixture(),directory=mkdtempSync(join(tmpdir(),"sislog-ddt-maintenance-")),frontendDistPath=join(directory,"frontend"),maintenanceStatePath=join(directory,"maintenance-state.json");
+  mkdirSync(frontendDistPath);writeFileSync(join(frontendDistPath,"index.html"),"fixture");
+  writeFileSync(maintenanceStatePath,JSON.stringify({formatVersion:1,updateRevision:0,state:"idle",message:null,scheduledAt:null}));
+  const app=await buildApp({...f.config,environment:"production",frontendDistPath,maintenanceStatePath});
+  try{
+    const year=Number(new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Rome",year:"numeric"}).format(new Date()));
+    const key=crypto.randomUUID(),document=(await app.inject({method:"POST",url:"/api/loading-sessions/S/ddt",payload:{operatorId:f.operator,requestKey:key}})).json();
+    const before=f.db.prepare("SELECT lastNumber FROM DdtSequences WHERE year=?").get(year)!.lastNumber;
+    writeFileSync(maintenanceStatePath,JSON.stringify({formatVersion:1,updateRevision:0,state:"scheduled",message:"Aggiornamento",scheduledAt:"2000-01-01T00:00:00.000Z"}));
+    for(const response of [
+      await app.inject({method:"POST",url:`/api/ddt/${document.id}/cancel`,payload:{operatorId:f.operator,reason:"Bloccato"}}),
+      await app.inject({method:"POST",url:"/api/loading-sessions/S/ddt",payload:{operatorId:f.operator,requestKey:crypto.randomUUID()}}),
+    ]){assert.equal(response.statusCode,503,response.body);assert.equal(response.json().code,"MAINTENANCE_ACTIVE");}
+    assert.equal(f.db.prepare("SELECT lastNumber FROM DdtSequences WHERE year=?").get(year)!.lastNumber,before);
+    assert.equal(f.db.prepare("SELECT status FROM DdtDocuments WHERE id=?").get(document.id)!.status,"EMESSO");
+    assert.equal((await app.inject({method:"GET",url:"/api/maintenance"})).json().activeWriteRequests,0);
+  }finally{await app.close();await f.close();rmSync(directory,{recursive:true,force:true});}
 });
 
 test("DDT definitivo: dati mancanti e chiusura non confermata non consumano numeri",async()=>{

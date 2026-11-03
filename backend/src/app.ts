@@ -63,7 +63,8 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const app = (config.httpsKeyPath&&config.httpsCertPath
     ? Fastify({logger,https:{key:readFileSync(config.httpsKeyPath),cert:readFileSync(config.httpsCertPath)}})
     : Fastify({logger})) as unknown as FastifyInstance;
-  const connection = openSqliteDatabase(config.databasePath,{enableDefinitiveDdt:config.environment==="test"});
+  const ddtEnabled = config.environment === "test" || config.environment === "production";
+  const connection = openSqliteDatabase(config.databasePath,{enableDefinitiveDdt:ddtEnabled});
   app.addHook("onClose", async () => connection.close());
   const operatorService = new OperatorService(new OperatorRepository(connection.database));
   const trailerService = new TrailerService(new TrailerRepository(connection.database));
@@ -73,7 +74,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const transportRepository=new TransportRepository(connection.database);
   const loadService = new LoadService(new LoadRepository(connection.database));
   const scanningService = new ScanningService(new ScanningRepository(connection.database));
-  const loadingService = new LoadingService(new LoadingRepository(connection.database,transportRepository),transportRepository,config.environment==="test");
+  const loadingService = new LoadingService(new LoadingRepository(connection.database,transportRepository),transportRepository,ddtEnabled);
   const shipmentService = new ShipmentService(new ShipmentRepository(connection.database,config.environment === "test"),loadingService);
   const transportService=new TransportService(transportRepository);
   const operationalSettingService = new OperationalSettingService(new OperationalSettingRepository(connection.database));
@@ -95,7 +96,10 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
     // admitted before the deadline keeps running and remains counted until
     // Fastify finishes processing it, regardless of client disconnection.
     app.addHook("onRequest", async (request, reply) => {
-      if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return;
+      const routeMayWriteDuringRead = request.routeOptions.config.maintenanceWrite === true;
+      const isReadOnlyRequest = request.method === "OPTIONS" ||
+        ((request.method === "GET" || request.method === "HEAD") && !routeMayWriteDuringRead);
+      if (isReadOnlyRequest) return;
       try {
         if (!maintenanceGate.tryBeginWrite()) {
           return reply.code(503).send({ code: "MAINTENANCE_ACTIVE", message: "Aggiornamento SisLog in corso. Attendere la riapertura." });
@@ -114,18 +118,18 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
     });
     app.addHook("onResponse", async (request) => { finishCountedWrite(request); });
   }
-  if(config.environment==="test")definitiveDdtRoutes(app,connection.database);
-  if(config.environment==="test")app.get<{Params:{id:string}}>("/api/loading-sessions/:id/ddt-preview/availability",async(request,reply)=>{
+  if(ddtEnabled)definitiveDdtRoutes(app,connection.database,config.environment as "test"|"production");
+  if(ddtEnabled)app.get<{Params:{id:string}}>("/api/loading-sessions/:id/ddt-preview/availability",async(request,reply)=>{
     reply.header("Cache-Control","no-store");
-    try{ddtPreview(connection.database,request.params.id,new Date(),true,true);return {available:true};}
+    try{ddtPreview(connection.database,request.params.id,new Date(),true,config.environment==="test");return {available:true};}
     catch(error){if(error instanceof ApiError&&(error.statusCode===422||error.statusCode===404))return {available:false,reason:error.message};throw error;}
   });
   // The simulator only supplies labels. No simulator route exists outside TEST.
   if(config.environment==="test")app.get<{Params:{id:string}}>("/api/loading-sessions/:id/test-qr-candidates",async(request,reply)=>
     reply.header("Cache-Control","no-store").send(loadingSimulationCandidates(connection.database,request.params.id)));
   // Phase 1 is available only outside production and never calls loading/departure services.
-  if (config.environment !== "production") app.get<{Params:{id:string};Querystring:{download?:string}}>("/api/loading-sessions/:id/ddt-preview", async (request, reply) => {
-    const model = ddtPreview(connection.database, request.params.id, new Date(), config.environment === "test", config.environment === "test");
+  if (config.environment === "test" || config.environment === "production") app.get<{Params:{id:string};Querystring:{download?:string}}>("/api/loading-sessions/:id/ddt-preview", async (request, reply) => {
+    const model = ddtPreview(connection.database, request.params.id, new Date(), true, config.environment === "test");
     const { renderDdtPreview } = await import("./services/ddtPreviewPdf.js");
     const { pdf } = renderDdtPreview(model, config.environment === "test");
     // Adapt the read-only preview model to the same naming function as archived DDTs.
@@ -148,7 +152,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   await app.register(orderRoutes, { prefix: "/api/orders", service: loadService });
   await app.register(scanningRoutes, { prefix: "/api", service: scanningService });
   await app.register(loadingRoutes, { prefix: "/api", service: loadingService });
-  if(config.environment==="test")await app.register(historicalTransportRoutes,{prefix:"/api",database:connection.database});
+  if(ddtEnabled)await app.register(historicalTransportRoutes,{prefix:"/api",database:connection.database});
   await app.register(offlineLoadingRoutes, { prefix: "/api", service: loadingService });
   await app.register(transportRoutes, { prefix: "/api", service: transportService });
   await app.register(shipmentRoutes, { prefix: "/api/shipments", service: shipmentService });

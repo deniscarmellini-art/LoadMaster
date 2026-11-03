@@ -10,8 +10,8 @@ const reservationBody={type:"object",additionalProperties:false,required:["comme
 
 export const transportRoutes:FastifyPluginAsync<Options>=async(app,{service})=>{
   const controller=new TransportController(service);
-  app.get("/transports",controller.list);
-  app.get("/transports/:trailerId",{schema:{params:trailerParamsSchema}},controller.get);
+  app.get("/transports",{config:{maintenanceWrite:true}},controller.list);
+  app.get("/transports/:trailerId",{schema:{params:trailerParamsSchema},config:{maintenanceWrite:true}},controller.get);
   app.post("/trailers/:id/reservation",{schema:{params:idParamsSchema,body:reservationBody}},controller.reserve);
   app.put("/trailers/:id/reservation",{schema:{params:idParamsSchema,body:reservationBody}},controller.updateReservation);
   app.patch("/trailers/:id/planned-departure",{schema:{params:idParamsSchema,body:{type:"object",additionalProperties:false,required:["plannedDepartureDate"],properties:{plannedDepartureDate:optionalDate}}}},controller.plannedDeparture);

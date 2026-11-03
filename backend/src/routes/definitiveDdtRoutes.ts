@@ -4,8 +4,8 @@ import { IssuedDdtService } from "../services/issuedDdtService.js";
 import { ApiError } from "../utils/apiError.js";
 import { ddtContentDisposition } from "../services/ddtDownloadName.js";
 
-export function definitiveDdtRoutes(app:FastifyInstance,db:DatabaseSync):void {
-  const service=new IssuedDdtService(db);
+export function definitiveDdtRoutes(app:FastifyInstance,db:DatabaseSync,environment:"test"|"production"):void {
+  const service=new IssuedDdtService(db,environment);
   const convert=(error:unknown):never=>{
     if(error instanceof Error&&error.message.startsWith("DDT_")&&error.message!=="DDT_LOAD_LOCKED")throw new ApiError(error.message==="DDT_NOT_FOUND"?404:409,error.message,{
       DDT_ALREADY_VALID:"Esiste già un DDT valido per il carico.",DDT_ALREADY_DEPARTED:"Operazione non consentita dopo la partenza.",
@@ -16,6 +16,10 @@ export function definitiveDdtRoutes(app:FastifyInstance,db:DatabaseSync):void {
     throw error;
   };
   app.get<{Params:{id:string}}>("/api/loading-sessions/:id/ddt",async(request,reply)=>{reply.header("Cache-Control","no-store");return service.status(request.params.id);});
+  app.get<{Params:{id:string;requestKey:string}}>("/api/loading-sessions/:id/ddt/requests/:requestKey",{schema:{params:{type:"object",additionalProperties:false,required:["id","requestKey"],properties:{id:{type:"string",minLength:1,maxLength:128},requestKey:{type:"string",minLength:16,maxLength:128,pattern:"^[a-zA-Z0-9-]+$"}}}}},async(request,reply)=>{
+    reply.header("Cache-Control","no-store, max-age=0").header("Pragma","no-cache");
+    return service.requestStatus(request.params.id,request.params.requestKey);
+  });
   app.post<{Params:{id:string};Body:{operatorId:string;requestKey:string}}>("/api/loading-sessions/:id/ddt",{schema:{body:{type:"object",additionalProperties:false,required:["operatorId","requestKey"],properties:{operatorId:{type:"string",minLength:1},requestKey:{type:"string",minLength:16,maxLength:128,pattern:"^[a-zA-Z0-9-]+$"}}}}},async(request,reply)=>{
     reply.header("Cache-Control","no-store");try{return service.issue(request.params.id,request.body.operatorId,request.body.requestKey);}catch(error){return convert(error);}
   });

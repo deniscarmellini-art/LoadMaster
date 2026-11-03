@@ -13,7 +13,7 @@ for(const flag of [true,false,'true'])test(`DDT definitivo frontend: protezione 
   const api=await server.ssrLoadModule('/src/services/definitiveDdtApi.ts');
   const {default:Panel}=await server.ssrLoadModule('/src/components/shipments/DefinitiveDdtPanel.tsx');
   const html=renderToStaticMarkup(React.createElement(Panel,{sessionId:'S',operatorId:'OP',revision:'closed',onLocked:()=>{throw Error('render must not lock');}}));
-  if(flag!==true){assert.equal(html,'');assert.throws(()=>api.issueDefinitiveDdt('S','OP','same-request-key'),/esclusivamente in TEST/);assert.throws(()=>api.originalDdtPdf('D'),/esclusivamente in TEST/);return;}
+  if(flag!==true){assert.equal(html,'');assert.throws(()=>api.issueDefinitiveDdt('S','OP','same-request-key'),/non disponibili in questo ambiente/);assert.throws(()=>api.originalDdtPdf('D'),/non disponibili in questo ambiente/);return;}
   assert(!html.includes('Emetti DDT definitivo'));assert(!html.includes('Annulla DDT'));
   const {createDdtRequestKey}=await server.ssrLoadModule('/src/services/ddtRequestKey.ts');
   const requestKey=createDdtRequestKey({getRandomValues:bytes=>webcrypto.getRandomValues(bytes)});
@@ -50,5 +50,34 @@ test('annullamento DDT: motivazione/operatore, risposta persa e riconciliazione 
   }
   globalThis.fetch=async(url)=>url.endsWith('/cancel')?new Response(JSON.stringify({success:false,error:{code:'DDT_ALREADY_DEPARTED',message:'Operazione non consentita dopo la partenza.'}}),{status:409,headers:{'content-type':'application/json'}}):new Response(JSON.stringify({document:{id:'OLD',status:'EMESSO'},history:[{id:'OLD',status:'EMESSO'}],departed:true}),{headers:{'content-type':'application/json'}});
   await assert.rejects(()=>api.cancelDdtAndRefresh('OLD','OP','Motivo','S'),/dopo la partenza/);
+ }finally{globalThis.fetch=original;await server.close();}
+});
+
+test('DDT definitivo frontend PROD: API relative, pannello attivato e riconciliazione per requestKey',async()=>{
+ const server=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),configFile:false,define:{'import.meta.env.VITE_SISLOG_TEST':'false','import.meta.env.PROD':'true'},server:{middlewareMode:true,watch:null,ws:false},appType:'custom'});
+ const original=globalThis.fetch;
+ try{
+  const api=await server.ssrLoadModule('/src/services/definitiveDdtApi.ts');
+  const {default:Panel}=await server.ssrLoadModule('/src/components/shipments/DefinitiveDdtPanel.tsx');
+  const html=renderToStaticMarkup(React.createElement(Panel,{sessionId:'S',operatorId:'OP',revision:'prod',onLocked:()=>{}}));
+  assert.notEqual(html,'');
+  const calls=[];globalThis.fetch=async(url,options={})=>{
+   calls.push({url,options});
+   if(String(url).includes('/requests/'))return new Response(JSON.stringify({status:'CONFIRMED',document:{id:'D',fullNumber:'X-Lam/0001/2026',status:'EMESSO'}}),{headers:{'content-type':'application/json'}});
+   if(String(url).endsWith('/pdf'))return new Response(new Uint8Array([37,80,68,70,45]),{headers:{'content-type':'application/pdf'}});
+   return new Response(JSON.stringify({id:'D',fullNumber:'X-Lam/0001/2026',status:'EMESSO',document:null,history:[],canIssue:true,canCancel:true,departed:false}),{headers:{'content-type':'application/json'}});
+  };
+  await api.definitiveDdtStatus('S');
+  await api.definitiveDdtRequestStatus('S','original-request-key-123');
+  await api.issueDefinitiveDdt('S','OP','new-request-key-123456');
+  await api.originalDdtPdf('D');
+  await api.cancelDefinitiveDdt('D','OP','Correzione');
+  assert.deepEqual(calls.map(call=>call.url),[
+   '/api/loading-sessions/S/ddt',
+   '/api/loading-sessions/S/ddt/requests/original-request-key-123',
+   '/api/loading-sessions/S/ddt',
+   '/api/ddt/D/pdf',
+   '/api/ddt/D/cancel',
+  ]);
  }finally{globalThis.fetch=original;await server.close();}
 });
