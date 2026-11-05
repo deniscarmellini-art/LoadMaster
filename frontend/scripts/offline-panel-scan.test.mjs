@@ -47,7 +47,7 @@ test('dialogo QR offline chiudibile a riposo, intercetta Esc e focalizza il Coll
   assert.match(page, /event\.key==="Escape"&&!offlineBusy/);
   assert.match(page, /<Button type="button" disabled=\{offlineBusy\} onClick=\{closeOfflineImport\}>/);
   assert.doesNotMatch(page, /<TextField autoFocus fullWidth multiline minRows=\{5\}/);
-  assert.match(page, /const offlineImportDialog=testUi&&<Dialog/);
+  assert.match(page, /const offlineImportDialog=<Dialog/);
   assert.match(page, /\{offlineImportDialog\}/);
 });
 
@@ -87,7 +87,7 @@ test('sezione Pacco aperto precede Elementi previsti ed è assente fuori dalla m
   const packageSection = desktop.indexOf('{mode==="package"&&<Paper sx={{p:2,mb:2}}');
   const expectedElements = desktop.indexOf('<Typography variant="h6" sx={{mb:1}}>Elementi previsti</Typography>');
   assert.ok(packageSection >= 0 && expectedElements >= 0 && packageSection < expectedElements);
-  assert.match(page, /mode!=="package"\?\!testUi&&<Button/);
+  assert.match(page, /mode==="package"&&<Paper/);
   assert.match(page, /mode==="package"&&<Paper sx=\{\{p:2,mb:2\}\}/);
 });
 

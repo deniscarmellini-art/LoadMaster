@@ -68,9 +68,25 @@ for (const mode of ["BILICO_ESSEPI", "RITIRA_CLIENTE", "TERZI_PER_ESSEPI"] as co
       }
       // A definitive DDT is now required; the fixture keeps this test focused on completion/departure transitions.
       seedDepartureDdtForApp(app,id,mode==="TERZI_PER_ESSEPI"?carrierId:undefined);
-      const shipped=await app.inject({method:"POST",url:`/api/shipments/${planId}/depart`,payload:{operatorId,...(mode==="TERZI_PER_ESSEPI"?{carrierId}:{})}});
+      const departureCarrierId="carrier-confirmed-at-departure";
+      db.prepare("INSERT INTO Carriers(id,name,active,createdAt,updatedAt) VALUES(?,?,1,?,?)").run(departureCarrierId,"Vettore scelto alla partenza","now","now");
+      if(mode!=="RITIRA_CLIENTE"){
+        const beforeChange=snapshot();
+        const blocked=await app.inject({method:"POST",url:`/api/shipments/${planId}/depart`,payload:{operatorId,carrierId:departureCarrierId}});
+        assert.equal(blocked.statusCode,409);assert.equal(blocked.json().error.code,"DDT_LOAD_LOCKED");assert.deepEqual(snapshot(),beforeChange);
+        const document=db.prepare("SELECT id FROM DdtDocuments WHERE loadingSessionId=? AND status='EMESSO'").get(id)!;
+        const cancelled=await app.inject({method:"POST",url:`/api/ddt/${document.id}/cancel`,payload:{operatorId,reason:"Cambio vettore confermato prima della partenza"}});
+        assert.equal(cancelled.statusCode,200,cancelled.body);
+        const current=concurrent.get(id);
+        const changed=await app.inject({method:"PATCH",url:`/api/loading-sessions/${id}`,payload:{operatorId,destinationType:current.destinationType,transportMode:current.transportMode,transportDetailId:current.transportDetailId,carrierId:departureCarrierId,...(current.trailerId?{trailerId:current.trailerId}:{})}});
+        assert.equal(changed.statusCode,200,changed.body);assert.equal(changed.json().carrierId,departureCarrierId);
+        // Synthetic replacement document: no real issuance or application database is used.
+        seedDepartureDdtForApp(app,id);
+      }
+      const shipped=await app.inject({method:"POST",url:`/api/shipments/${planId}/depart`,payload:{operatorId,...(mode!=="RITIRA_CLIENTE"?{carrierId:departureCarrierId}:{})}});
       assert.equal(shipped.statusCode,200,shipped.body);
       const saved=db.prepare("SELECT * FROM LoadingSessions WHERE id=?").get(id)!;
+      if(mode!=="RITIRA_CLIENTE")assert.equal(saved.carrierId,departureCarrierId,"Persist the carrier explicitly changed at departure");
       assert.equal(saved.stato,"SPEDITO");assert.ok(saved.shippedAt);assert.equal(saved.completedAt,response.json().completedAt);
       assert.equal(db.prepare("SELECT actualDepartureDate FROM ShipmentPlans WHERE id=?").get(planId)!.actualDepartureDate,saved.shippedAt);
       assert.equal(db.prepare("SELECT stato FROM Panels WHERE loadId=?").get(load.id)!.stato,"SPEDITO");

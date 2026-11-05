@@ -5,11 +5,7 @@ import type { ShipmentListDetail } from "../../services/shipmentListFilters";
 import { prepareDeliveryProgram,deliveryProgramDisclaimer,type DeliveryProgram } from "../../services/deliveryProgramModel";
 
 interface Props {filtered:ShipmentItem[];details:ReadonlyMap<string,ShipmentListDetail>;from:string;to:string;carrierId?:string;carrierName?:string}
-export default function DeliveryProgramExport(props:Props) {
-  if(import.meta.env.VITE_SISLOG_TEST!==true)return null;
-  return <TestDeliveryProgramExport {...props}/>;
-}
-function TestDeliveryProgramExport({filtered,details,from,to,carrierId,carrierName}:Props) {
+export default function DeliveryProgramExport({filtered,details,from,to,carrierId,carrierName}:Props) {
   const [model,setModel]=useState<DeliveryProgram|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false);
   const pending=useRef(false);
   const open=()=>{setError("");try{setModel(prepareDeliveryProgram(filtered,details,{from,to,carrierId,carrierName,generatedAt:new Date().toISOString()}));}catch(error){setError(error instanceof Error?error.message:"Esportazione non disponibile");}};

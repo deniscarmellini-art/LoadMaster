@@ -356,7 +356,7 @@ function Dashboard({
               label={transport.mode==="TERZI_PER_ESSEPI"?"Vettore effettivo confermato":"Trasportatore"}
               value={departureCarrierId}
               onChange={(event) => setDepartureCarrierId(event.target.value)}
-              disabled={isDeparting||import.meta.env.VITE_SISLOG_TEST===true}
+              disabled={isDeparting}
               sx={{ gridColumn: "1 / -1" }}
             >
               <MenuItem value="" disabled>

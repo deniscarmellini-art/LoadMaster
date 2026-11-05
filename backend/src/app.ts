@@ -75,7 +75,7 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   const loadService = new LoadService(new LoadRepository(connection.database));
   const scanningService = new ScanningService(new ScanningRepository(connection.database));
   const loadingService = new LoadingService(new LoadingRepository(connection.database,transportRepository),transportRepository,ddtEnabled);
-  const shipmentService = new ShipmentService(new ShipmentRepository(connection.database,config.environment === "test"),loadingService);
+  const shipmentService = new ShipmentService(new ShipmentRepository(connection.database),loadingService);
   const transportService=new TransportService(transportRepository);
   const operationalSettingService = new OperationalSettingService(new OperationalSettingRepository(connection.database));
 
@@ -121,21 +121,19 @@ export const buildApp = async (config: AppConfig): Promise<FastifyInstance> => {
   if(ddtEnabled)definitiveDdtRoutes(app,connection.database,config.environment as "test"|"production");
   if(ddtEnabled)app.get<{Params:{id:string}}>("/api/loading-sessions/:id/ddt-preview/availability",async(request,reply)=>{
     reply.header("Cache-Control","no-store");
-    try{ddtPreview(connection.database,request.params.id,new Date(),true,config.environment==="test");return {available:true};}
+    try{ddtPreview(connection.database,request.params.id,new Date(),true,true);return {available:true};}
     catch(error){if(error instanceof ApiError&&(error.statusCode===422||error.statusCode===404))return {available:false,reason:error.message};throw error;}
   });
   // The simulator only supplies labels. No simulator route exists outside TEST.
   if(config.environment==="test")app.get<{Params:{id:string}}>("/api/loading-sessions/:id/test-qr-candidates",async(request,reply)=>
     reply.header("Cache-Control","no-store").send(loadingSimulationCandidates(connection.database,request.params.id)));
-  // Phase 1 is available only outside production and never calls loading/departure services.
+  // Read-only preview is shared by TEST and production; it never issues a DDT.
   if (config.environment === "test" || config.environment === "production") app.get<{Params:{id:string};Querystring:{download?:string}}>("/api/loading-sessions/:id/ddt-preview", async (request, reply) => {
-    const model = ddtPreview(connection.database, request.params.id, new Date(), true, config.environment === "test");
+    const model = ddtPreview(connection.database, request.params.id, new Date(), true, true);
     const { renderDdtPreview } = await import("./services/ddtPreviewPdf.js");
-    const { pdf } = renderDdtPreview(model, config.environment === "test");
+    const { pdf } = renderDdtPreview(model, true);
     // Adapt the read-only preview model to the same naming function as archived DDTs.
-    const disposition = config.environment === "test"
-      ? ddtContentDisposition(JSON.stringify({data:{model}}),request.query.download === "1")
-      : 'inline; filename="anteprima-ddt.pdf"';
+    const disposition = ddtContentDisposition(JSON.stringify({data:{model}}),request.query.download === "1");
     return reply.header("Cache-Control", "no-store").header("Content-Disposition", disposition).type("application/pdf").send(pdf);
   });
   app.get<{Params:{id:string}}>("/api/history/:id/document",async request=>shipmentDocument(connection.database,request.params.id));

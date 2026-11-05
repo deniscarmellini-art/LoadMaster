@@ -15,10 +15,10 @@ for(const testUi of [false,true])test(`Carico camion: disponibili attivi, azione
   let calls=0;
   const props={load:{id:'L',commessa:'265001',cliente:'Cliente',camion:'C1'},mode:'BILICO_ESSEPI',detailId:'',options:[],transports:items,saving:false,onRefresh:async()=>{calls++;},onBusyChange:()=>{},onModeChange:()=>{},onDetailChange:()=>{}};
   const render=(extra={})=>renderToStaticMarkup(React.createElement(Fields,{...props,...extra}));
-  const empty=render();assert(empty.includes('Impegna rimorchio'));if(!testUi)assert(empty.includes('Seleziona un rimorchio disponibile'));assert(empty.includes('Obbligatorio alla conclusione'));assert.equal(calls,0,'rendering/selecting does not issue any operation');
+  const empty=render();assert(empty.includes('Impegna rimorchio'));assert(empty.includes('Obbligatorio alla conclusione'));assert.equal(calls,0,'rendering/selecting does not issue any operation');
   const assigned={...base,status:'IMPEGNATO',assignmentId:'A',canRelease:true};
   const occupied=render({assigned});assert(occupied.includes('AE 34133'));assert(occupied.includes('Centinato'));assert(occupied.includes('Disimpegna'));assert(!occupied.includes('Impegna rimorchio'));
-  if(testUi){assert(occupied.includes('Rimorchio impegnato:'));assert(occupied.includes('MuiAlert-colorSuccess'));assert(!empty.includes('Rimorchio impegnato:'));}
+  {assert(occupied.includes('Rimorchio impegnato:'));assert(occupied.includes('MuiAlert-colorSuccess'));assert(!empty.includes('Rimorchio impegnato:'));}
   assert(!render({assigned:{...assigned,canRelease:false}}).includes('>Disimpegna<'));
   for(const mode of ['RITIRA_CLIENTE','TERZI_PER_ESSEPI']){const markup=render({mode});assert(!markup.includes('Rimorchio Essepi'));assert(!markup.includes('Impegna rimorchio'));}
   const third=render({mode:'TERZI_PER_ESSEPI',carrierId:'actual',carriers:[{id:'actual',nome:'Vettore confermato',attivo:true}]});

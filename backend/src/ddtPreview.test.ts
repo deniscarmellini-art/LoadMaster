@@ -8,10 +8,13 @@ import { buildApp } from "./app.js";
 import { ddtPreview } from "./repositories/ddtPreviewRepository.js";
 import { renderDdtPreview, renderDefinitiveDdt } from "./services/ddtPreviewPdf.js";
 
-async function fixture(count = 20) {
+async function fixture(count = 20, environment: "test" | "production" = "test") {
   const dir=mkdtempSync(join(tmpdir(),"sislog-ddt-preview-"));
   const databasePath=join(dir,"test.sqlite");
-  const app=await buildApp({environment:"test",databasePath,port:3198,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath:null,httpsKeyPath:null,httpsCertPath:null});
+  const maintenanceStatePath=join(dir,"maintenance.json");
+  writeFileSync(maintenanceStatePath,JSON.stringify({formatVersion:1,updateRevision:0,state:"idle",message:null,scheduledAt:null}));
+  writeFileSync(join(dir,"index.html"),"<!doctype html><title>Fixture 1.1.1</title>");
+  const app=await buildApp({environment,maintenanceStatePath,databasePath,port:3198,host:"127.0.0.1",frontendOrigin:"http://localhost",frontendDistPath:environment==="production"?dir:null,httpsKeyPath:null,httpsCertPath:null});
   const db=new DatabaseSync(databasePath); const now="2026-10-16T10:00:00Z";
   db.prepare("INSERT INTO Loads(id,commessa,cliente,camion,stato,createdAt,updatedAt) VALUES('load','TEST-265612','Cliente TEST importato','C1','IN_CARICO',?,?)").run(now,now);
   db.prepare("INSERT INTO Customers(id,denominazione,partitaIva,createdAt,updatedAt) VALUES('customer','Nome anagrafico differente','01949810160',?,?)").run(now,now);
@@ -33,8 +36,8 @@ async function fixture(count = 20) {
   return {app,db,snapshot,close:async()=>{db.close();await app.close();rmSync(dir,{recursive:true,force:true});}};
 }
 
-test("DDT preview: only active loaded material, packages once, imported identity and Rome date",async()=>{
-  const f=await fixture();try{
+for (const environment of ["test", "production"] as const) test(`DDT preview ${environment}: only active loaded material, packages once, imported identity and Rome date`,async()=>{
+  const f=await fixture(20,environment);try{
     // Defensive deduplication even if legacy data loaded a child both ways.
     f.db.prepare("INSERT INTO LoadingUnits(id,loadingSessionId,unitType,panelId,loadedAt,loadedByOperatorId,createdAt,updatedAt) VALUES('duplicate-child','session','PANEL','panel-18','now','op','now','now')").run();
     f.db.prepare("UPDATE LoadingUnits SET active=0 WHERE panelId='panel-0'").run();

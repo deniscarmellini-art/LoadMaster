@@ -39,7 +39,6 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
   const filterAnchor = useRef<{ date: string; top: number } | null>(null);
   const loadingPrevious = useRef(false);
   const loadingNext = useRef(false);
-  const testCalendar=import.meta.env.VITE_SISLOG_TEST===true;
   const [showCompletedWeeks,setShowCompletedWeeks]=useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const dragging = useRef<string | null>(null);
@@ -57,7 +56,7 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
     catch (cause) {setError(cause instanceof ApiClientError ? cause.message : "Impossibile spostare la spedizione. La data precedente resta invariata.");}
     finally {setSaving(false);}
   };
-  const today = testCalendar?calendarTodayInRome():dayjs().format("YYYY-MM-DD");
+  const today = calendarTodayInRome();
   const events = useMemo(() => {
     const result = new Map<string, ShipmentItem[]>();
     for (const item of items) {
@@ -68,9 +67,9 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
     return result;
   }, [items]);
   const weeks = useMemo(() => shipmentCalendarWeeks(loadedRange.start.format("YYYY-MM"), loadedRange.end.format("YYYY-MM")), [loadedRange]);
-  const completedWeeks=useMemo(()=>testCalendar?completedPastShipmentWeeks(items,today):new Set<string>(),[items,today,testCalendar]);
+  const completedWeeks=useMemo(()=>completedPastShipmentWeeks(items,today),[items,today]);
   const hiddenWeekCount=weeks.filter(week=>completedWeeks.has(week.key)).length;
-  const visibleWeeks=weeks.filter(week=>!testCalendar||showCompletedWeeks||!completedWeeks.has(week.key));
+  const visibleWeeks=weeks.filter(week=>showCompletedWeeks||!completedWeeks.has(week.key));
 
   const changeCompletedWeeksVisibility=(show:boolean)=>{
     const scroller=scrollerRef.current;
@@ -182,13 +181,13 @@ export default function ShipmentCalendar({ items, transportDetails, onSelectShip
       <Stack direction="row" sx={{ gap: 2, flexWrap: "wrap" }}>
               {Object.entries(shipmentTransportPresentation).map(([type,{label}]) => { const colors=calendarShipmentColors[type]; return <Stack key={label} direction="row" sx={{ alignItems: "center", gap: 0.75 }}><Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: colors.accent }} /><Typography variant="caption" sx={{color:"#455a64"}}>{label}</Typography></Stack>; })}
       </Stack>
-      {testCalendar&&hiddenWeekCount>0&&<FormControlLabel sx={{m:0}} control={<Switch size="small" checked={showCompletedWeeks} onChange={event=>changeCompletedWeeksVisibility(event.target.checked)}/>} label={<Typography variant="caption">Mostra settimane passate completate ({hiddenWeekCount})</Typography>}/>}
+      {hiddenWeekCount>0&&<FormControlLabel sx={{m:0}} control={<Switch size="small" checked={showCompletedWeeks} onChange={event=>changeCompletedWeeksVisibility(event.target.checked)}/>} label={<Typography variant="caption">Mostra settimane passate completate ({hiddenWeekCount})</Typography>}/>}
     </Stack>
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", borderTop: "1px solid #d9dee2", borderLeft: "1px solid #d9dee2" }}>
             {weekdays.map((day) => <Typography key={day} sx={{ p: 1, textAlign: "center", fontWeight: 700, color: "#37474f", bgcolor: "#E2E6EB", borderRight: "1px solid #cbd2d9", borderBottom: "1px solid #cbd2d9" }}>{day}</Typography>)}
           </Box>
         </Box>
-        {testCalendar&&weeks.some(week=>week.ownerMonth===month.format("YYYY-MM")&&completedWeeks.has(week.key))&&weeks.filter(week=>week.ownerMonth===month.format("YYYY-MM")).every(week=>completedWeeks.has(week.key))&&!showCompletedWeeks&&<Alert severity="info" sx={{m:1,bgcolor:"#eaf3f9",color:"#263238","& .MuiAlert-icon":{color:"#527a96"}}}>Tutte le settimane del mese sono completate. Attiva “Mostra settimane passate completate” per consultarle.</Alert>}
+        {weeks.some(week=>week.ownerMonth===month.format("YYYY-MM")&&completedWeeks.has(week.key))&&weeks.filter(week=>week.ownerMonth===month.format("YYYY-MM")).every(week=>completedWeeks.has(week.key))&&!showCompletedWeeks&&<Alert severity="info" sx={{m:1,bgcolor:"#eaf3f9",color:"#263238","& .MuiAlert-icon":{color:"#527a96"}}}>Tutte le settimane del mese sono completate. Attiva “Mostra settimane passate completate” per consultarle.</Alert>}
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", minWidth: 900, borderTop: "1px solid #d9dee2", borderLeft: "1px solid #d9dee2" }}>
         {visibleWeeks.flatMap(week=>week.days.map(date=>({day:dayjs(date),week}))).map(({day,week}) => {
           const date = day.format("YYYY-MM-DD");

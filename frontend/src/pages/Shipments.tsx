@@ -259,7 +259,7 @@ export default function Shipments({
       }
       await onRefresh();
       closeEditor();
-      setNotice({ severity: "success", text: import.meta.env.VITE_SISLOG_TEST && !saved?.customerId
+      setNotice({ severity: "success", text: !saved?.customerId
         ? "Pianificazione salvata senza collegamento cliente. Per il DDT selezionare e confermare il cliente anagrafico."
         : "Pianificazione salvata." });
     } catch (error) {

@@ -162,7 +162,7 @@ export default function App() {
       listTransports(),
       listShipments(),
     ]).then(([loads, snapshot, sessions, transportItems, shipmentItems]) => {
-      if (import.meta.env.VITE_SISLOG_TEST && !scanningRevision.current.isCurrent(revision)) return;
+      if (!scanningRevision.current.isCurrent(revision)) return;
       setCommesse(loads);
       setSingles(snapshot.singles);
       setPackages(snapshot.packages);
@@ -836,9 +836,9 @@ export default function App() {
             )}
             suspendedPackages={suspendedPackages.filter(pack=>pack.commessa===scanningTarget.commessa&&pack.camion===scanningTarget.camion)}
             onDraftChange={setDraftForTarget}
-            onDataChanged={import.meta.env.VITE_SISLOG_TEST ? refreshAfterScanningMutation : refreshScanningData}
-            onConfirmedChange={import.meta.env.VITE_SISLOG_TEST ? confirmScanningChange : undefined}
-            onMutationStart={import.meta.env.VITE_SISLOG_TEST ? ()=>scanningRevision.current.invalidate() : undefined}
+            onDataChanged={refreshAfterScanningMutation}
+            onConfirmedChange={confirmScanningChange}
+            onMutationStart={()=>scanningRevision.current.invalidate()}
             onClosePackage={() => undefined}
             onCloseSingle={() => undefined}
             packages={packages}
