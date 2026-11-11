@@ -1,17 +1,20 @@
+import { classifyVerifiedBulkLot, type DdtBulkLotElement } from "../services/ddtBulkLotPolicy.js";
 import type { DatabaseSync } from "node:sqlite";
 import { ApiError } from "../utils/apiError.js";
 import { recognizeCustomer } from "./customerRecognition.js";
 import { documentTransport } from "../services/documentTransport.js";
 
-export interface DdtElement {
+export interface DdtPanelElement {
+  kind?: "PANEL";
   id: string; number: string; quantity: number; length: number; width: number;
   type: string; area: number; weight: number;
 }
+export type DdtElement = DdtPanelElement | DdtBulkLotElement;
 export interface DdtGroup { label: string; packageId: string | null; elements: DdtElement[] }
 export interface DdtPreview {
   kind: "DDT_PREVIEW"; sessionId: string; reference: string; date: string;
   order: string; orderReference: string; truck: string; customer: string; vat: string; destination: string; notes: string;
-  transport:ReturnType<typeof documentTransport>;carrier: string; groups: DdtGroup[]; totals: { elements: number; weight: number };
+  transport:ReturnType<typeof documentTransport>;carrier: string; groups: DdtGroup[]; totals: { elements: number; weight: number; bulkLots?: number; ordinaryElements?: number; totalWeightKnown?: boolean; knownPanelVolume?: number };
 }
 type Row = Record<string, unknown>;
 function missing(message: string): never { throw new ApiError(422, "DDT_PREVIEW_DATA_MISSING", message); }
@@ -84,9 +87,10 @@ export function readPreview(db: DatabaseSync, sessionId: string, now: Date, auto
       missing(`Anteprima DDT: ${field} non valido per l'elemento ${p.numeroPannello}.`);
     return value as number;
   };
-  const element = (p: Row): DdtElement => ({ id: String(p.id), number: required(p.numeroPannello, "codice elemento"),
+  const ordinaryElement = (p: Row): DdtPanelElement => ({ id: String(p.id), number: required(p.numeroPannello, "codice elemento"),
     quantity: number(p, "quantita", true), length: number(p, "lunghezza", true), width: number(p, "altezza", true),
     type: required(p.tipoPannello, `tipologia dell'elemento ${p.numeroPannello}`), area: number(p, "superficie", true), weight: number(p, "peso", true) });
+  const element = (p: Row): DdtElement => classifyVerifiedBulkLot(p, { loadId: session.loadId, order: session.commessa, truck: session.camion, packageCode: packages.find(pack => pack.id === p.packageId)?.code }) ?? ordinaryElement(p);
   const sort = (rows: Row[]) => rows.sort((a, b) => String(a.numeroPannello).localeCompare(String(b.numeroPannello), "it", { numeric: true }));
   const loadedPacks = new Set(packageIds);
   const singleRows = sort(allPanels.filter(p => singles.has(String(p.id)) && !loadedPacks.has(String(p.packageId))));
@@ -98,11 +102,17 @@ export function readPreview(db: DatabaseSync, sessionId: string, now: Date, auto
     groups.push({ label: `PACCO ${pack.code}`, packageId: pack.id, elements: children.map(element) });
   }
   const elements = groups.flatMap(g => g.elements);
+  const bulkLots = elements.filter(p => p.kind === "BULK_LOT").length;
+  const ordinary = elements.filter((p): p is DdtPanelElement => p.kind !== "BULK_LOT");
+  const knownWeight = ordinary.reduce((sum, p) => sum + p.weight, 0);
+  const volumes = bulkLots ? ordinary.map(p => allPanels.find(row => row.id === p.id)?.volume) : [];
+  const knownVolume = volumes.length > 0 && volumes.every((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0) ? (volumes as number[]).reduce((sum, v) => sum + v, 0) : undefined;
+  const bulkNote = bulkLots ? `SFRIDO: 1 lotto sfuso; misure, superficie, peso e volume non disponibili. Dati noti dei ${ordinary.length} pannelli: ${knownWeight.toLocaleString("it-IT", { maximumFractionDigits: 3 })} kg${knownVolume === undefined ? "" : `; ${knownVolume.toLocaleString("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} m³`}. Totali complessivi non determinabili.` : "";
   const date = new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
   return { kind: "DDT_PREVIEW", sessionId, reference: `X-Lam/ANTEPRIMA/${date.slice(-4)}`, date,
     order: required(session.commessa, "numero commessa importata"), customer: required(session.cliente, "cliente della commessa importata"),
     orderReference: typeof plan.orderReference === "string" ? plan.orderReference.trim() : "",
     truck: typeof session.camion === "string" ? session.camion.trim() : "",
-    vat, destination, notes: typeof plan.notes === "string" ? plan.notes : "", transport,carrier, groups,
-    totals: { elements: elements.length, weight: elements.reduce((sum, p) => sum + p.weight, 0) } };
+    vat, destination, notes: [typeof plan.notes === "string" ? plan.notes : "", bulkNote].filter(Boolean).join("\n"), transport,carrier, groups,
+    totals: { elements: elements.length, weight: knownWeight, ...(bulkLots ? { bulkLots, ordinaryElements: ordinary.length, totalWeightKnown: false, ...(knownVolume === undefined ? {} : { knownPanelVolume: knownVolume }) } : {}) } };
 }

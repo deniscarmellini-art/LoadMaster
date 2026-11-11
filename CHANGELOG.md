@@ -26,3 +26,12 @@ Candidato di collaudo: nessuna pubblicazione o modifica della produzione attiva.
 - Allineati anteprima e download DDT, nome file e continuazione compatta; invariati emissione, numerazione, archiviazione e requestKey.
 - Trasportatore modificabile alla conferma partenza, con validazioni esistenti.
 - Simulatore QR, fascia ambiente e strumenti di prova rimangono TEST; nessuna associazione cliente implicita nei salvataggi di pianificazione.
+
+## [1.1.2] - NON ANCORA RILASCIATA
+
+Candidato correttivo SFRIDO; nessun deploy o rettifica dei dati PROD eseguiti.
+
+- Classificazione esplicita come lotto sfuso del solo elemento SFRIDO verificato del pacco PK-2026-000240, commessa 265852; nessuna eccezione automatica per elementi omonimi.
+- Anteprima e PDF DDT: 1 lotto, misure e peso non disponibili; 520 kg e 1,040 m³ dei cinque pannelli indicati come dati noti parziali, senza dichiararli totali dell'intero carico.
+- Invariate validazioni ordinarie, numerazione DDT, requestKey, PDF archiviati, annullamento e manutenzione.
+- Aggiunti test di regressione e procedura separata di rettifica quantità, subordinata ad autorizzazione, backup e installazione software. Nessuna rettifica automatica o migrazione.

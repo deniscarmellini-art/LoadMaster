@@ -90,7 +90,7 @@ function renderDdtLayout(model: Omit<DdtPreview,"kind">, definitive: boolean, co
     if (wrap(label+(continued?" (CONTINUA)":""),width-150,8.2,true).length>1)
       throw new ApiError(422,"DDT_PREVIEW_TEXT_TOO_LONG","Anteprima DDT: codice pacco troppo lungo per il layout V3.");
     fill(y,24,"#E3EFE7"); text(label+(continued?" (CONTINUA)":""),42,y+16,8.2,true,green);
-    text(`${count} elementi ${pack?"nel pacco":"singoli"}`,right-8,y+16,7.5,true,green,"right"); y+=24;
+    text(model.totals.bulkLots ? `${count} voci ${pack?"nel pacco":"singole"}` : `${count} elementi ${pack?"nel pacco":"singoli"}`,right-8,y+16,7.5,true,green,"right"); y+=24;
   };
   const fmt = (n: number, digits = 2, minimum = 0) => n.toLocaleString("it-IT", { maximumFractionDigits: digits, minimumFractionDigits: minimum, useGrouping: "always" });
   const measure = (n: number) => n.toLocaleString("it-IT", { maximumFractionDigits: 2, useGrouping: false });
@@ -98,7 +98,7 @@ function renderDdtLayout(model: Omit<DdtPreview,"kind">, definitive: boolean, co
   header();
   for (const group of model.groups) {
     const rows = group.elements.map(p => {
-      const values=[p.number,fmt(p.quantity),`${measure(p.length)} × ${measure(p.width)}`,p.type,fmt(p.area,2,2),fmt(p.weight)];
+      const values=p.kind === "BULK_LOT" ? [p.number,`${fmt(p.quantity)} lotto`,"—",p.type,"—","—"] : [p.number,fmt(p.quantity),`${measure(p.length)} × ${measure(p.width)}`,p.type,fmt(p.area,2,2),fmt(p.weight)];
       const lines=values.map((v,i)=>wrap(v,columns[i+1]!-columns[i]!-14,7.6));
       return {p,lines,rowHeight:Math.max(19,Math.max(...lines.map(l=>l.length))*10.3+8)};
     });
@@ -123,7 +123,7 @@ function renderDdtLayout(model: Omit<DdtPreview,"kind">, definitive: boolean, co
   if(summaryHeight+(compactContinuation?18:0)>(compactContinuation?790:bottom)-((compactContinuation?153:tableY)+23))throw new ApiError(422,"DDT_PREVIEW_TEXT_TOO_LONG","Anteprima DDT: nominativo vettore troppo lungo.");
   if(y+18+summaryHeight>pageBottom())nextPage();
   y+=18; doc.setFillColor("#278044");doc.roundedRect(left,y,width,22,3,3,"F");text("RIEPILOGO E DATI DI TRASPORTO",42,y+15,8.5,true,"#FFFFFF");y+=22;
-  const summary=[{x:left,w:184,label:"CAUSALE DEL TRASPORTO",value:"Vendita"},{x:218,w:183,label:"ASPETTO ESTERIORE DEI BENI",value:"A vista"},{x:401,w:78,label:"N. ELEMENTI",value:String(model.totals.elements)},{x:479,w:right-479,label:"PESO KG",value:fmt(model.totals.weight)}];
+  const summary=[{x:left,w:184,label:"CAUSALE DEL TRASPORTO",value:"Vendita"},{x:218,w:183,label:"ASPETTO ESTERIORE DEI BENI",value:"A vista"},{x:401,w:78,label:model.totals.bulkLots ? "N. VOCI" : "N. ELEMENTI",value:String(model.totals.elements)},{x:479,w:right-479,label:model.totals.totalWeightKnown === false ? "PESO NOTO KG" : "PESO KG",value:fmt(model.totals.weight)}];
   for(const f of summary){box(f.x,y,f.w,40);text(f.label,f.x+8,y+13,6.5,true,muted);text(f.value,f.x+8,y+30,10,true);}y+=40;
   const transportHeight=Math.max(46,carrierLines.length*12.2+27);
   const transport=[{x:left,w:190,label:"VETTORE / CONDUCENTE"},{x:224,w:130,label:"DATA INIZIO TRASPORTO"},{x:354,w:45,label:"ORA"},{x:399,w:right-399,label:"FIRMA DEL CONDUCENTE"}];
